@@ -1,3 +1,14 @@
+import type {
+  Author,
+  Bookmark,
+  LinkRead,
+  MediaItem,
+  Metrics,
+  Quote,
+  SummaryVersion,
+  TopicSummary,
+  XArticle,
+} from './types.ts';
 import {
   escapeHtml,
   formatCount,
@@ -5,9 +16,9 @@ import {
   linkifyText,
   safeHttpUrl,
   truncate,
-} from './util.js';
+} from './util.ts';
 
-const NOTICES = {
+const NOTICES: Record<string, string> = {
   shared: 'Saved from the Android share sheet.',
   added: 'Saved. The summary is running in the background.',
   exists: 'Already saved. The post has been refreshed.',
@@ -15,6 +26,17 @@ const NOTICES = {
   queued: 'Summary queued again.',
   version: 'New version queued. The original summary stays as it is.',
 };
+
+export interface RenderPageOptions {
+  bookmarks: Bookmark[];
+  total: number;
+  query: string;
+  topics?: TopicSummary[];
+  topic?: TopicSummary | null;
+  notice?: string | null;
+  error?: string | null;
+  aiConfigured?: boolean;
+}
 
 export function renderPage({
   bookmarks,
@@ -24,12 +46,12 @@ export function renderPage({
   topic = null,
   notice,
   error,
-  aiConfigured,
-}) {
+  aiConfigured = false,
+}: RenderPageOptions): string {
   const pending = bookmarks.some(
     bookmark =>
       ['pending', 'working'].includes(bookmark.summaryStatus) ||
-      ['pending', 'working'].includes(bookmark.versionStatus),
+      ['pending', 'working'].includes(bookmark.versionStatus || ''),
   );
   const returnTo = topic ? `/t/${topic.slug}` : '/';
   const noticeText = notice ? NOTICES[notice] : '';
@@ -142,7 +164,7 @@ export function renderPage({
   });
 }
 
-function renderParagraphs(text) {
+function renderParagraphs(text: unknown): string {
   return String(text || '')
     .split(/\n{2,}/)
     .map(paragraph => paragraph.trim())
@@ -151,7 +173,7 @@ function renderParagraphs(text) {
     .join('');
 }
 
-function renderTopicOverview(text) {
+function renderTopicOverview(text: unknown): string {
   const foldable = String(text || '').length > 700;
   return `
     <div class="topic-overview ${foldable ? 'is-folded' : ''}">
@@ -161,8 +183,12 @@ function renderTopicOverview(text) {
   `;
 }
 
-function renderBookmark(bookmark, aiConfigured, returnTo = '/') {
-  const author = bookmark.author ?? {};
+function renderBookmark(
+  bookmark: Bookmark,
+  aiConfigured: boolean,
+  returnTo = '/',
+): string {
+  const author: Partial<Author> = bookmark.author ?? {};
   const handle = author.username ? `@${author.username}` : 'unknown';
   const avatar = safeHttpUrl(author.avatarUrl);
   const initial = escapeHtml((author.name || author.username || '?').slice(0, 1).toUpperCase());
@@ -236,8 +262,8 @@ function renderBookmark(bookmark, aiConfigured, returnTo = '/') {
   `;
 }
 
-function renderQuote(quote) {
-  const author = quote.author ?? {};
+function renderQuote(quote: Quote): string {
+  const author: Partial<Author> = quote.author ?? {};
   const handle = author.username ? `@${author.username}` : 'quoted post';
   return `
     <blockquote class="quote">
@@ -251,7 +277,7 @@ function renderQuote(quote) {
   `;
 }
 
-function renderArticle(article) {
+function renderArticle(article: XArticle): string {
   const url = safeHttpUrl(article.url);
   const title = article.title || 'X Article';
   return `
@@ -267,7 +293,7 @@ function renderArticle(article) {
   `;
 }
 
-function renderLinks(links) {
+function renderLinks(links: LinkRead[]): string {
   const cards = links
     .map(link => {
       const url = safeHttpUrl(link.finalUrl || link.url);
@@ -299,7 +325,7 @@ function renderLinks(links) {
   return `<div class="link-stack">${cards}</div>`;
 }
 
-function renderMedia(media, context) {
+function renderMedia(media: MediaItem[] | null | undefined, context: string): string {
   if (!Array.isArray(media) || media.length === 0) return '';
 
   const cells = media
@@ -335,7 +361,7 @@ function renderMedia(media, context) {
   return `<div class="media-grid ${context} media-count-${media.length}">${cells}</div>`;
 }
 
-function renderVersion(entry) {
+function renderVersion(entry: SummaryVersion): string {
   const label = entry.instruction ? truncate(entry.instruction, 90) : 'Another angle';
   return `
     <details class="version">
@@ -348,12 +374,16 @@ function renderVersion(entry) {
   `;
 }
 
-function renderSummary(bookmark, aiConfigured, returnTo = '/') {
+function renderSummary(
+  bookmark: Bookmark,
+  aiConfigured: boolean,
+  returnTo = '/',
+): string {
   const status = bookmark.summaryStatus || (aiConfigured ? 'pending' : 'disabled');
 
   if (status === 'done' && bookmark.summary) {
     const versions = Array.isArray(bookmark.versions) ? bookmark.versions : [];
-    const busy = ['pending', 'working'].includes(bookmark.versionStatus);
+    const busy = ['pending', 'working'].includes(bookmark.versionStatus ?? '');
 
     return `
       <section class="summary">
@@ -429,7 +459,7 @@ function renderSummary(bookmark, aiConfigured, returnTo = '/') {
   `;
 }
 
-function renderMetrics(metrics = {}) {
+function renderMetrics(metrics: Partial<Metrics> = {}) {
   const items = [
     ['replies', metrics.replies],
     ['reposts', metrics.reposts],
@@ -445,7 +475,7 @@ function renderMetrics(metrics = {}) {
   return items.join('<span class="dot">·</span>');
 }
 
-function renderEmpty(query) {
+function renderEmpty(query: string): string {
   if (query) {
     return `
       <div class="empty">
@@ -466,7 +496,7 @@ function renderEmpty(query) {
   `;
 }
 
-export function renderLogin({ error, next } = {}) {
+export function renderLogin({ error, next }: { error?: string | null; next?: string | null } = {}): string {
   return pageShell({
     title: 'Log in · X Bookmark Vault',
     bodyClass: 'login-page',
@@ -491,7 +521,7 @@ export function renderLogin({ error, next } = {}) {
   });
 }
 
-export function renderSetup() {
+export function renderSetup(): string {
   return pageShell({
     title: 'Setup required',
     bodyClass: 'login-page',
@@ -511,7 +541,7 @@ export function renderSetup() {
   });
 }
 
-function pageShell({ title, bodyClass, head, body }) {
+function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass: string; head: string; body: string }): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -545,7 +575,7 @@ function pageShell({ title, bodyClass, head, body }) {
 </html>`;
 }
 
-export const CSS = `:root {
+export const CSS: string = `:root {
   color-scheme: light dark;
   --bg: #f4f0e8;
   --surface: #fffdf8;
