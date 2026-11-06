@@ -91,7 +91,7 @@ export default {
 
     if (request.method === 'GET' && url.pathname.startsWith('/t/')) {
       const slug = decodeURIComponent(url.pathname.slice(3)).replace(/\/+$/, '');
-      return secure(await handleTopicPage(slug, env));
+      return secure(await handleTopicPage(slug, env, url));
     }
 
     if (request.method === 'POST' && (url.pathname === '/add' || url.pathname === '/share')) {
@@ -127,7 +127,7 @@ export default {
 
     const summaryMatch = url.pathname.match(/^\/api\/bookmarks\/(\d{1,25})\/summarize$/);
     if (summaryMatch && request.method === 'POST') {
-      return secure(await apiGuard(() => handleApiSummarize(summaryMatch[1], env)));
+      return secure(await apiGuard(() => handleApiSummarize(summaryMatch[1], env, request)));
     }
 
     if (request.method === 'GET' && url.pathname === '/api/stats') {
@@ -184,7 +184,7 @@ async function handleHome(url, env) {
   }
 }
 
-async function handleTopicPage(slug, env) {
+async function handleTopicPage(slug, env, url) {
   if (!/^[a-z0-9-]{1,60}$/.test(slug)) {
     return htmlResponse('<h1>Topic not found</h1><p><a href="/">Go home</a></p>', 404);
   }
@@ -206,8 +206,8 @@ async function handleTopicPage(slug, env) {
         query: '',
         topics: topicData.topics,
         topic: data.topic,
-        notice: null,
-        error: null,
+        notice: url.searchParams.get('notice'),
+        error: url.searchParams.get('error'),
         aiConfigured: Boolean(env.OPENCODE_API_KEY),
       }),
     );
@@ -278,13 +278,20 @@ async function handleSummarizeForm(request, env) {
   const form = await request.formData();
   const id = String(form.get('id') || '');
   if (!/^\d{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+
+  const mode = form.get('mode') === 'version' ? 'version' : 'default';
+  const instruction = String(form.get('instruction') || '').slice(0, 500);
+
   try {
     await doJson(env, '/resummarize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, mode, instruction }),
     });
-    return redirect('/?notice=queued');
+    const back = String(form.get('returnTo') || '/');
+    const target = back.startsWith('/') && !back.startsWith('//') ? back : '/';
+    const notice = mode === 'version' ? 'version' : 'queued';
+    return redirect(`${target}${target.includes('?') ? '&' : '?'}notice=${notice}`);
   } catch (error) {
     return redirect(`/?error=${encodeURIComponent(errorMessage(error))}`);
   }
@@ -337,11 +344,21 @@ async function handleApiDelete(id, env) {
   return jsonResponse(result);
 }
 
-async function handleApiSummarize(id, env) {
+async function handleApiSummarize(id, env, request) {
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  const mode = body?.mode === 'version' ? 'version' : 'default';
+  const instruction = String(body?.instruction || '').slice(0, 500);
+
   const result = await doJson(env, '/resummarize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify({ id, mode, instruction }),
   });
   return jsonResponse(result, 202);
 }

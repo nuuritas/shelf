@@ -14,6 +14,8 @@ Paste an X link, or share one from Android:
 4. It sends the post, article, link text, and images to OpenCode Go for a natural-language explanation.
 5. It renders a private, mobile-friendly library.
 
+The first summary is never overwritten. From any card you can ask for a new version with an optional direction ("explain the tradeoffs", "give the history"), and the result is stored beside the original as v2, v3, and so on.
+
 If no OpenCode key is configured, saving still works; the card simply says the summary is not configured.
 
 ## Knowledge layer
@@ -131,13 +133,13 @@ All API routes require the session cookie or `Authorization: Bearer <APP_PASSWOR
 | `POST` | `/api/bookmarks` | Save `{ "url": "https://x.com/..." }` |
 | `GET` | `/api/bookmarks/:id` | Get one normalized bookmark |
 | `DELETE` | `/api/bookmarks/:id` | Delete a bookmark |
-| `POST` | `/api/bookmarks/:id/summarize` | Queue a new summary |
+| `POST` | `/api/bookmarks/:id/summarize` | Queue a summary; `{ "mode": "version", "instruction": "..." }` adds a version instead |
 | `GET` | `/api/topics` | Topics with counts and syntheses |
 | `POST` | `/api/reindex` | Rebuild the topic taxonomy from the archive |
 | `GET` | `/api/stats` | Counts |
 | `GET` | `/healthz` | Health check, no auth |
 
-A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, `summaryStatus`, and its `topics`. Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs.
+A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, `summaryStatus`, `topics`, and `versions` (v2 and later, each with the instruction that produced it). Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs.
 
 ## Notes and limits
 

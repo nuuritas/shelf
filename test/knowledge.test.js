@@ -88,3 +88,46 @@ test('keeps the add form and long syntheses folded by default', () => {
   assert.match(html, /data-fold/);
   assert.match(html, /topic-tabs/);
 });
+
+test('keeps the original summary and renders new versions beside it', () => {
+  const html = renderPage({
+    bookmarks: [
+      {
+        tweetId: '123',
+        url: 'https://x.com/a/status/123',
+        text: 'A post worth a second angle.',
+        createdAt: '2026-11-01T10:00:00.000Z',
+        savedAt: '2026-11-01T10:00:00.000Z',
+        author: { name: 'A', username: 'a', avatarUrl: null, verified: false },
+        media: [],
+        quote: null,
+        article: null,
+        links: [],
+        metrics: {},
+        summary: 'ORIGINAL SUMMARY',
+        summaryStatus: 'done',
+        summarizedAt: '2026-11-01T10:01:00.000Z',
+        versions: [
+          {
+            version: 2,
+            instruction: 'focus on the tradeoffs',
+            summary: 'SECOND VERSION TEXT',
+            createdAt: '2026-11-02T10:00:00.000Z',
+          },
+        ],
+      },
+    ],
+    total: 1,
+    query: '',
+    topics: [],
+    notice: null,
+    error: null,
+    aiConfigured: true,
+  });
+
+  assert.match(html, /ORIGINAL SUMMARY/);
+  assert.match(html, /SECOND VERSION TEXT/);
+  assert.match(html, /2 versions/);
+  assert.match(html, /name="mode" value="version"/);
+  assert.match(html, /The original summary stays as it is/);
+});

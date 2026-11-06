@@ -13,6 +13,7 @@ const NOTICES = {
   exists: 'Already saved. The post has been refreshed.',
   deleted: 'Bookmark removed.',
   queued: 'Summary queued again.',
+  version: 'New version queued. The original summary stays as it is.',
 };
 
 export function renderPage({
@@ -25,9 +26,12 @@ export function renderPage({
   error,
   aiConfigured,
 }) {
-  const pending = bookmarks.some(bookmark =>
-    ['pending', 'working'].includes(bookmark.summaryStatus),
+  const pending = bookmarks.some(
+    bookmark =>
+      ['pending', 'working'].includes(bookmark.summaryStatus) ||
+      ['pending', 'working'].includes(bookmark.versionStatus),
   );
+  const returnTo = topic ? `/t/${topic.slug}` : '/';
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
 
@@ -117,7 +121,9 @@ export function renderPage({
 
           ${
             bookmarks.length
-              ? `<div class="cards">${bookmarks.map(bookmark => renderBookmark(bookmark, aiConfigured)).join('')}</div>`
+              ? `<div class="cards">${bookmarks
+                  .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo))
+                  .join('')}</div>`
               : renderEmpty(query)
           }
 
@@ -159,7 +165,7 @@ function renderTopicOverview(text) {
   `;
 }
 
-function renderBookmark(bookmark, aiConfigured) {
+function renderBookmark(bookmark, aiConfigured, returnTo = '/') {
   const author = bookmark.author ?? {};
   const handle = author.username ? `@${author.username}` : 'unknown';
   const avatar = safeHttpUrl(author.avatarUrl);
@@ -211,7 +217,7 @@ function renderBookmark(bookmark, aiConfigured) {
       ${renderMedia(bookmark.media, 'main')}
       ${bookmark.quote ? renderQuote(bookmark.quote) : ''}
       ${bookmark.links?.length ? renderLinks(bookmark.links) : ''}
-      ${renderSummary(bookmark, aiConfigured)}
+      ${renderSummary(bookmark, aiConfigured, returnTo)}
 
       ${extras.length ? `<p class="peek-meta">${escapeHtml(extras.join(' · '))}</p>` : ''}
 
@@ -333,22 +339,56 @@ function renderMedia(media, context) {
   return `<div class="media-grid ${context} media-count-${media.length}">${cells}</div>`;
 }
 
-function renderSummary(bookmark, aiConfigured) {
+function renderVersion(entry) {
+  const label = entry.instruction ? truncate(entry.instruction, 90) : 'Another angle';
+  return `
+    <details class="version">
+      <summary>
+        <span class="version-tag">v${Number(entry.version)}</span>
+        <span class="version-label">${escapeHtml(label)}</span>
+      </summary>
+      <div class="version-text">${linkifyText(entry.summary)}</div>
+    </details>
+  `;
+}
+
+function renderSummary(bookmark, aiConfigured, returnTo = '/') {
   const status = bookmark.summaryStatus || (aiConfigured ? 'pending' : 'disabled');
 
   if (status === 'done' && bookmark.summary) {
+    const versions = Array.isArray(bookmark.versions) ? bookmark.versions : [];
+    const busy = ['pending', 'working'].includes(bookmark.versionStatus);
+
     return `
       <section class="summary">
         <div class="summary-head">
           <span class="summary-mark">AI</span>
           <h3>Summary</h3>
+          ${versions.length ? `<span class="summary-count">${versions.length + 1} versions</span>` : ''}
           <span class="summary-time">${escapeHtml(formatDate(bookmark.summarizedAt))}</span>
         </div>
         <div class="summary-text">${linkifyText(bookmark.summary)}</div>
-        <form method="post" action="/summarize" class="summary-retry">
-          <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
-          <button class="link-button" type="submit">Summarize again</button>
-        </form>
+
+        ${versions.length ? `<div class="versions">${versions.map(renderVersion).join('')}</div>` : ''}
+        ${busy ? `<p class="version-note">Writing version ${versions.length + 2}…</p>` : ''}
+        ${
+          bookmark.versionError
+            ? `<p class="version-note error">${escapeHtml(truncate(bookmark.versionError, 240))}</p>`
+            : ''
+        }
+
+        <details class="regen">
+          <summary>New version</summary>
+          <form method="post" action="/summarize">
+            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+            <input type="hidden" name="mode" value="version">
+            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+            <label class="sr-only" for="instruction-${escapeHtml(bookmark.tweetId)}">What should this version focus on?</label>
+            <input class="regen-input" id="instruction-${escapeHtml(bookmark.tweetId)}" name="instruction" maxlength="500" placeholder="Optional: explain the tradeoffs, the history, what to do…">
+            <button type="submit">Write</button>
+          </form>
+          <p class="regen-note">The original summary stays as it is. Each request becomes a new version.</p>
+        </details>
       </section>
     `;
   }
@@ -1109,6 +1149,12 @@ h1, h2, h3, p { margin-top: 0; }
   letter-spacing: 0.03em;
 }
 
+.summary-count {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 .summary-time {
   margin-left: auto;
   color: var(--faint);
@@ -1417,6 +1463,105 @@ h1, h2, h3, p { margin-top: 0; }
 
 .fold-button:hover { text-decoration: underline; }
 
+.versions {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.version {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.version summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12.5px;
+  list-style: none;
+}
+
+.version summary::-webkit-details-marker { display: none; }
+
+.version-tag {
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.version-label {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-text {
+  padding: 0 12px 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.regen { margin-top: 12px; }
+
+.regen summary {
+  color: var(--accent-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.regen summary::-webkit-details-marker { display: none; }
+
+.regen form {
+  display: flex;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.regen-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.regen button {
+  padding: 8px 13px;
+  border: none;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.regen-note {
+  margin: 6px 0 0;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.version-note {
+  margin: 8px 0 0;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.version-note.error { color: var(--red); }
+
 .card.is-collapsed { cursor: pointer; }
 
 .card.is-collapsed .tweet-text,
@@ -1431,7 +1576,8 @@ h1, h2, h3, p { margin-top: 0; }
 .card.is-collapsed .quote,
 .card.is-collapsed .link-stack,
 .card.is-collapsed .linked-article,
-.card.is-collapsed .summary-retry { display: none; }
+.card.is-collapsed .versions,
+.card.is-collapsed .regen { display: none; }
 
 .peek-meta {
   display: none;
@@ -1498,6 +1644,7 @@ h1, h2, h3, p { margin-top: 0; }
   .media-grid.media-count-3 .media-cell:first-child { grid-column: span 2; }
   .top-actions .count { display: none; }
   .login-card { padding: 25px; }
+  .regen form { flex-direction: column; }
   .topic-hero { padding: 30px 0 20px; }
   .topic-overview { padding: 16px 17px; }
   .topic-overview p { font-size: 15px; }

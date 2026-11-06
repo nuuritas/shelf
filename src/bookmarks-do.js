@@ -57,6 +57,16 @@ export class Bookmarks extends DurableObject {
 
       CREATE INDEX IF NOT EXISTS idx_item_topics_slug
       ON item_topics (slug);
+
+      CREATE TABLE IF NOT EXISTS summary_versions (
+        tweet_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        instruction TEXT NOT NULL DEFAULT '',
+        summary TEXT NOT NULL,
+        model TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (tweet_id, version)
+      );
     `);
 
     try {
@@ -69,6 +79,19 @@ export class Bookmarks extends DurableObject {
       this.sql.exec('ALTER TABLE bookmarks ADD COLUMN topics_at TEXT');
     } catch {
       // Fresh databases already have the column.
+    }
+
+    for (const statement of [
+      "ALTER TABLE bookmarks ADD COLUMN version_status TEXT",
+      "ALTER TABLE bookmarks ADD COLUMN version_instruction TEXT",
+      'ALTER TABLE bookmarks ADD COLUMN version_started_at INTEGER',
+      'ALTER TABLE bookmarks ADD COLUMN version_error TEXT',
+    ]) {
+      try {
+        this.sql.exec(statement);
+      } catch {
+        // Fresh databases already have the column.
+      }
     }
 
     try {
@@ -122,7 +145,7 @@ export class Bookmarks extends DurableObject {
 
       if (request.method === 'POST' && url.pathname === '/resummarize') {
         const body = await request.json();
-        await this.resummarize(body.id);
+        await this.resummarize(body.id, body);
         return jsonResponse({ queued: true });
       }
 
@@ -259,6 +282,7 @@ export class Bookmarks extends DurableObject {
 
     const bookmarks = rows.map(rowToBookmark);
     this.attachTopics(bookmarks);
+    this.attachVersions(bookmarks);
 
     return {
       bookmarks,
@@ -293,6 +317,38 @@ export class Bookmarks extends DurableObject {
     }
     for (const bookmark of bookmarks) {
       bookmark.topics = byTweet.get(bookmark.tweetId) ?? [];
+    }
+    return bookmarks;
+  }
+
+  attachVersions(bookmarks) {
+    if (!bookmarks.length) return bookmarks;
+    const ids = bookmarks.map(bookmark => bookmark.tweetId);
+    const placeholders = ids.map(() => '?').join(', ');
+    const rows = this.sql
+      .exec(
+        `SELECT tweet_id, version, instruction, summary, model, created_at
+         FROM summary_versions
+         WHERE tweet_id IN (${placeholders})
+         ORDER BY version ASC`,
+        ...ids,
+      )
+      .toArray();
+
+    const byTweet = new Map();
+    for (const row of rows) {
+      const list = byTweet.get(row.tweet_id) ?? [];
+      list.push({
+        version: Number(row.version),
+        instruction: row.instruction || '',
+        summary: row.summary,
+        model: row.model,
+        createdAt: row.created_at,
+      });
+      byTweet.set(row.tweet_id, list);
+    }
+    for (const bookmark of bookmarks) {
+      bookmark.versions = byTweet.get(bookmark.tweetId) ?? [];
     }
     return bookmarks;
   }
@@ -335,6 +391,7 @@ export class Bookmarks extends DurableObject {
       .toArray()
       .map(rowToBookmark);
     this.attachTopics(bookmarks);
+    this.attachVersions(bookmarks);
 
     return {
       topic: {
@@ -358,7 +415,27 @@ export class Bookmarks extends DurableObject {
     if (!row) return null;
     const bookmark = rowToBookmark(row);
     this.attachTopics([bookmark]);
+    bookmark.versions = this.versions(bookmark.tweetId);
     return bookmark;
+  }
+
+  versions(tweetId) {
+    return this.sql
+      .exec(
+        `SELECT version, instruction, summary, model, created_at
+         FROM summary_versions
+         WHERE tweet_id = ?
+         ORDER BY version ASC`,
+        String(tweetId),
+      )
+      .toArray()
+      .map(row => ({
+        version: Number(row.version),
+        instruction: row.instruction || '',
+        summary: row.summary,
+        model: row.model,
+        createdAt: row.created_at,
+      }));
   }
 
   delete(tweetId) {
@@ -373,6 +450,7 @@ export class Bookmarks extends DurableObject {
       .map(row => row.slug);
 
     this.sql.exec('DELETE FROM item_topics WHERE tweet_id = ?', id);
+    this.sql.exec('DELETE FROM summary_versions WHERE tweet_id = ?', id);
     this.sql.exec('DELETE FROM bookmarks WHERE tweet_id = ?', id);
 
     for (const slug of affected) {
@@ -387,9 +465,10 @@ export class Bookmarks extends DurableObject {
     return true;
   }
 
-  async resummarize(tweetId) {
+  async resummarize(tweetId, options = {}) {
     if (!tweetId) throw new Error('Missing bookmark id.');
-    const bookmark = this.get(String(tweetId));
+    const id = String(tweetId);
+    const bookmark = this.get(id);
     if (!bookmark) {
       const error = new Error('Bookmark not found.');
       error.status = 404;
@@ -399,13 +478,25 @@ export class Bookmarks extends DurableObject {
       throw new Error('OPENCODE_API_KEY is not configured.');
     }
 
-    this.sql.exec(
-      `UPDATE bookmarks
-       SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
-           topics_status = 'pending', topics_at = NULL
-       WHERE tweet_id = ?`,
-      String(tweetId),
-    );
+    if (options.mode === 'version') {
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET version_status = 'pending', version_instruction = ?, version_error = NULL,
+             version_started_at = NULL
+         WHERE tweet_id = ?`,
+        String(options.instruction || '').slice(0, 500),
+        id,
+      );
+    } else {
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
+             topics_status = 'pending', topics_at = NULL
+         WHERE tweet_id = ?`,
+        id,
+      );
+    }
+
     await this.ctx.storage.setAlarm(Date.now() + 250);
   }
 
@@ -439,6 +530,13 @@ export class Bookmarks extends DurableObject {
       staleBefore,
     );
 
+    this.sql.exec(
+      `UPDATE bookmarks
+       SET version_status = 'pending', version_started_at = NULL
+       WHERE version_status = 'working' AND version_started_at < ?`,
+      staleBefore,
+    );
+
     const pendingSummary = this.sql
       .exec(
         `SELECT * FROM bookmarks
@@ -450,6 +548,21 @@ export class Bookmarks extends DurableObject {
 
     if (pendingSummary) {
       await this.summarizeRow(pendingSummary);
+      await this.scheduleNext();
+      return;
+    }
+
+    const pendingVersion = this.sql
+      .exec(
+        `SELECT * FROM bookmarks
+         WHERE version_status = 'pending'
+         ORDER BY saved_at ASC
+         LIMIT 1`,
+      )
+      .toArray()[0];
+
+    if (pendingVersion) {
+      await this.generateVersion(pendingVersion);
       await this.scheduleNext();
       return;
     }
@@ -524,6 +637,7 @@ export class Bookmarks extends DurableObject {
            (SELECT COUNT(*) FROM bookmarks WHERE summary_status = 'pending') AS summaries,
            (SELECT COUNT(*) FROM bookmarks
              WHERE summary_status = 'done' AND topics_status = 'pending') AS filings,
+           (SELECT COUNT(*) FROM bookmarks WHERE version_status = 'pending') AS versions,
            (SELECT COUNT(*) FROM topics t WHERE t.overview IS NULL OR t.overview_count != (
              SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug
            )) AS overviews`,
@@ -532,6 +646,7 @@ export class Bookmarks extends DurableObject {
 
     const remaining =
       Number(pending?.summaries ?? 0) +
+      Number(pending?.versions ?? 0) +
       (hasTopics ? Number(pending?.filings ?? 0) : 0) +
       Number(pending?.overviews ?? 0);
 
@@ -672,6 +787,71 @@ export class Bookmarks extends DurableObject {
       this.sql.exec(
         `UPDATE bookmarks SET topics_status = 'failed', topics_at = ? WHERE tweet_id = ?`,
         new Date().toISOString(),
+        tweetId,
+      );
+    }
+  }
+
+  async generateVersion(row) {
+    const tweetId = String(row.tweet_id);
+
+    if (!isAiConfigured(this.env)) {
+      this.sql.exec(
+        `UPDATE bookmarks SET version_status = 'failed', version_error = 'AI is not configured.'
+         WHERE tweet_id = ?`,
+        tweetId,
+      );
+      return;
+    }
+
+    this.sql.exec(
+      `UPDATE bookmarks SET version_status = 'working', version_started_at = ?
+       WHERE tweet_id = ?`,
+      Date.now(),
+      tweetId,
+    );
+
+    try {
+      const bookmark = rowToBookmark(row);
+      const maxRow = this.sql
+        .exec(
+          'SELECT COALESCE(MAX(version), 1) AS max FROM summary_versions WHERE tweet_id = ?',
+          tweetId,
+        )
+        .toArray()[0];
+      const version = Number(maxRow?.max ?? 1) + 1;
+      const instruction = String(row.version_instruction || '').slice(0, 500);
+
+      const result = await summarizePost(bookmark, this.env, {
+        instruction,
+        previousSummary: bookmark.summary || '',
+        session: `xbv-${tweetId}-v${version}`,
+      });
+
+      this.sql.exec(
+        `INSERT INTO summary_versions (tweet_id, version, instruction, summary, model, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        tweetId,
+        version,
+        instruction,
+        result.text,
+        result.model,
+        new Date().toISOString(),
+      );
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET version_status = NULL, version_instruction = NULL, version_error = NULL,
+             version_started_at = NULL
+         WHERE tweet_id = ?`,
+        tweetId,
+      );
+    } catch (error) {
+      console.error('Version summary failed', tweetId, error);
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET version_status = 'failed', version_error = ?, version_started_at = NULL
+         WHERE tweet_id = ?`,
+        error instanceof Error ? error.message.slice(0, 500) : 'Unknown version error.',
         tweetId,
       );
     }
@@ -825,6 +1005,8 @@ function rowToBookmark(row) {
     summaryStatus: row.summary_status,
     summaryError: row.summary_error,
     summarizedAt: row.summarized_at,
+    versionStatus: row.version_status,
+    versionError: row.version_error,
   };
 }
 

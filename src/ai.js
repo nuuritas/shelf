@@ -8,7 +8,7 @@ export function isAiConfigured(env) {
   return Boolean(env.OPENCODE_API_KEY);
 }
 
-export async function summarizePost(post, env) {
+export async function summarizePost(post, env, options = {}) {
   if (!env.OPENCODE_API_KEY) {
     throw new Error('OPENCODE_API_KEY is not configured.');
   }
@@ -42,6 +42,9 @@ export async function summarizePost(post, env) {
       {
         role: 'system',
         content:
+          (options.instruction
+            ? `You are writing a new version of an existing explanation because the reader asked for a different angle. The existing summary is context, not a template: do not repeat it or pad it. Answer the reader's request directly and concretely, and keep the same natural, non-robotic voice. Write in ${language}. `
+            : '') +
           `You are a perceptive analyst and explainer. The user saves posts and links because they want to understand what something is, the context around it, and why it matters. Write in ${language}, like a smart colleague explaining it to them. ` +
           'Start with one or two sentences: what this is and the situation or context. Then explain the central idea or argument in natural paragraphs, using concrete details and examples from the supplied content. Briefly explain jargon instead of repeating it. ' +
           'If it is a GitHub repository, explain what the project actually does, who it is for, how it works, and its notable features or maturity. If it is an article, explain its thesis, the context it responds to, and its implications. If the post itself is just a comment on a link, connect the comment to the linked content. ' +
@@ -51,7 +54,13 @@ export async function summarizePost(post, env) {
       {
         role: 'user',
         content: [
-          { type: 'text', text: buildPrompt(post, imageNotes) },
+          {
+            type: 'text',
+            text: buildPrompt(post, imageNotes, {
+              instruction: options.instruction,
+              previous: options.previousSummary,
+            }),
+          },
           ...imageParts,
         ],
       },
@@ -74,7 +83,7 @@ export async function summarizePost(post, env) {
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'User-Agent': 'XBookmarkVault/1.0',
-        'x-opencode-session': `xbv-${post.tweetId}`,
+        'x-opencode-session': options.session || `xbv-${post.tweetId}`,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -123,7 +132,7 @@ export async function summarizePost(post, env) {
   }
 }
 
-function buildPrompt(post, imageNotes) {
+function buildPrompt(post, imageNotes, options = {}) {
   const lines = [
     'Summarize this saved X post.',
     '',
@@ -168,6 +177,20 @@ function buildPrompt(post, imageNotes) {
           : String(link.text || '').slice(0, 20_000),
       );
     }
+  }
+
+  if (options.previous) {
+    lines.push('', 'THE EXPLANATION THE READER ALREADY HAS:', String(options.previous).slice(0, 6000));
+  }
+
+  if (options.instruction) {
+    lines.push(
+      '',
+      "THE READER'S NEW REQUEST:",
+      String(options.instruction).slice(0, 600),
+      '',
+      'Write a new explanation of 3-5 paragraphs (roughly 250-450 words) that answers this request using the same material. Do not restate the existing explanation, do not mention that this is a new version, and do not use headings or bullet lists.',
+    );
   }
 
   lines.push(
