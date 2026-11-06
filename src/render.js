@@ -530,7 +530,7 @@ function pageShell({ title, bodyClass, head, body }) {
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=4">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
