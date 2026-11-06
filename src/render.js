@@ -77,32 +77,15 @@ export function renderPage({
         ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
         ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
 
-        ${
-          topic
-            ? `
-          <section class="topic-hero">
-            <p class="eyebrow">Topic · ${topic.count} saved</p>
-            <h1>${escapeHtml(topic.name)}</h1>
-            ${topic.description ? `<p class="topic-description">${escapeHtml(topic.description)}</p>` : ''}
-            ${
-              topic.overview
-                ? renderTopicOverview(topic.overview)
-                : `<p class="topic-overview-empty">The synthesis for this thread is still being written.</p>`
-            }
-          </section>
-        `
-            : ''
-        }
-
-        <section class="library">
+        <section class="library" id="library">
           <div class="library-head">
             <div>
-              <p class="eyebrow">${topic ? 'Collected here' : 'Library'}</p>
+              <p class="eyebrow">${topic ? `Topic · ${topic.count} saved` : 'Library'}</p>
               <h2>${
                 query
                   ? `Results for “${escapeHtml(query)}”`
                   : topic
-                    ? 'Everything in this thread'
+                    ? escapeHtml(topic.name)
                     : 'Latest saves'
               }</h2>
             </div>
@@ -113,6 +96,19 @@ export function renderPage({
               ${query ? '<a class="clear-search" href="/">Clear</a>' : ''}
             </form>
           </div>
+
+          ${
+            topic
+              ? `<div class="topic-brief">
+                  ${topic.description ? `<p class="topic-description">${escapeHtml(topic.description)}</p>` : ''}
+                  ${
+                    topic.overview
+                      ? renderTopicOverview(topic.overview)
+                      : `<p class="topic-overview-empty">The synthesis for this thread is still being written.</p>`
+                  }
+                </div>`
+              : ''
+          }
 
           <nav class="topic-tabs" aria-label="Topics">
             <a class="topic-tab all ${topic ? '' : 'active'}" href="/">All<span>${total}</span></a>
@@ -530,7 +526,7 @@ function pageShell({ title, bodyClass, head, body }) {
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=4">
+  <link rel="stylesheet" href="/style.css?v=5">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -783,6 +779,12 @@ h1, h2, h3, p { margin-top: 0; }
 
 .library { padding: 12px 0 70px; }
 
+.library.is-loading {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
 .library-head {
   display: flex;
   align-items: flex-end;
@@ -843,6 +845,7 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 .card {
+  min-width: 0;
   padding: 22px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1390,6 +1393,43 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 0 16px 14px;
 }
 
+.topic-brief {
+  max-width: 720px;
+  margin: 4px 0 10px;
+}
+
+.topic-description {
+  margin: 0 0 14px;
+  max-width: 620px;
+  color: var(--muted);
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+
+.topic-overview {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--surface-soft);
+}
+
+.topic-overview p {
+  overflow-wrap: anywhere;
+  margin: 0 0 14px;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.68;
+}
+
+.topic-overview p:last-child { margin-bottom: 0; }
+
+.topic-overview-empty {
+  color: var(--faint);
+  font-size: 14px;
+  font-style: italic;
+}
+
 .topic-tabs {
   position: sticky;
   top: 0;
@@ -1464,18 +1504,21 @@ h1, h2, h3, p { margin-top: 0; }
 .fold-button:hover { text-decoration: underline; }
 
 .versions {
+  min-width: 0;
   display: grid;
   gap: 6px;
   margin-top: 12px;
 }
 
 .version {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
 }
 
 .version summary {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1494,6 +1537,7 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 .version-label {
+  min-width: 0;
   overflow: hidden;
   color: var(--muted);
   text-overflow: ellipsis;
@@ -1501,6 +1545,7 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 .version-text {
+  overflow-wrap: anywhere;
   padding: 0 12px 12px;
   font-size: 14px;
   line-height: 1.6;
@@ -1645,7 +1690,8 @@ h1, h2, h3, p { margin-top: 0; }
   .top-actions .count { display: none; }
   .login-card { padding: 25px; }
   .regen form { flex-direction: column; }
-  .topic-hero { padding: 30px 0 20px; }
+  .topic-brief { margin: 0 0 8px; }
+  .topic-overview { padding: 15px 16px; }
   .topic-overview { padding: 16px 17px; }
   .topic-overview p { font-size: 15px; }
 }

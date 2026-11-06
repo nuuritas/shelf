@@ -37,3 +37,50 @@ document.addEventListener('click', event => {
   const folded = box.classList.toggle('is-folded');
   fold.textContent = folded ? 'Read the full synthesis' : 'Show less';
 });
+
+async function swapLibrary(href, push) {
+  const library = document.querySelector('#library');
+  if (!library) {
+    window.location.href = href;
+    return;
+  }
+
+  library.classList.add('is-loading');
+
+  try {
+    const response = await fetch(href, {
+      credentials: 'same-origin',
+      headers: { Accept: 'text/html' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const next = doc.querySelector('#library');
+    if (!next) throw new Error('No library in response');
+
+    library.innerHTML = next.innerHTML;
+    document.title = doc.title;
+    if (push) history.pushState({ library: href }, '', href);
+  } catch {
+    window.location.href = href;
+  } finally {
+    library.classList.remove('is-loading');
+  }
+}
+
+document.addEventListener('click', event => {
+  const tab = event.target.closest('.topic-tab');
+  if (!tab) return;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const href = tab.getAttribute('href');
+  if (!href) return;
+  event.preventDefault();
+  swapLibrary(href, true);
+});
+
+window.addEventListener('popstate', () => {
+  if (location.pathname === '/' || location.pathname.startsWith('/t/')) {
+    swapLibrary(`${location.pathname}${location.search}`, false);
+  }
+});
