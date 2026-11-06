@@ -1,0 +1,12 @@
+{
+  "name": "x-bookmark-vault",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A tiny Cloudflare-native X bookmark reader with automatic AI summaries.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test"
+  }
+}

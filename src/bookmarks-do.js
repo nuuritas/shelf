@@ -1,0 +1,838 @@
+import { DurableObject } from 'cloudflare:workers';
+import { bootstrapTopics, classifyPost, isAiConfigured, summarizePost, writeTopicOverview } from './ai.js';
+import { readExternalLinks } from './links.js';
+import { clampInteger, jsonResponse } from './util.js';
+import { readPost } from './x.js';
+
+const STALE_SUMMARY_MS = 10 * 60 * 1000;
+
+export class Bookmarks extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS bookmarks (
+        tweet_id TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        author_name TEXT,
+        author_username TEXT,
+        author_avatar_url TEXT,
+        author_verified INTEGER NOT NULL DEFAULT 0,
+        text TEXT NOT NULL DEFAULT '',
+        created_at TEXT,
+        saved_at TEXT NOT NULL,
+        provider TEXT,
+        media_json TEXT NOT NULL DEFAULT '[]',
+        quote_json TEXT NOT NULL DEFAULT 'null',
+        article_json TEXT NOT NULL DEFAULT 'null',
+        links_json TEXT NOT NULL DEFAULT '[]',
+        metrics_json TEXT NOT NULL DEFAULT '{}',
+        summary TEXT,
+        summary_status TEXT NOT NULL DEFAULT 'pending',
+        summary_error TEXT,
+        summary_started_at INTEGER,
+        summarized_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_bookmarks_saved_at
+      ON bookmarks (saved_at DESC);
+
+      CREATE TABLE IF NOT EXISTS topics (
+        slug TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        overview TEXT,
+        overview_at TEXT,
+        overview_count INTEGER NOT NULL DEFAULT -1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS item_topics (
+        tweet_id TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 1,
+        PRIMARY KEY (tweet_id, slug)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_item_topics_slug
+      ON item_topics (slug);
+    `);
+
+    try {
+      this.sql.exec("ALTER TABLE bookmarks ADD COLUMN topics_status TEXT NOT NULL DEFAULT 'pending'");
+    } catch {
+      // Fresh databases already have the column.
+    }
+
+    try {
+      this.sql.exec('ALTER TABLE bookmarks ADD COLUMN topics_at TEXT');
+    } catch {
+      // Fresh databases already have the column.
+    }
+
+    try {
+      this.sql.exec("ALTER TABLE bookmarks ADD COLUMN article_json TEXT NOT NULL DEFAULT 'null'");
+    } catch {
+      // Fresh databases already have the column.
+    }
+
+    try {
+      this.sql.exec("ALTER TABLE bookmarks ADD COLUMN links_json TEXT NOT NULL DEFAULT '[]'");
+    } catch {
+      // Fresh databases already have the column.
+    }
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    try {
+      if (request.method === 'POST' && url.pathname === '/save') {
+        const body = await request.json();
+        return jsonResponse(await this.save(body.url));
+      }
+
+      if (request.method === 'GET' && url.pathname === '/list') {
+        return jsonResponse(this.list(url.searchParams));
+      }
+
+      if (request.method === 'GET' && url.pathname === '/topics') {
+        return jsonResponse({ topics: this.topics() });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/topic') {
+        return jsonResponse(this.topic(url.searchParams.get('slug')));
+      }
+
+      if (request.method === 'POST' && url.pathname === '/reindex') {
+        return jsonResponse(await this.reindex());
+      }
+
+      if (request.method === 'GET' && url.pathname === '/get') {
+        const bookmark = this.get(url.searchParams.get('id'));
+        if (!bookmark) return jsonResponse({ error: 'Bookmark not found.' }, 404);
+        return jsonResponse({ bookmark });
+      }
+
+      if (request.method === 'DELETE' && url.pathname === '/delete') {
+        const body = await request.json();
+        return jsonResponse({ deleted: this.delete(body.id) });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/resummarize') {
+        const body = await request.json();
+        await this.resummarize(body.id);
+        return jsonResponse({ queued: true });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/stats') {
+        return jsonResponse(this.stats());
+      }
+
+      return jsonResponse({ error: 'Not found.' }, 404);
+    } catch (error) {
+      console.error('Durable Object error', error);
+      const status = Number.isInteger(error?.status) ? error.status : 500;
+      return jsonResponse(
+        { error: error instanceof Error ? error.message : 'Unexpected error.' },
+        status,
+      );
+    }
+  }
+
+  async save(input) {
+    const post = await readPost(input, this.env);
+    const existing = this.sql
+      .exec(
+        `SELECT tweet_id, summary, summary_status, text, article_json
+         FROM bookmarks WHERE tweet_id = ?`,
+        post.tweetId,
+      )
+      .toArray()[0];
+
+    const now = new Date().toISOString();
+    const aiReady = isAiConfigured(this.env);
+    const articleJson = JSON.stringify(post.article ?? null);
+    const contentChanged = Boolean(
+      existing &&
+        (existing.text !== (post.text ?? '') || existing.article_json !== articleJson),
+    );
+    const alreadySummarized = Boolean(existing?.summary) && !contentChanged;
+    const shouldSummarize = aiReady && !alreadySummarized;
+    const summaryStatus = alreadySummarized
+      ? existing.summary_status || 'done'
+      : shouldSummarize
+        ? 'pending'
+        : 'disabled';
+
+    const values = [
+      post.tweetId,
+      post.url,
+      post.author?.name ?? null,
+      post.author?.username ?? null,
+      post.author?.avatarUrl ?? null,
+      post.author?.verified ? 1 : 0,
+      post.text ?? '',
+      post.createdAt ?? null,
+      now,
+      post.provider ?? null,
+      JSON.stringify(post.media ?? []),
+      JSON.stringify(post.quote ?? null),
+      articleJson,
+      JSON.stringify(post.metrics ?? {}),
+      summaryStatus,
+    ];
+
+    if (existing) {
+      this.sql.exec(
+        `UPDATE bookmarks SET
+          url = ?, author_name = ?, author_username = ?, author_avatar_url = ?,
+          author_verified = ?, text = ?, created_at = ?, saved_at = ?, provider = ?,
+          media_json = ?, quote_json = ?, article_json = ?, metrics_json = ?,
+          summary_status = ?, summary_error = NULL
+        WHERE tweet_id = ?`,
+        ...values.slice(1),
+        post.tweetId,
+      );
+    } else {
+      this.sql.exec(
+        `INSERT INTO bookmarks (
+          tweet_id, url, author_name, author_username, author_avatar_url, author_verified,
+          text, created_at, saved_at, provider, media_json, quote_json, article_json,
+          metrics_json, summary_status, summary_started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        ...values,
+      );
+    }
+
+    if (shouldSummarize) {
+      this.sql.exec(
+        `UPDATE bookmarks SET topics_status = 'pending', topics_at = NULL WHERE tweet_id = ?`,
+        post.tweetId,
+      );
+      await this.ctx.storage.setAlarm(Date.now() + 250);
+    }
+
+    return {
+      created: !existing,
+      bookmark: this.get(post.tweetId),
+    };
+  }
+
+  list(searchParams) {
+    const query = (searchParams.get('q') || '').trim();
+    const topicSlug = (searchParams.get('topic') || '').trim();
+    const limit = clampInteger(searchParams.get('limit'), 50, 1, 100);
+    const offset = clampInteger(searchParams.get('offset'), 0, 0, 10_000);
+
+    const filters = [];
+    const args = [];
+
+    if (topicSlug) {
+      filters.push('tweet_id IN (SELECT tweet_id FROM item_topics WHERE slug = ?)');
+      args.push(topicSlug);
+    }
+
+    if (query) {
+      filters.push(`(
+        instr(lower(text), lower(?)) > 0
+        OR instr(lower(COALESCE(author_name, '')), lower(?)) > 0
+        OR instr(lower(COALESCE(author_username, '')), lower(?)) > 0
+      )`);
+      args.push(query, query, query);
+    }
+
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+    const rows = this.sql
+      .exec(
+        `SELECT * FROM bookmarks ${where} ORDER BY saved_at DESC LIMIT ? OFFSET ?`,
+        ...args,
+        limit,
+        offset,
+      )
+      .toArray();
+    const countRow = this.sql
+      .exec(`SELECT COUNT(*) AS count FROM bookmarks ${where}`, ...args)
+      .toArray()[0];
+
+    const bookmarks = rows.map(rowToBookmark);
+    this.attachTopics(bookmarks);
+
+    return {
+      bookmarks,
+      total: Number(countRow?.count ?? 0),
+      query,
+      topic: topicSlug || null,
+      limit,
+      offset,
+    };
+  }
+
+  attachTopics(bookmarks) {
+    if (!bookmarks.length) return bookmarks;
+    const ids = bookmarks.map(bookmark => bookmark.tweetId);
+    const placeholders = ids.map(() => '?').join(', ');
+    const rows = this.sql
+      .exec(
+        `SELECT it.tweet_id, it.slug, t.name
+         FROM item_topics it
+         JOIN topics t ON t.slug = it.slug
+         WHERE it.tweet_id IN (${placeholders})
+         ORDER BY t.name`,
+        ...ids,
+      )
+      .toArray();
+
+    const byTweet = new Map();
+    for (const row of rows) {
+      const list = byTweet.get(row.tweet_id) ?? [];
+      list.push({ slug: row.slug, name: row.name });
+      byTweet.set(row.tweet_id, list);
+    }
+    for (const bookmark of bookmarks) {
+      bookmark.topics = byTweet.get(bookmark.tweetId) ?? [];
+    }
+    return bookmarks;
+  }
+
+  topics() {
+    return this.sql
+      .exec(
+        `SELECT t.slug, t.name, t.description, t.overview, t.overview_at,
+                (SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug) AS count
+         FROM topics t
+         ORDER BY count DESC, t.name COLLATE NOCASE`,
+      )
+      .toArray()
+      .map(row => ({
+        slug: row.slug,
+        name: row.name,
+        description: row.description,
+        overview: row.overview || '',
+        overviewAt: row.overview_at,
+        count: Number(row.count ?? 0),
+      }));
+  }
+
+  topic(slug) {
+    const clean = String(slug || '').trim();
+    const row = clean
+      ? this.sql.exec('SELECT * FROM topics WHERE slug = ?', clean).toArray()[0]
+      : null;
+    if (!row) return { topic: null, bookmarks: [], total: 0 };
+
+    const bookmarks = this.sql
+      .exec(
+        `SELECT b.* FROM bookmarks b
+         JOIN item_topics it ON it.tweet_id = b.tweet_id
+         WHERE it.slug = ?
+         ORDER BY b.saved_at DESC
+         LIMIT 100`,
+        clean,
+      )
+      .toArray()
+      .map(rowToBookmark);
+    this.attachTopics(bookmarks);
+
+    return {
+      topic: {
+        slug: row.slug,
+        name: row.name,
+        description: row.description,
+        overview: row.overview || '',
+        overviewAt: row.overview_at,
+        count: bookmarks.length,
+      },
+      bookmarks,
+      total: bookmarks.length,
+    };
+  }
+
+  get(tweetId) {
+    if (!tweetId) return null;
+    const row = this.sql
+      .exec('SELECT * FROM bookmarks WHERE tweet_id = ?', String(tweetId))
+      .toArray()[0];
+    if (!row) return null;
+    const bookmark = rowToBookmark(row);
+    this.attachTopics([bookmark]);
+    return bookmark;
+  }
+
+  delete(tweetId) {
+    if (!tweetId) return false;
+    const id = String(tweetId);
+    const before = this.sql.exec('SELECT tweet_id FROM bookmarks WHERE tweet_id = ?', id).toArray();
+    if (!before.length) return false;
+
+    const affected = this.sql
+      .exec('SELECT DISTINCT slug FROM item_topics WHERE tweet_id = ?', id)
+      .toArray()
+      .map(row => row.slug);
+
+    this.sql.exec('DELETE FROM item_topics WHERE tweet_id = ?', id);
+    this.sql.exec('DELETE FROM bookmarks WHERE tweet_id = ?', id);
+
+    for (const slug of affected) {
+      const remaining = this.sql
+        .exec('SELECT COUNT(*) AS count FROM item_topics WHERE slug = ?', slug)
+        .toArray()[0];
+      if (Number(remaining?.count ?? 0) === 0) {
+        this.sql.exec('DELETE FROM topics WHERE slug = ?', slug);
+      }
+    }
+
+    return true;
+  }
+
+  async resummarize(tweetId) {
+    if (!tweetId) throw new Error('Missing bookmark id.');
+    const bookmark = this.get(String(tweetId));
+    if (!bookmark) {
+      const error = new Error('Bookmark not found.');
+      error.status = 404;
+      throw error;
+    }
+    if (!isAiConfigured(this.env)) {
+      throw new Error('OPENCODE_API_KEY is not configured.');
+    }
+
+    this.sql.exec(
+      `UPDATE bookmarks
+       SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
+           topics_status = 'pending', topics_at = NULL
+       WHERE tweet_id = ?`,
+      String(tweetId),
+    );
+    await this.ctx.storage.setAlarm(Date.now() + 250);
+  }
+
+  stats() {
+    const row = this.sql
+      .exec(
+        `SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN summary_status = 'done' THEN 1 ELSE 0 END) AS summarized,
+          SUM(CASE WHEN summary_status IN ('pending', 'working') THEN 1 ELSE 0 END) AS pending
+        FROM bookmarks`,
+      )
+      .toArray()[0];
+
+    return {
+      total: Number(row?.total ?? 0),
+      summarized: Number(row?.summarized ?? 0),
+      pending: Number(row?.pending ?? 0),
+      topics: Number(
+        this.sql.exec('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
+      ),
+    };
+  }
+
+  async alarm() {
+    const staleBefore = Date.now() - STALE_SUMMARY_MS;
+    this.sql.exec(
+      `UPDATE bookmarks
+       SET summary_status = 'pending', summary_started_at = NULL
+       WHERE summary_status = 'working' AND summary_started_at < ?`,
+      staleBefore,
+    );
+
+    const pendingSummary = this.sql
+      .exec(
+        `SELECT * FROM bookmarks
+         WHERE summary_status = 'pending'
+         ORDER BY saved_at ASC
+         LIMIT 1`,
+      )
+      .toArray()[0];
+
+    if (pendingSummary) {
+      await this.summarizeRow(pendingSummary);
+      await this.scheduleNext();
+      return;
+    }
+
+    const counts = this.sql
+      .exec(
+        `SELECT
+           (SELECT COUNT(*) FROM bookmarks WHERE summary_status = 'done') AS done,
+           (SELECT COUNT(*) FROM topics) AS topics`,
+      )
+      .toArray()[0];
+    const done = Number(counts?.done ?? 0);
+    const topicCount = Number(counts?.topics ?? 0);
+
+    if (topicCount === 0 && done >= 3) {
+      const lastAttempt = Number((await this.ctx.storage.get('topicBootstrapAt')) || 0);
+      if (Date.now() - lastAttempt > 10 * 60 * 1000) {
+        await this.ctx.storage.put('topicBootstrapAt', Date.now());
+        try {
+          await this.reindex();
+        } catch (error) {
+          console.error('Automatic topic bootstrap failed', error);
+        }
+      }
+      await this.scheduleNext();
+      return;
+    }
+
+    if (topicCount > 0) {
+      const unfiled = this.sql
+        .exec(
+          `SELECT * FROM bookmarks
+           WHERE summary_status = 'done' AND topics_status = 'pending'
+           ORDER BY saved_at ASC
+           LIMIT 1`,
+        )
+        .toArray()[0];
+
+      if (unfiled) {
+        await this.classifyRow(unfiled);
+        await this.scheduleNext();
+        return;
+      }
+
+      const staleTopic = this.sql
+        .exec(
+          `SELECT t.slug FROM topics t
+           WHERE t.overview IS NULL OR t.overview_count != (
+             SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug
+           )
+           ORDER BY t.updated_at ASC
+           LIMIT 1`,
+        )
+        .toArray()[0];
+
+      if (staleTopic) {
+        await this.refreshTopic(staleTopic.slug);
+        await this.scheduleNext();
+        return;
+      }
+    }
+  }
+
+  async scheduleNext() {
+    const hasTopics = Number(
+      this.sql.exec('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
+    );
+
+    const pending = this.sql
+      .exec(
+        `SELECT
+           (SELECT COUNT(*) FROM bookmarks WHERE summary_status = 'pending') AS summaries,
+           (SELECT COUNT(*) FROM bookmarks
+             WHERE summary_status = 'done' AND topics_status = 'pending') AS filings,
+           (SELECT COUNT(*) FROM topics t WHERE t.overview IS NULL OR t.overview_count != (
+             SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug
+           )) AS overviews`,
+      )
+      .toArray()[0];
+
+    const remaining =
+      Number(pending?.summaries ?? 0) +
+      (hasTopics ? Number(pending?.filings ?? 0) : 0) +
+      Number(pending?.overviews ?? 0);
+
+    if (remaining > 0) {
+      await this.ctx.storage.setAlarm(Date.now() + 600);
+    }
+  }
+
+  async reindex() {
+    if (!isAiConfigured(this.env)) {
+      throw new Error('OPENCODE_API_KEY is not configured.');
+    }
+
+    const rows = this.sql
+      .exec(
+        `SELECT tweet_id, author_username, text, summary, saved_at
+         FROM bookmarks
+         WHERE summary_status = 'done' AND summary IS NOT NULL AND summary != ''
+         ORDER BY saved_at ASC
+         LIMIT 80`,
+      )
+      .toArray();
+
+    if (!rows.length) return { topics: [], assigned: 0 };
+
+    const items = rows.map(row => ({
+      id: String(row.tweet_id),
+      author: row.author_username,
+      date: (row.saved_at || '').slice(0, 10),
+      text: row.text,
+      summary: row.summary,
+    }));
+
+    const built = await bootstrapTopics(items, this.env);
+    if (!built.length) {
+      throw new Error('AI could not group the archive into topics.');
+    }
+
+    const merged = new Map();
+    for (const topic of built) {
+      const current = merged.get(topic.slug);
+      if (current) {
+        current.itemIds.push(...topic.itemIds);
+      } else {
+        merged.set(topic.slug, { ...topic, itemIds: [...topic.itemIds] });
+      }
+    }
+
+    const now = new Date().toISOString();
+    this.sql.exec('DELETE FROM item_topics');
+    this.sql.exec('DELETE FROM topics');
+
+    let assigned = 0;
+    for (const topic of merged.values()) {
+      this.sql.exec(
+        `INSERT INTO topics
+           (slug, name, description, overview, overview_at, overview_count, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, -1, ?, ?)`,
+        topic.slug,
+        topic.name,
+        topic.description,
+        now,
+        now,
+      );
+      for (const id of new Set(topic.itemIds)) {
+        this.sql.exec(
+          `INSERT OR IGNORE INTO item_topics (tweet_id, slug, confidence) VALUES (?, ?, 1)`,
+          id,
+          topic.slug,
+        );
+        assigned += 1;
+      }
+    }
+
+    this.sql.exec(
+      `UPDATE bookmarks SET topics_status = 'done', topics_at = ?
+       WHERE tweet_id IN (SELECT tweet_id FROM item_topics)`,
+      now,
+    );
+
+    await this.ctx.storage.setAlarm(Date.now() + 500);
+
+    return { topics: this.topics(), assigned };
+  }
+
+  async classifyRow(row) {
+    const tweetId = String(row.tweet_id);
+    const bookmark = rowToBookmark(row);
+    const topics = this.topics();
+
+    try {
+      const result = await classifyPost(
+        { post: bookmark, summary: bookmark.summary || '', topics },
+        this.env,
+      );
+
+      if (!result.slugs.length) {
+        throw new Error('AI did not pick a topic.');
+      }
+
+      const now = new Date().toISOString();
+
+      if (result.created) {
+        const exists = this.sql
+          .exec('SELECT slug FROM topics WHERE slug = ?', result.created.slug)
+          .toArray()[0];
+        if (!exists) {
+          this.sql.exec(
+            `INSERT INTO topics
+               (slug, name, description, overview, overview_at, overview_count, created_at, updated_at)
+             VALUES (?, ?, ?, NULL, NULL, -1, ?, ?)`,
+            result.created.slug,
+            result.created.name,
+            result.created.description,
+            now,
+            now,
+          );
+        }
+      }
+
+      this.sql.exec('DELETE FROM item_topics WHERE tweet_id = ?', tweetId);
+      for (const slug of result.slugs) {
+        this.sql.exec(
+          `INSERT OR IGNORE INTO item_topics (tweet_id, slug, confidence) VALUES (?, ?, ?)`,
+          tweetId,
+          slug,
+          result.confidence,
+        );
+        this.sql.exec('UPDATE topics SET updated_at = ? WHERE slug = ?', now, slug);
+      }
+      this.sql.exec(
+        `UPDATE bookmarks SET topics_status = 'done', topics_at = ? WHERE tweet_id = ?`,
+        now,
+        tweetId,
+      );
+    } catch (error) {
+      console.error('Topic filing failed', tweetId, error);
+      this.sql.exec(
+        `UPDATE bookmarks SET topics_status = 'failed', topics_at = ? WHERE tweet_id = ?`,
+        new Date().toISOString(),
+        tweetId,
+      );
+    }
+  }
+
+  async refreshTopic(slug) {
+    const row = this.sql
+      .exec('SELECT * FROM topics WHERE slug = ?', String(slug))
+      .toArray()[0];
+    if (!row) return;
+
+    const countRow = this.sql
+      .exec('SELECT COUNT(*) AS count FROM item_topics WHERE slug = ?', row.slug)
+      .toArray()[0];
+    const count = Number(countRow?.count ?? 0);
+    if (count === 0) return;
+
+    const rows = this.sql
+      .exec(
+        `SELECT b.author_username, b.text, b.summary, b.saved_at
+         FROM bookmarks b
+         JOIN item_topics it ON it.tweet_id = b.tweet_id
+         WHERE it.slug = ? AND b.summary IS NOT NULL AND b.summary != ''
+         ORDER BY b.saved_at DESC
+         LIMIT 14`,
+        row.slug,
+      )
+      .toArray()
+      .reverse();
+
+    if (!rows.length) {
+      this.sql.exec(
+        'UPDATE topics SET overview_count = ? WHERE slug = ?',
+        count,
+        row.slug,
+      );
+      return;
+    }
+
+    try {
+      const overview = await writeTopicOverview(
+        {
+          topic: { slug: row.slug, name: row.name, description: row.description },
+          previous: row.overview || '',
+          items: rows.map(item => ({
+            date: (item.saved_at || '').slice(0, 10),
+            author: item.author_username,
+            text: item.text,
+            summary: item.summary,
+          })),
+        },
+        this.env,
+      );
+
+      this.sql.exec(
+        'UPDATE topics SET overview = ?, overview_at = ?, overview_count = ? WHERE slug = ?',
+        overview,
+        new Date().toISOString(),
+        count,
+        row.slug,
+      );
+    } catch (error) {
+      console.error('Topic synthesis failed', row.slug, error);
+      this.sql.exec(
+        'UPDATE topics SET overview_count = ? WHERE slug = ?',
+        count,
+        row.slug,
+      );
+    }
+  }
+
+  async summarizeRow(row) {
+    const tweetId = String(row.tweet_id);
+
+    if (!isAiConfigured(this.env)) {
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_status = 'disabled', summary_error = NULL, summary_started_at = NULL
+         WHERE tweet_id = ?`,
+        tweetId,
+      );
+      return;
+    }
+
+    this.sql.exec(
+      `UPDATE bookmarks
+       SET summary_status = 'working', summary_error = NULL, summary_started_at = ?
+       WHERE tweet_id = ?`,
+      Date.now(),
+      tweetId,
+    );
+
+    try {
+      const bookmark = rowToBookmark(row);
+
+      try {
+        bookmark.links = await readExternalLinks(bookmark, this.env);
+        this.sql.exec(
+          'UPDATE bookmarks SET links_json = ? WHERE tweet_id = ?',
+          JSON.stringify(bookmark.links),
+          tweetId,
+        );
+      } catch (error) {
+        console.error('Link reading failed', tweetId, error);
+      }
+
+      const result = await summarizePost(bookmark, this.env);
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary = ?, summary_status = 'done', summary_error = NULL,
+             summary_started_at = NULL, summarized_at = ?,
+             topics_status = 'pending', topics_at = NULL
+         WHERE tweet_id = ?`,
+        result.text,
+        new Date().toISOString(),
+        tweetId,
+      );
+    } catch (error) {
+      console.error('Summary failed', tweetId, error);
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_status = 'failed', summary_error = ?, summary_started_at = NULL
+         WHERE tweet_id = ?`,
+        error instanceof Error ? error.message.slice(0, 500) : 'Unknown summary error.',
+        tweetId,
+      );
+    }
+  }
+}
+
+function rowToBookmark(row) {
+  return {
+    tweetId: row.tweet_id,
+    url: row.url,
+    text: row.text,
+    createdAt: row.created_at,
+    savedAt: row.saved_at,
+    provider: row.provider,
+    author: {
+      name: row.author_name,
+      username: row.author_username,
+      avatarUrl: row.author_avatar_url,
+      verified: Boolean(row.author_verified),
+    },
+    media: parseJson(row.media_json, []),
+    quote: parseJson(row.quote_json, null),
+    article: parseJson(row.article_json, null),
+    links: parseJson(row.links_json, []),
+    metrics: parseJson(row.metrics_json, {}),
+    summary: row.summary,
+    summaryStatus: row.summary_status,
+    summaryError: row.summary_error,
+    summarizedAt: row.summarized_at,
+  };
+}
+
+function parseJson(value, fallback) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}

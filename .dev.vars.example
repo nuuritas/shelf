@@ -1,0 +1,15 @@
+# Password for the web app and share target.
+APP_PASSWORD=replace-with-a-long-password
+
+# Optional. Used to sign the session cookie. If omitted, APP_PASSWORD is used.
+# APP_SECRET=replace-with-another-long-secret
+
+# OpenCode Go API key. Leave empty to save bookmarks without AI summaries.
+OPENCODE_API_KEY=
+
+# Required only for rebuilding the Android APK.
+# Use a long random value; the same value must be set as the Worker secret.
+SHARE_TOKEN=
+
+# Password for the local APK signing keystore.
+KEYSTORE_PASS=

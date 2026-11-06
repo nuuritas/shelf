@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "x-bookmark-vault",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-26",
+  "assets": {
+    "directory": "./public"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BOOKMARKS",
+        "class_name": "Bookmarks"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Bookmarks"]
+    }
+  ],
+  "vars": {
+    "AI_BASE_URL": "https://opencode.ai/inference/go/openai/v1",
+    "AI_MODEL": "deepseek-v4.1-flash",
+    "SUMMARY_LANGUAGE": "tr"
+  }
+}
