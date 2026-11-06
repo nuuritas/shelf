@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  */
 public class ShareActivity extends Activity {
     private static final String ENDPOINT =
-            "https://x-bookmark-vault.nuuritas.workers.dev/api/bookmarks";
+            "https://bookmark.nuritas.tr/api/bookmarks";
     private static final String TOKEN = "__SHARE_TOKEN__";
 
     @Override

@@ -81,7 +81,7 @@ To use a different OpenAI-compatible endpoint or model, change `AI_BASE_URL` / `
 Download and install:
 
 ```
-https://x-bookmark-vault.nuuritas.workers.dev/BookmarkShare.apk
+https://bookmark.nuritas.tr/BookmarkShare.apk
 ```
 
 Then in X: **Share → Bookmarks**. The APK has no visible UI: it posts the link in the background, shows a short “Saved to Bookmarks” toast, and closes. The library itself stays in the PWA/web app.

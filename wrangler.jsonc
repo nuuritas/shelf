@@ -2,6 +2,10 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "x-bookmark-vault",
   "main": "src/worker.js",
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "bookmark.nuritas.tr", "custom_domain": true }
+  ],
   "compatibility_date": "2026-10-26",
   "assets": {
     "directory": "./public"
