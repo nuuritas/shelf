@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractExternalUrls, htmlToText, parseGitHubUrl } from '../src/links.js';
+import { extractExternalUrls, htmlToText, parseGitHubUrl } from '../src/links.ts';
 
 test('extracts external links but skips X media links', () => {
   const urls = extractExternalUrls({

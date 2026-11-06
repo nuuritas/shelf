@@ -1,5 +1,17 @@
-import { Bookmarks } from './bookmarks-do.js';
-import { CSS, renderLogin, renderPage, renderSetup } from './render.js';
+import { Bookmarks } from './bookmarks-do.ts';
+import { CSS, renderLogin, renderPage, renderSetup } from './render.ts';
+import type {
+  DeleteResult,
+  Env,
+  GetResult,
+  ListResult,
+  ReindexResult,
+  SaveResult,
+  StatsResult,
+  SummarizeResult,
+  TopicListResult,
+  TopicPageResult,
+} from './types.ts';
 import {
   clampInteger,
   escapeHtml,
@@ -8,14 +20,14 @@ import {
   parseCookies,
   redirect,
   sha256Hex,
-} from './util.js';
-import { extractXUrl } from './x.js';
+} from './util.ts';
+import { extractXUrl } from './x.ts';
 
 export { Bookmarks };
 
 const SESSION_COOKIE = 'xbv_session';
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
-const SECURITY_HEADERS = {
+const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
@@ -23,8 +35,8 @@ const SECURITY_HEADERS = {
     "default-src 'self'; img-src 'self' https://pbs.twimg.com data:; media-src 'self' https://video.twimg.com; style-src 'self'; script-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
 
-export default {
-  async fetch(request, env) {
+const worker: ExportedHandler<Env> = {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === '/healthz') {
@@ -146,7 +158,9 @@ export default {
   },
 };
 
-async function handleHome(url, env) {
+export default worker;
+
+async function handleHome(url: URL, env: Env): Promise<Response> {
   const query = (url.searchParams.get('q') || '').trim();
   const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
   const params = new URLSearchParams({ limit: String(limit) });
@@ -154,8 +168,8 @@ async function handleHome(url, env) {
 
   try {
     const [data, topicData] = await Promise.all([
-      doJson(env, `/list?${params.toString()}`),
-      doJson(env, '/topics').catch(() => ({ topics: [] })),
+      doJson<ListResult>(env, `/list?${params.toString()}`),
+      doJson<TopicListResult>(env, '/topics').catch((): TopicListResult => ({ topics: [] })),
     ]);
     return htmlResponse(
       renderPage({
@@ -184,15 +198,15 @@ async function handleHome(url, env) {
   }
 }
 
-async function handleTopicPage(slug, env, url) {
+async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Response> {
   if (!/^[a-z0-9-]{1,60}$/.test(slug)) {
     return htmlResponse('<h1>Topic not found</h1><p><a href="/">Go home</a></p>', 404);
   }
 
   try {
     const [data, topicData] = await Promise.all([
-      doJson(env, `/topic?slug=${encodeURIComponent(slug)}`),
-      doJson(env, '/topics').catch(() => ({ topics: [] })),
+      doJson<TopicPageResult>(env, `/topic?slug=${encodeURIComponent(slug)}`),
+      doJson<TopicListResult>(env, '/topics').catch((): TopicListResult => ({ topics: [] })),
     ]);
 
     if (!data.topic) {
@@ -216,16 +230,16 @@ async function handleTopicPage(slug, env, url) {
   }
 }
 
-async function handleApiTopics(env) {
-  return jsonResponse(await doJson(env, '/topics'));
+async function handleApiTopics(env: Env): Promise<Response> {
+  return jsonResponse(await doJson<TopicListResult>(env, '/topics'));
 }
 
-async function handleApiReindex(env) {
-  const result = await doJson(env, '/reindex', { method: 'POST' });
+async function handleApiReindex(env: Env): Promise<Response> {
+  const result = await doJson<ReindexResult>(env, '/reindex', { method: 'POST' });
   return jsonResponse(result, 202);
 }
 
-async function handleShare(request, env, pathname) {
+async function handleShare(request: Request, env: Env, pathname: string): Promise<Response> {
   let input = '';
   try {
     if (pathname === '/share') {
@@ -247,7 +261,7 @@ async function handleShare(request, env, pathname) {
   }
 
   try {
-    const result = await doJson(env, '/save', {
+    const result = await doJson<SaveResult>(env, '/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: parsed.canonicalUrl }),
@@ -258,12 +272,12 @@ async function handleShare(request, env, pathname) {
   }
 }
 
-async function handleDeleteForm(request, env) {
+async function handleDeleteForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const id = String(form.get('id') || '');
   if (!/^\d{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
   try {
-    await doJson(env, '/delete', {
+    await doJson<DeleteResult>(env, '/delete', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
@@ -274,7 +288,7 @@ async function handleDeleteForm(request, env) {
   }
 }
 
-async function handleSummarizeForm(request, env) {
+async function handleSummarizeForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const id = String(form.get('id') || '');
   if (!/^\d{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
@@ -283,7 +297,7 @@ async function handleSummarizeForm(request, env) {
   const instruction = String(form.get('instruction') || '').slice(0, 500);
 
   try {
-    await doJson(env, '/resummarize', {
+    await doJson<SummarizeResult>(env, '/resummarize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, mode, instruction }),
@@ -297,46 +311,47 @@ async function handleSummarizeForm(request, env) {
   }
 }
 
-async function handleApiList(url, env) {
+async function handleApiList(url: URL, env: Env): Promise<Response> {
   const params = new URLSearchParams();
   const q = (url.searchParams.get('q') || '').trim();
   if (q) params.set('q', q);
   params.set('limit', String(clampInteger(url.searchParams.get('limit'), 50, 1, 100)));
   params.set('offset', String(clampInteger(url.searchParams.get('offset'), 0, 0, 10_000)));
-  return jsonResponse(await doJson(env, `/list?${params.toString()}`));
+  return jsonResponse(await doJson<ListResult>(env, `/list?${params.toString()}`));
 }
 
-async function handleApiSave(request, env) {
-  let body;
+async function handleApiSave(request: Request, env: Env): Promise<Response> {
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return jsonResponse({ error: 'Body must be JSON.' }, 400);
   }
 
-  const input = [body?.url, body?.text].filter(Boolean).join('\n');
+  const record = isRecord(body) ? body : {};
+  const input = [record.url, record.text].filter(Boolean).join('\n');
   const parsed = extractXUrl(input);
   if (!parsed) return jsonResponse({ error: 'That does not look like an X post link.' }, 400);
 
   try {
-    const result = await doJson(env, '/save', {
+    const result = await doJson<SaveResult>(env, '/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: parsed.canonicalUrl }),
     });
     return jsonResponse(result, result.created ? 201 : 200);
   } catch (error) {
-    return jsonResponse({ error: errorMessage(error) }, error?.status || 502);
+    return jsonResponse({ error: errorMessage(error) }, errorStatus(error, 502));
   }
 }
 
-async function handleApiGet(id, env) {
-  const result = await doJson(env, `/get?id=${encodeURIComponent(id)}`);
+async function handleApiGet(id: string, env: Env): Promise<Response> {
+  const result = await doJson<GetResult>(env, `/get?id=${encodeURIComponent(id)}`);
   return jsonResponse(result);
 }
 
-async function handleApiDelete(id, env) {
-  const result = await doJson(env, '/delete', {
+async function handleApiDelete(id: string, env: Env): Promise<Response> {
+  const result = await doJson<DeleteResult>(env, '/delete', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id }),
@@ -344,8 +359,12 @@ async function handleApiDelete(id, env) {
   return jsonResponse(result);
 }
 
-async function handleApiSummarize(id, env, request) {
-  let body = {};
+async function handleApiSummarize(
+  id: string,
+  env: Env,
+  request: Request,
+): Promise<Response> {
+  let body: { mode?: string; instruction?: string } = {};
   try {
     body = await request.json();
   } catch {
@@ -355,7 +374,7 @@ async function handleApiSummarize(id, env, request) {
   const mode = body?.mode === 'version' ? 'version' : 'default';
   const instruction = String(body?.instruction || '').slice(0, 500);
 
-  const result = await doJson(env, '/resummarize', {
+  const result = await doJson<SummarizeResult>(env, '/resummarize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, mode, instruction }),
@@ -363,24 +382,24 @@ async function handleApiSummarize(id, env, request) {
   return jsonResponse(result, 202);
 }
 
-async function handleApiStats(env) {
-  return jsonResponse(await doJson(env, '/stats'));
+async function handleApiStats(env: Env): Promise<Response> {
+  return jsonResponse(await doJson<StatsResult>(env, '/stats'));
 }
 
-async function apiGuard(handler) {
+async function apiGuard(handler: () => Promise<Response>): Promise<Response> {
   try {
     return await handler();
   } catch (error) {
-    return jsonResponse({ error: errorMessage(error) }, error?.status || 500);
+    return jsonResponse({ error: errorMessage(error) }, errorStatus(error, 500));
   }
 }
 
-async function doJson(env, path, init) {
+async function doJson<T>(env: Env, path: string, init?: RequestInit): Promise<T> {
   const stub = env.BOOKMARKS.get(env.BOOKMARKS.idFromName('library'));
   const response = await stub.fetch(`https://bookmarks.internal${path}`, init);
   const text = await response.text();
 
-  let payload = null;
+  let payload: unknown = null;
   try {
     payload = text ? JSON.parse(text) : null;
   } catch {
@@ -388,15 +407,20 @@ async function doJson(env, path, init) {
   }
 
   if (!response.ok) {
-    const error = new Error(payload?.error || `Storage returned HTTP ${response.status}.`);
+    const record = isRecord(payload) ? payload : null;
+    const message =
+      record && record.error
+        ? String(record.error)
+        : `Storage returned HTTP ${response.status}.`;
+    const error: StatusError = new Error(message);
     error.status = response.status;
     throw error;
   }
 
-  return payload;
+  return payload as T;
 }
 
-async function handleLogin(request, env) {
+async function handleLogin(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const password = String(form.get('password') || '');
   const next = safeNext(String(form.get('next') || '/'));
@@ -426,7 +450,7 @@ async function handleLogin(request, env) {
   });
 }
 
-async function isAuthorized(request, env) {
+async function isAuthorized(request: Request, env: Env): Promise<boolean> {
   const header = request.headers.get('Authorization') || '';
   if (header.startsWith('Bearer ')) {
     const token = header.slice(7).trim();
@@ -437,14 +461,14 @@ async function isAuthorized(request, env) {
   return verifySession(token, env);
 }
 
-async function isShareTokenAuthorized(request, env) {
+async function isShareTokenAuthorized(request: Request, env: Env): Promise<boolean> {
   if (!env.SHARE_TOKEN) return false;
   const header = request.headers.get('Authorization') || '';
   if (!header.startsWith('Bearer ')) return false;
   return passwordMatches(header.slice(7).trim(), env.SHARE_TOKEN);
 }
 
-async function passwordMatches(input, expected) {
+async function passwordMatches(input: string, expected: string): Promise<boolean> {
   const [left, right] = await Promise.all([sha256Hex(input), sha256Hex(expected)]);
   if (left.length !== right.length) return false;
   let result = 0;
@@ -454,18 +478,18 @@ async function passwordMatches(input, expected) {
   return result === 0;
 }
 
-function sessionSecret(env) {
+function sessionSecret(env: Env): string {
   return env.APP_SECRET || env.APP_PASSWORD;
 }
 
-async function createSession(env) {
+async function createSession(env: Env): Promise<string> {
   const expires = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
   const payload = `v1.${expires}`;
   const signature = await hmac(payload, sessionSecret(env));
   return `${payload}.${signature}`;
 }
 
-async function verifySession(token, env) {
+async function verifySession(token: string | null | undefined, env: Env): Promise<boolean> {
   if (!token) return false;
   const parts = String(token).split('.');
   if (parts.length !== 3 || parts[0] !== 'v1') return false;
@@ -477,7 +501,7 @@ async function verifySession(token, env) {
   return timingSafeEqual(parts[2], expected);
 }
 
-async function hmac(payload, secret) {
+async function hmac(payload: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(String(secret)),
@@ -489,14 +513,14 @@ async function hmac(payload, secret) {
   return base64Url(signature);
 }
 
-function base64Url(buffer) {
+function base64Url(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
-function timingSafeEqual(a, b) {
+function timingSafeEqual(a: unknown, b: unknown): boolean {
   const left = String(a);
   const right = String(b);
   if (left.length !== right.length) return false;
@@ -507,12 +531,12 @@ function timingSafeEqual(a, b) {
   return result === 0;
 }
 
-function safeNext(value) {
+function safeNext(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
   return value;
 }
 
-function secure(response) {
+function secure(response: Response): Response {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) headers.set(key, value);
   return new Response(response.body, {
@@ -522,6 +546,23 @@ function secure(response) {
   });
 }
 
-function errorMessage(error) {
+function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unexpected error.';
+}
+
+/** An Error carrying the HTTP status of a failed Durable Object call. */
+interface StatusError extends Error {
+  status?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function errorStatus(error: unknown, fallback: number): number {
+  if (isRecord(error)) {
+    const status = error.status;
+    if (typeof status === 'number' && status > 0) return status;
+  }
+  return fallback;
 }

@@ -6,7 +6,7 @@ import {
   normalizeFxStatus,
   normalizeOfficialResponse,
   parseXUrl,
-} from '../src/x.js';
+} from '../src/x.ts';
 
 test('parses normal, mobile, and intent-style X URLs', () => {
   assert.equal(

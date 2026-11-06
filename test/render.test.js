@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderPage } from '../src/render.js';
-import { escapeHtml, linkifyText } from '../src/util.js';
+import { renderPage } from '../src/render.ts';
+import { escapeHtml, linkifyText } from '../src/util.ts';
 
 test('escapes tweet text and links bare URLs', () => {
   assert.equal(escapeHtml('<script>alert(1)</script>'), '&lt;script&gt;alert(1)&lt;/script&gt;');

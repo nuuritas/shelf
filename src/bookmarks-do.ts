@@ -1,13 +1,108 @@
 import { DurableObject } from 'cloudflare:workers';
-import { bootstrapTopics, classifyPost, isAiConfigured, summarizePost, writeTopicOverview } from './ai.js';
-import { readExternalLinks } from './links.js';
-import { clampInteger, jsonResponse } from './util.js';
-import { readPost } from './x.js';
+import { bootstrapTopics, classifyPost, isAiConfigured, summarizePost, writeTopicOverview } from './ai.ts';
+import { readExternalLinks } from './links.ts';
+import { clampInteger, jsonResponse } from './util.ts';
+import { readPost } from './x.ts';
+import type {
+  Bookmark,
+  BookmarkRow,
+  BootstrapItem,
+  BootstrapTopic,
+  Env,
+  LinkRead,
+  ListResult,
+  MediaItem,
+  Metrics,
+  ParsedXUrl,
+  Quote,
+  ReindexResult,
+  SaveResult,
+  StatsResult,
+  SummaryVersion,
+  TopicOverviewItem,
+  TopicPageResult,
+  TopicRow,
+  TopicSummary,
+  XArticle,
+} from './types.ts';
 
 const STALE_SUMMARY_MS = 10 * 60 * 1000;
 
-export class Bookmarks extends DurableObject {
-  constructor(ctx, env) {
+/* Take the context and SQL types from the base class: importing SqlStorage from
+   @cloudflare/workers-types creates a second, structurally different copy and
+   makes tsc compare two large recursive interfaces. */
+type DoContext = ConstructorParameters<typeof DurableObject<Env>>[0];
+type DoSql = DoContext['storage']['sql'];
+
+/** A 404 from `resummarize`, carrying an HTTP status for the fetch handler. */
+interface StatusError extends Error {
+  status?: number;
+}
+
+type VersionRow = {
+  tweet_id: string;
+  version: number;
+  instruction: string | null;
+  summary: string;
+  model: string | null;
+  created_at: string;
+};
+
+/* Narrow row types for the column subsets each query selects. */
+type ExistingBookmarkRow = {
+  tweet_id: string;
+  summary: string | null;
+  summary_status: string;
+  text: string;
+  article_json: string;
+};
+
+type TopicCountRow = {
+  slug: string;
+  name: string;
+  description: string;
+  overview: string | null;
+  overview_at: string | null;
+  count: number;
+};
+
+type TopicRefRow = { tweet_id: string; slug: string; name: string };
+
+type StatsRow = {
+  total: number;
+  summarized: number | null;
+  pending: number | null;
+};
+
+type AlarmCountsRow = { done: number; topics: number };
+
+type PendingCountsRow = {
+  summaries: number;
+  filings: number;
+  overviews: number;
+
+  versions: number;
+};
+
+type ReindexRow = {
+  tweet_id: string;
+  author_username: string | null;
+  text: string | null;
+  summary: string | null;
+  saved_at: string | null;
+};
+
+type TopicItemRow = {
+  author_username: string | null;
+  text: string | null;
+  summary: string | null;
+  saved_at: string | null;
+};
+
+export class Bookmarks extends DurableObject<Env> {
+  sql: DoSql;
+
+  constructor(ctx: DoContext, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.sql.exec(`
@@ -107,12 +202,12 @@ export class Bookmarks extends DurableObject {
     }
   }
 
-  async fetch(request) {
+  async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     try {
       if (request.method === 'POST' && url.pathname === '/save') {
-        const body = await request.json();
+        const body = (await request.json()) as { url: string | ParsedXUrl };
         return jsonResponse(await this.save(body.url));
       }
 
@@ -139,12 +234,16 @@ export class Bookmarks extends DurableObject {
       }
 
       if (request.method === 'DELETE' && url.pathname === '/delete') {
-        const body = await request.json();
+        const body = (await request.json()) as { id: string | null };
         return jsonResponse({ deleted: this.delete(body.id) });
       }
 
       if (request.method === 'POST' && url.pathname === '/resummarize') {
-        const body = await request.json();
+        const body = (await request.json()) as {
+          id: string | null;
+          mode?: string;
+          instruction?: string;
+        };
         await this.resummarize(body.id, body);
         return jsonResponse({ queued: true });
       }
@@ -156,7 +255,7 @@ export class Bookmarks extends DurableObject {
       return jsonResponse({ error: 'Not found.' }, 404);
     } catch (error) {
       console.error('Durable Object error', error);
-      const status = Number.isInteger(error?.status) ? error.status : 500;
+      const status = errorStatus(error);
       return jsonResponse(
         { error: error instanceof Error ? error.message : 'Unexpected error.' },
         status,
@@ -164,10 +263,10 @@ export class Bookmarks extends DurableObject {
     }
   }
 
-  async save(input) {
+  async save(input: string | ParsedXUrl): Promise<SaveResult> {
     const post = await readPost(input, this.env);
-    const existing = this.sql
-      .exec(
+    const existing: ExistingBookmarkRow | undefined = this.sql
+      .exec<ExistingBookmarkRow>(
         `SELECT tweet_id, summary, summary_status, text, article_json
          FROM bookmarks WHERE tweet_id = ?`,
         post.tweetId,
@@ -184,12 +283,12 @@ export class Bookmarks extends DurableObject {
     const alreadySummarized = Boolean(existing?.summary) && !contentChanged;
     const shouldSummarize = aiReady && !alreadySummarized;
     const summaryStatus = alreadySummarized
-      ? existing.summary_status || 'done'
+      ? existing?.summary_status || 'done'
       : shouldSummarize
         ? 'pending'
         : 'disabled';
 
-    const values = [
+    const values: (string | number | null)[] = [
       post.tweetId,
       post.url,
       post.author?.name ?? null,
@@ -243,14 +342,14 @@ export class Bookmarks extends DurableObject {
     };
   }
 
-  list(searchParams) {
+  list(searchParams: URLSearchParams): ListResult {
     const query = (searchParams.get('q') || '').trim();
     const topicSlug = (searchParams.get('topic') || '').trim();
     const limit = clampInteger(searchParams.get('limit'), 50, 1, 100);
     const offset = clampInteger(searchParams.get('offset'), 0, 0, 10_000);
 
-    const filters = [];
-    const args = [];
+    const filters: string[] = [];
+    const args: string[] = [];
 
     if (topicSlug) {
       filters.push('tweet_id IN (SELECT tweet_id FROM item_topics WHERE slug = ?)');
@@ -269,7 +368,7 @@ export class Bookmarks extends DurableObject {
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
     const rows = this.sql
-      .exec(
+      .exec<BookmarkRow>(
         `SELECT * FROM bookmarks ${where} ORDER BY saved_at DESC LIMIT ? OFFSET ?`,
         ...args,
         limit,
@@ -277,7 +376,7 @@ export class Bookmarks extends DurableObject {
       )
       .toArray();
     const countRow = this.sql
-      .exec(`SELECT COUNT(*) AS count FROM bookmarks ${where}`, ...args)
+      .exec<{ count: number }>(`SELECT COUNT(*) AS count FROM bookmarks ${where}`, ...args)
       .toArray()[0];
 
     const bookmarks = rows.map(rowToBookmark);
@@ -294,12 +393,12 @@ export class Bookmarks extends DurableObject {
     };
   }
 
-  attachTopics(bookmarks) {
+  attachTopics(bookmarks: Bookmark[]): Bookmark[] {
     if (!bookmarks.length) return bookmarks;
     const ids = bookmarks.map(bookmark => bookmark.tweetId);
     const placeholders = ids.map(() => '?').join(', ');
     const rows = this.sql
-      .exec(
+      .exec<TopicRefRow>(
         `SELECT it.tweet_id, it.slug, t.name
          FROM item_topics it
          JOIN topics t ON t.slug = it.slug
@@ -309,7 +408,7 @@ export class Bookmarks extends DurableObject {
       )
       .toArray();
 
-    const byTweet = new Map();
+    const byTweet = new Map<string, Array<{ slug: string; name: string }>>();
     for (const row of rows) {
       const list = byTweet.get(row.tweet_id) ?? [];
       list.push({ slug: row.slug, name: row.name });
@@ -321,12 +420,12 @@ export class Bookmarks extends DurableObject {
     return bookmarks;
   }
 
-  attachVersions(bookmarks) {
+  attachVersions(bookmarks: Bookmark[]): Bookmark[] {
     if (!bookmarks.length) return bookmarks;
     const ids = bookmarks.map(bookmark => bookmark.tweetId);
     const placeholders = ids.map(() => '?').join(', ');
     const rows = this.sql
-      .exec(
+      .exec<VersionRow>(
         `SELECT tweet_id, version, instruction, summary, model, created_at
          FROM summary_versions
          WHERE tweet_id IN (${placeholders})
@@ -335,7 +434,7 @@ export class Bookmarks extends DurableObject {
       )
       .toArray();
 
-    const byTweet = new Map();
+    const byTweet = new Map<string, SummaryVersion[]>();
     for (const row of rows) {
       const list = byTweet.get(row.tweet_id) ?? [];
       list.push({
@@ -355,7 +454,7 @@ export class Bookmarks extends DurableObject {
 
   topics() {
     return this.sql
-      .exec(
+      .exec<TopicCountRow>(
         `SELECT t.slug, t.name, t.description, t.overview, t.overview_at,
                 (SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug) AS count
          FROM topics t
@@ -372,15 +471,15 @@ export class Bookmarks extends DurableObject {
       }));
   }
 
-  topic(slug) {
+  topic(slug: string | null): TopicPageResult {
     const clean = String(slug || '').trim();
     const row = clean
-      ? this.sql.exec('SELECT * FROM topics WHERE slug = ?', clean).toArray()[0]
+      ? this.sql.exec<TopicRow>('SELECT * FROM topics WHERE slug = ?', clean).toArray()[0]
       : null;
     if (!row) return { topic: null, bookmarks: [], total: 0 };
 
     const bookmarks = this.sql
-      .exec(
+      .exec<BookmarkRow>(
         `SELECT b.* FROM bookmarks b
          JOIN item_topics it ON it.tweet_id = b.tweet_id
          WHERE it.slug = ?
@@ -407,10 +506,10 @@ export class Bookmarks extends DurableObject {
     };
   }
 
-  get(tweetId) {
+  get(tweetId: string | null | undefined): Bookmark | null {
     if (!tweetId) return null;
     const row = this.sql
-      .exec('SELECT * FROM bookmarks WHERE tweet_id = ?', String(tweetId))
+      .exec<BookmarkRow>('SELECT * FROM bookmarks WHERE tweet_id = ?', String(tweetId))
       .toArray()[0];
     if (!row) return null;
     const bookmark = rowToBookmark(row);
@@ -419,9 +518,9 @@ export class Bookmarks extends DurableObject {
     return bookmark;
   }
 
-  versions(tweetId) {
+  versions(tweetId: string): SummaryVersion[] {
     return this.sql
-      .exec(
+      .exec<VersionRow>(
         `SELECT version, instruction, summary, model, created_at
          FROM summary_versions
          WHERE tweet_id = ?
@@ -438,14 +537,14 @@ export class Bookmarks extends DurableObject {
       }));
   }
 
-  delete(tweetId) {
+  delete(tweetId: string | null): boolean {
     if (!tweetId) return false;
     const id = String(tweetId);
     const before = this.sql.exec('SELECT tweet_id FROM bookmarks WHERE tweet_id = ?', id).toArray();
     if (!before.length) return false;
 
     const affected = this.sql
-      .exec('SELECT DISTINCT slug FROM item_topics WHERE tweet_id = ?', id)
+      .exec<{ slug: string }>('SELECT DISTINCT slug FROM item_topics WHERE tweet_id = ?', id)
       .toArray()
       .map(row => row.slug);
 
@@ -455,7 +554,7 @@ export class Bookmarks extends DurableObject {
 
     for (const slug of affected) {
       const remaining = this.sql
-        .exec('SELECT COUNT(*) AS count FROM item_topics WHERE slug = ?', slug)
+        .exec<{ count: number }>('SELECT COUNT(*) AS count FROM item_topics WHERE slug = ?', slug)
         .toArray()[0];
       if (Number(remaining?.count ?? 0) === 0) {
         this.sql.exec('DELETE FROM topics WHERE slug = ?', slug);
@@ -465,12 +564,15 @@ export class Bookmarks extends DurableObject {
     return true;
   }
 
-  async resummarize(tweetId, options = {}) {
+  async resummarize(
+    tweetId: string | null,
+    options: { mode?: string; instruction?: string } = {},
+  ): Promise<void> {
     if (!tweetId) throw new Error('Missing bookmark id.');
     const id = String(tweetId);
     const bookmark = this.get(id);
     if (!bookmark) {
-      const error = new Error('Bookmark not found.');
+      const error: StatusError = new Error('Bookmark not found.');
       error.status = 404;
       throw error;
     }
@@ -500,9 +602,9 @@ export class Bookmarks extends DurableObject {
     await this.ctx.storage.setAlarm(Date.now() + 250);
   }
 
-  stats() {
+  stats(): StatsResult {
     const row = this.sql
-      .exec(
+      .exec<StatsRow>(
         `SELECT
           COUNT(*) AS total,
           SUM(CASE WHEN summary_status = 'done' THEN 1 ELSE 0 END) AS summarized,
@@ -516,12 +618,12 @@ export class Bookmarks extends DurableObject {
       summarized: Number(row?.summarized ?? 0),
       pending: Number(row?.pending ?? 0),
       topics: Number(
-        this.sql.exec('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
+        this.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
       ),
     };
   }
 
-  async alarm() {
+  async alarm(): Promise<void> {
     const staleBefore = Date.now() - STALE_SUMMARY_MS;
     this.sql.exec(
       `UPDATE bookmarks
@@ -538,7 +640,7 @@ export class Bookmarks extends DurableObject {
     );
 
     const pendingSummary = this.sql
-      .exec(
+      .exec<BookmarkRow>(
         `SELECT * FROM bookmarks
          WHERE summary_status = 'pending'
          ORDER BY saved_at ASC
@@ -553,7 +655,7 @@ export class Bookmarks extends DurableObject {
     }
 
     const pendingVersion = this.sql
-      .exec(
+      .exec<BookmarkRow>(
         `SELECT * FROM bookmarks
          WHERE version_status = 'pending'
          ORDER BY saved_at ASC
@@ -568,7 +670,7 @@ export class Bookmarks extends DurableObject {
     }
 
     const counts = this.sql
-      .exec(
+      .exec<AlarmCountsRow>(
         `SELECT
            (SELECT COUNT(*) FROM bookmarks WHERE summary_status = 'done') AS done,
            (SELECT COUNT(*) FROM topics) AS topics`,
@@ -578,7 +680,7 @@ export class Bookmarks extends DurableObject {
     const topicCount = Number(counts?.topics ?? 0);
 
     if (topicCount === 0 && done >= 3) {
-      const lastAttempt = Number((await this.ctx.storage.get('topicBootstrapAt')) || 0);
+      const lastAttempt = Number((await this.ctx.storage.get<number>('topicBootstrapAt')) || 0);
       if (Date.now() - lastAttempt > 10 * 60 * 1000) {
         await this.ctx.storage.put('topicBootstrapAt', Date.now());
         try {
@@ -593,7 +695,7 @@ export class Bookmarks extends DurableObject {
 
     if (topicCount > 0) {
       const unfiled = this.sql
-        .exec(
+        .exec<BookmarkRow>(
           `SELECT * FROM bookmarks
            WHERE summary_status = 'done' AND topics_status = 'pending'
            ORDER BY saved_at ASC
@@ -608,7 +710,7 @@ export class Bookmarks extends DurableObject {
       }
 
       const staleTopic = this.sql
-        .exec(
+        .exec<{ slug: string }>(
           `SELECT t.slug FROM topics t
            WHERE t.overview IS NULL OR t.overview_count != (
              SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug
@@ -626,13 +728,13 @@ export class Bookmarks extends DurableObject {
     }
   }
 
-  async scheduleNext() {
+  async scheduleNext(): Promise<void> {
     const hasTopics = Number(
-      this.sql.exec('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
+      this.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
     );
 
     const pending = this.sql
-      .exec(
+      .exec<PendingCountsRow>(
         `SELECT
            (SELECT COUNT(*) FROM bookmarks WHERE summary_status = 'pending') AS summaries,
            (SELECT COUNT(*) FROM bookmarks
@@ -655,13 +757,13 @@ export class Bookmarks extends DurableObject {
     }
   }
 
-  async reindex() {
+  async reindex(): Promise<ReindexResult> {
     if (!isAiConfigured(this.env)) {
       throw new Error('OPENCODE_API_KEY is not configured.');
     }
 
     const rows = this.sql
-      .exec(
+      .exec<ReindexRow>(
         `SELECT tweet_id, author_username, text, summary, saved_at
          FROM bookmarks
          WHERE summary_status = 'done' AND summary IS NOT NULL AND summary != ''
@@ -672,7 +774,7 @@ export class Bookmarks extends DurableObject {
 
     if (!rows.length) return { topics: [], assigned: 0 };
 
-    const items = rows.map(row => ({
+    const items: BootstrapItem[] = rows.map(row => ({
       id: String(row.tweet_id),
       author: row.author_username,
       date: (row.saved_at || '').slice(0, 10),
@@ -685,7 +787,7 @@ export class Bookmarks extends DurableObject {
       throw new Error('AI could not group the archive into topics.');
     }
 
-    const merged = new Map();
+    const merged = new Map<string, BootstrapTopic>();
     for (const topic of built) {
       const current = merged.get(topic.slug);
       if (current) {
@@ -732,7 +834,7 @@ export class Bookmarks extends DurableObject {
     return { topics: this.topics(), assigned };
   }
 
-  async classifyRow(row) {
+  async classifyRow(row: BookmarkRow): Promise<void> {
     const tweetId = String(row.tweet_id);
     const bookmark = rowToBookmark(row);
     const topics = this.topics();
@@ -751,7 +853,7 @@ export class Bookmarks extends DurableObject {
 
       if (result.created) {
         const exists = this.sql
-          .exec('SELECT slug FROM topics WHERE slug = ?', result.created.slug)
+          .exec<{ slug: string }>('SELECT slug FROM topics WHERE slug = ?', result.created.slug)
           .toArray()[0];
         if (!exists) {
           this.sql.exec(
@@ -792,7 +894,7 @@ export class Bookmarks extends DurableObject {
     }
   }
 
-  async generateVersion(row) {
+  async generateVersion(row: BookmarkRow): Promise<void> {
     const tweetId = String(row.tweet_id);
 
     if (!isAiConfigured(this.env)) {
@@ -857,20 +959,20 @@ export class Bookmarks extends DurableObject {
     }
   }
 
-  async refreshTopic(slug) {
+  async refreshTopic(slug: string): Promise<void> {
     const row = this.sql
-      .exec('SELECT * FROM topics WHERE slug = ?', String(slug))
+      .exec<TopicRow>('SELECT * FROM topics WHERE slug = ?', String(slug))
       .toArray()[0];
     if (!row) return;
 
     const countRow = this.sql
-      .exec('SELECT COUNT(*) AS count FROM item_topics WHERE slug = ?', row.slug)
+      .exec<{ count: number }>('SELECT COUNT(*) AS count FROM item_topics WHERE slug = ?', row.slug)
       .toArray()[0];
     const count = Number(countRow?.count ?? 0);
     if (count === 0) return;
 
     const rows = this.sql
-      .exec(
+      .exec<TopicItemRow>(
         `SELECT b.author_username, b.text, b.summary, b.saved_at
          FROM bookmarks b
          JOIN item_topics it ON it.tweet_id = b.tweet_id
@@ -892,16 +994,17 @@ export class Bookmarks extends DurableObject {
     }
 
     try {
+      const items: TopicOverviewItem[] = rows.map(item => ({
+        date: (item.saved_at || '').slice(0, 10),
+        author: item.author_username,
+        text: item.text,
+        summary: item.summary,
+      }));
       const overview = await writeTopicOverview(
         {
           topic: { slug: row.slug, name: row.name, description: row.description },
           previous: row.overview || '',
-          items: rows.map(item => ({
-            date: (item.saved_at || '').slice(0, 10),
-            author: item.author_username,
-            text: item.text,
-            summary: item.summary,
-          })),
+          items,
         },
         this.env,
       );
@@ -923,7 +1026,7 @@ export class Bookmarks extends DurableObject {
     }
   }
 
-  async summarizeRow(row) {
+  async summarizeRow(row: BookmarkRow): Promise<void> {
     const tweetId = String(row.tweet_id);
 
     if (!isAiConfigured(this.env)) {
@@ -982,7 +1085,7 @@ export class Bookmarks extends DurableObject {
   }
 }
 
-function rowToBookmark(row) {
+function rowToBookmark(row: BookmarkRow): Bookmark {
   return {
     tweetId: row.tweet_id,
     url: row.url,
@@ -996,11 +1099,13 @@ function rowToBookmark(row) {
       avatarUrl: row.author_avatar_url,
       verified: Boolean(row.author_verified),
     },
-    media: parseJson(row.media_json, []),
-    quote: parseJson(row.quote_json, null),
-    article: parseJson(row.article_json, null),
-    links: parseJson(row.links_json, []),
-    metrics: parseJson(row.metrics_json, {}),
+    media: parseJson<MediaItem[]>(row.media_json, []),
+    quote: parseJson<Quote | null>(row.quote_json, null),
+    article: parseJson<XArticle | null>(row.article_json, null),
+    links: parseJson<LinkRead[]>(row.links_json, []),
+    // `{}` is the historical fallback for a missing metrics column; keep it
+    // (renderMetrics treats missing fields as "no count").
+    metrics: parseJson<Metrics>(row.metrics_json, {} as Metrics),
     summary: row.summary,
     summaryStatus: row.summary_status,
     summaryError: row.summary_error,
@@ -1010,11 +1115,19 @@ function rowToBookmark(row) {
   };
 }
 
-function parseJson(value, fallback) {
+function parseJson<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
   try {
-    return JSON.parse(value);
+    return JSON.parse(value) as T;
   } catch {
     return fallback;
   }
+}
+
+function errorStatus(error: unknown): number {
+  if (typeof error === 'object' && error !== null) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === 'number' && Number.isInteger(status)) return status;
+  }
+  return 500;
 }

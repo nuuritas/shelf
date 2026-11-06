@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderPage } from '../src/render.js';
-import { slugify } from '../src/util.js';
+import { renderPage } from '../src/render.ts';
+import { slugify } from '../src/util.ts';
 
 test('slugify folds Turkish letters into URL-safe slugs', () => {
   assert.equal(slugify('Ajan Mimarisi'), 'ajan-mimarisi');
