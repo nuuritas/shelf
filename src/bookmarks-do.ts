@@ -613,13 +613,28 @@ export class Bookmarks extends DurableObject<Env> {
       )
       .toArray()[0];
 
+    let bytes = 0;
+    try {
+      bytes = Number(this.ctx.storage.sql.databaseSize ?? 0);
+    } catch {
+      bytes = 0;
+    }
+
+    const rows: Record<string, number> = {};
+    for (const table of ['bookmarks', 'summary_versions', 'topics', 'item_topics']) {
+      rows[table] = Number(
+        this.sql.exec<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table}`).toArray()[0]
+          ?.count ?? 0,
+      );
+    }
+
     return {
       total: Number(row?.total ?? 0),
       summarized: Number(row?.summarized ?? 0),
       pending: Number(row?.pending ?? 0),
-      topics: Number(
-        this.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
-      ),
+      topics: rows.topics ?? 0,
+      bytes,
+      rows,
     };
   }
 

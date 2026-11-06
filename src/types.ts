@@ -273,6 +273,8 @@ export interface StatsResult {
   summarized: number;
   pending: number;
   topics: number;
+  bytes?: number;
+  rows?: Record<string, number>;
 }
 
 export interface ReindexResult {
