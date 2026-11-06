@@ -23,10 +23,10 @@ document.addEventListener('click', event => {
     return;
   }
 
-  const card = event.target.closest('.card.is-collapsed');
+  const card = event.target.closest('.card');
   if (!card) return;
-  if (event.target.closest('a, video, form, input, label')) return;
-  setExpanded(card, true);
+  if (event.target.closest('a, video, form, input, label, summary')) return;
+  setExpanded(card, card.classList.contains('is-collapsed'));
 });
 
 document.addEventListener('click', event => {
