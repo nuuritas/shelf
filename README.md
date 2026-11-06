@@ -16,6 +16,24 @@ Paste an X link, or share one from Android:
 
 If no OpenCode key is configured, saving still works; the card simply says the summary is not configured.
 
+## Knowledge layer
+
+The vault is not a flat list. After a few saves it becomes a small, self-organizing archive:
+
+- **Topics.** The AI induces 5-9 durable areas of interest from what you actually saved (not formats like "articles" or "videos"), and every new save is filed into 1-3 of them. Tabs at the top of the library are these topics.
+- **Rolling syntheses.** Each topic page carries a 3-4 paragraph synthesis written from *all* the items in it, not from a single post. As new items arrive it is rewritten: recurring concerns, how later items sharpen or contradict earlier ones, and what is still open.
+- **New topic creation.** If nothing existing is a reasonable home, the filing step may create one new topic — never a one-off or a format.
+
+The engine runs in the background inside the same Durable Object. Each alarm pass does one unit of work, in order: summarize a new save, file it into topics, then rewrite the one topic whose synthesis is stale. Nothing else is needed to keep the archive coherent.
+
+`POST /api/reindex` re-induces the whole taxonomy from the archive (useful after a prompt change or a large import). It replaces existing topics and assignments, then the alarm rewrites every synthesis.
+
+## Source
+
+Private repository: <https://github.com/nuuritas/x-bookmark-vault>.
+
+`.dev.vars`, the signing keystore, Wrangler state, and `public/BookmarkShare.apk` are gitignored: the APK embeds the add-only share token, so it is rebuilt with `android/build.sh` rather than committed.
+
 ## Deploy
 
 Requirements: Node 20+ and a logged-in Wrangler.
@@ -114,10 +132,12 @@ All API routes require the session cookie or `Authorization: Bearer <APP_PASSWOR
 | `GET` | `/api/bookmarks/:id` | Get one normalized bookmark |
 | `DELETE` | `/api/bookmarks/:id` | Delete a bookmark |
 | `POST` | `/api/bookmarks/:id/summarize` | Queue a new summary |
+| `GET` | `/api/topics` | Topics with counts and syntheses |
+| `POST` | `/api/reindex` | Rebuild the topic taxonomy from the archive |
 | `GET` | `/api/stats` | Counts |
 | `GET` | `/healthz` | Health check, no auth |
 
-A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, and `summaryStatus`. Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs.
+A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, `summaryStatus`, and its `topics`. Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs.
 
 ## Notes and limits
 
