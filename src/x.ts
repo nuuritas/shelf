@@ -1,3 +1,15 @@
+import type {
+  CollectedImage,
+  ImageSource,
+  MediaItem,
+  MediaVariant,
+  ParsedXUrl,
+  XArticle,
+  XPost,
+  Env,
+} from './types.ts';
+import { isAbortError } from './util.ts';
+
 const X_HOSTS = new Set([
   'x.com',
   'twitter.com',
@@ -8,7 +20,10 @@ const X_HOSTS = new Set([
 ]);
 
 export class XReadError extends Error {
-  constructor(message, code = 'READ_FAILED', status = 502) {
+  code: string;
+  status: number;
+
+  constructor(message: string, code = 'READ_FAILED', status = 502) {
     super(message);
     this.name = 'XReadError';
     this.code = code;
@@ -16,7 +31,131 @@ export class XReadError extends Error {
   }
 }
 
-export function parseXUrl(input) {
+/* Shapes of the two upstream JSON APIs, as far as this app reads them. */
+interface FxMediaFormat {
+  url?: string | null;
+  container?: string | null;
+  bitrate?: number | null;
+}
+
+interface FxMediaItem {
+  type?: string;
+  url?: string | null;
+  thumbnail_url?: string | null;
+  width?: number | null;
+  height?: number | null;
+  altText?: string | null;
+  alt_text?: string | null;
+  duration?: number | null;
+  formats?: FxMediaFormat[] | null;
+}
+
+interface FxArticle {
+  id?: string | number | null;
+  title?: string | null;
+  preview_text?: string | null;
+  created_at?: string | null;
+  modified_at?: string | null;
+  content?: { blocks?: Array<{ type?: string; text?: string | null }> | null } | null;
+  cover_media?: { media_info?: { original_img_url?: string | null } | null } | null;
+}
+
+interface FxAuthor {
+  name?: string | null;
+  screen_name?: string | null;
+  avatar_url?: string | null;
+  verification?: { verified?: boolean } | null;
+}
+
+interface FxStatus {
+  type?: string;
+  id?: string | number;
+  url?: string | null;
+  text?: string | null;
+  raw_text?: { text?: string | null } | null;
+  note_tweet?: { text?: string | null } | null;
+  created_at?: string | null;
+  created_timestamp?: number | null;
+  lang?: string | null;
+  is_note_tweet?: boolean;
+  author?: FxAuthor | null;
+  media?: {
+    all?: FxMediaItem[] | null;
+    photos?: FxMediaItem[] | null;
+    videos?: FxMediaItem[] | null;
+  } | null;
+  article?: FxArticle | null;
+  quote?: FxStatus | null;
+  replies?: number | null;
+  reposts?: number | null;
+  likes?: number | null;
+  quotes?: number | null;
+  views?: number | null;
+  bookmarks?: number | null;
+}
+
+interface OfficialUser {
+  id?: string;
+  name?: string | null;
+  username?: string | null;
+  profile_image_url?: string | null;
+  verified?: boolean;
+  verified_type?: string | null;
+}
+
+interface OfficialVariant {
+  url?: string | null;
+  content_type?: string | null;
+  bit_rate?: number | null;
+}
+
+interface OfficialMedia {
+  media_key?: string;
+  type?: string;
+  url?: string | null;
+  preview_image_url?: string | null;
+  width?: number | null;
+  height?: number | null;
+  alt_text?: string | null;
+  duration_ms?: number | null;
+  variants?: OfficialVariant[] | null;
+}
+
+interface OfficialTweet {
+  id?: string | number;
+  text?: string | null;
+  note_tweet?: { text?: string | null } | null;
+  author_id?: string;
+  created_at?: string | null;
+  lang?: string | null;
+  attachments?: { media_keys?: string[] | null } | null;
+  referenced_tweets?: Array<{ type?: string; id?: string | number }> | null;
+  public_metrics?: {
+    reply_count?: number;
+    retweet_count?: number;
+    like_count?: number;
+    quote_count?: number;
+    impression_count?: number;
+    bookmark_count?: number;
+  } | null;
+}
+
+interface OfficialPayload {
+  data?: OfficialTweet | null;
+  includes?: {
+    users?: OfficialUser[] | null;
+    media?: OfficialMedia[] | null;
+    tweets?: OfficialTweet[] | null;
+  } | null;
+}
+
+interface OfficialMaps {
+  users: Map<string, OfficialUser>;
+  media: Map<string, OfficialMedia>;
+  tweets: Map<string, OfficialTweet>;
+}
+
+export function parseXUrl(input: unknown): ParsedXUrl | null {
   if (!input) return null;
 
   let value = String(input).trim();
@@ -30,7 +169,7 @@ export function parseXUrl(input) {
     }
   }
 
-  let url;
+  let url: URL;
   try {
     url = new URL(value);
   } catch {
@@ -66,7 +205,7 @@ export function parseXUrl(input) {
   };
 }
 
-export function extractXUrl(input) {
+export function extractXUrl(input: unknown): ParsedXUrl | null {
   const direct = parseXUrl(input);
   if (direct) return direct;
 
@@ -85,7 +224,10 @@ export function extractXUrl(input) {
   return null;
 }
 
-export async function readPost(input, env = {}) {
+export async function readPost(
+  input: string | ParsedXUrl | null | undefined,
+  env: Partial<Env> = {},
+): Promise<XPost> {
   const parsed = typeof input === 'string' ? extractXUrl(input) : input;
   if (!parsed?.tweetId) {
     throw new XReadError(
@@ -96,7 +238,7 @@ export async function readPost(input, env = {}) {
   }
 
   const requestedProvider = String(env.X_PROVIDER || 'auto').toLowerCase();
-  const providers = [];
+  const providers: string[] = [];
 
   if (requestedProvider !== 'fxtwitter') {
     if (env.X_BEARER_TOKEN) providers.push('official');
@@ -111,7 +253,7 @@ export async function readPost(input, env = {}) {
 
   if (requestedProvider !== 'official') providers.push('fxtwitter');
 
-  const failures = [];
+  const failures: string[] = [];
   for (const provider of providers) {
     try {
       if (provider === 'official') {
@@ -131,9 +273,9 @@ export async function readPost(input, env = {}) {
   );
 }
 
-async function readFxTwitter(parsed, env) {
+async function readFxTwitter(parsed: ParsedXUrl, env: Partial<Env>): Promise<XPost> {
   const base = (env.FX_API_BASE || 'https://api.fxtwitter.com').replace(/\/+$/, '');
-  const payload = await fetchJson(
+  const payload = (await fetchJson(
     `${base}/2/status/${parsed.tweetId}`,
     {
       headers: {
@@ -142,7 +284,7 @@ async function readFxTwitter(parsed, env) {
       },
     },
     timeoutMs(env),
-  );
+  )) as { status?: FxStatus; tweet?: FxStatus } | null;
 
   const status = payload?.status ?? payload?.tweet;
   if (!status) {
@@ -152,7 +294,7 @@ async function readFxTwitter(parsed, env) {
   return normalizeFxStatus(status, parsed.canonicalUrl);
 }
 
-async function readOfficial(parsed, env) {
+async function readOfficial(parsed: ParsedXUrl, env: Partial<Env>): Promise<XPost> {
   const base = (env.X_API_BASE || 'https://api.x.com').replace(/\/+$/, '');
   const endpoint = new URL(`${base}/2/tweets/${parsed.tweetId}`);
   endpoint.searchParams.set(
@@ -169,7 +311,7 @@ async function readOfficial(parsed, env) {
   );
   endpoint.searchParams.set('user.fields', 'name,username,profile_image_url,verified,verified_type');
 
-  const payload = await fetchJson(
+  const payload = (await fetchJson(
     endpoint.toString(),
     {
       headers: {
@@ -179,7 +321,7 @@ async function readOfficial(parsed, env) {
       },
     },
     timeoutMs(env),
-  );
+  )) as OfficialPayload | null;
 
   if (!payload?.data) {
     throw new XReadError('The official X API returned no post.', 'EMPTY_RESPONSE');
@@ -188,12 +330,12 @@ async function readOfficial(parsed, env) {
   return normalizeOfficialResponse(payload, parsed.canonicalUrl);
 }
 
-function timeoutMs(env) {
+function timeoutMs(env: Partial<Env>): number {
   const value = Number(env.REQUEST_TIMEOUT_MS);
   return Number.isFinite(value) && value > 0 ? value : 20_000;
 }
 
-async function fetchJson(url, options, timeout) {
+async function fetchJson(url: string, options: RequestInit, timeout: number): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
@@ -201,7 +343,7 @@ async function fetchJson(url, options, timeout) {
     const response = await fetch(url, { ...options, signal: controller.signal });
     const body = await response.text();
 
-    let payload = null;
+    let payload: unknown = null;
     try {
       payload = body ? JSON.parse(body) : null;
     } catch {
@@ -223,7 +365,7 @@ async function fetchJson(url, options, timeout) {
 
     return payload;
   } catch (error) {
-    if (error?.name === 'AbortError') {
+    if (isAbortError(error)) {
       throw new XReadError('The reader timed out.', 'TIMEOUT', 504);
     }
     throw error;
@@ -232,7 +374,7 @@ async function fetchJson(url, options, timeout) {
   }
 }
 
-export function normalizeFxStatus(status, fallbackUrl) {
+export function normalizeFxStatus(status: FxStatus, fallbackUrl: string | null): XPost {
   const author = status.author ?? null;
   const media = normalizeFxMedia(status.media);
 
@@ -269,7 +411,7 @@ export function normalizeFxStatus(status, fallbackUrl) {
   };
 }
 
-function normalizeFxArticle(article) {
+function normalizeFxArticle(article: FxArticle | null | undefined): XArticle | null {
   if (!article || typeof article !== 'object') return null;
 
   const blocks = article.content?.blocks ?? [];
@@ -312,7 +454,7 @@ function normalizeFxArticle(article) {
   };
 }
 
-function normalizeFxMedia(media) {
+function normalizeFxMedia(media: FxStatus['media']): MediaItem[] {
   const list = media?.all ?? [
     ...(media?.photos ?? []),
     ...(media?.videos ?? []),
@@ -324,10 +466,11 @@ function normalizeFxMedia(media) {
   });
 }
 
-function mapFxMedia(item) {
+function mapFxMedia(item: FxMediaItem | null | undefined): MediaItem | null {
   if (!item || typeof item !== 'object') return null;
 
-  let type = item.type === 'gif' ? 'gif' : item.type === 'video' ? 'video' : 'photo';
+  const type: MediaItem['type'] =
+    item.type === 'gif' ? 'gif' : item.type === 'video' ? 'video' : 'photo';
   let url = item.url ?? null;
 
   if (type === 'video' && !url) {
@@ -348,24 +491,39 @@ function mapFxMedia(item) {
     altText: item.altText ?? item.alt_text ?? null,
     durationMs: item.duration ? Math.round(item.duration * 1000) : null,
     variants: Array.isArray(item.formats)
-      ? item.formats.map(format => ({
-          url: format.url ?? null,
-          container: format.container ?? null,
-          bitrate: numberOrNull(format.bitrate),
-        }))
+      ? item.formats.map(
+          (format): MediaVariant => ({
+            url: format.url ?? null,
+            container: format.container ?? null,
+            bitrate: numberOrNull(format.bitrate),
+          }),
+        )
       : [],
   };
 }
 
-export function normalizeOfficialResponse(payload, fallbackUrl) {
-  const users = new Map((payload.includes?.users ?? []).map(user => [String(user.id), user]));
-  const media = new Map((payload.includes?.media ?? []).map(item => [item.media_key, item]));
-  const tweets = new Map((payload.includes?.tweets ?? []).map(tweet => [String(tweet.id), tweet]));
+export function normalizeOfficialResponse(
+  payload: OfficialPayload,
+  fallbackUrl: string | null,
+): XPost {
+  const users = new Map<string, OfficialUser>(
+    (payload.includes?.users ?? []).map(user => [String(user.id), user]),
+  );
+  const media = new Map<string, OfficialMedia>(
+    (payload.includes?.media ?? []).map(item => [String(item.media_key), item]),
+  );
+  const tweets = new Map<string, OfficialTweet>(
+    (payload.includes?.tweets ?? []).map(tweet => [String(tweet.id), tweet]),
+  );
 
-  return normalizeOfficialTweet(payload.data, { users, media, tweets }, fallbackUrl);
+  return normalizeOfficialTweet(payload.data as OfficialTweet, { users, media, tweets }, fallbackUrl);
 }
 
-function normalizeOfficialTweet(tweet, maps, fallbackUrl) {
+function normalizeOfficialTweet(
+  tweet: OfficialTweet,
+  maps: OfficialMaps,
+  fallbackUrl: string | null,
+): XPost {
   const author = maps.users.get(String(tweet.author_id)) ?? null;
   const keys = tweet.attachments?.media_keys ?? [];
   const quoteRef = tweet.referenced_tweets?.find(reference => reference.type === 'quoted');
@@ -405,14 +563,15 @@ function normalizeOfficialTweet(tweet, maps, fallbackUrl) {
   };
 }
 
-function quotedTweetUrl(tweet) {
+function quotedTweetUrl(tweet: OfficialTweet): string {
   return `https://x.com/i/status/${tweet.id}`;
 }
 
-function mapOfficialMedia(item) {
+function mapOfficialMedia(item: OfficialMedia | null | undefined): MediaItem | null {
   if (!item) return null;
 
-  const type = item.type === 'animated_gif' ? 'gif' : item.type === 'video' ? 'video' : 'photo';
+  const type: MediaItem['type'] =
+    item.type === 'animated_gif' ? 'gif' : item.type === 'video' ? 'video' : 'photo';
   let url = item.url ?? null;
 
   if (type !== 'photo') {
@@ -432,19 +591,24 @@ function mapOfficialMedia(item) {
     height: numberOrNull(item.height),
     altText: item.alt_text ?? null,
     durationMs: numberOrNull(item.duration_ms),
-    variants: (item.variants ?? []).map(variant => ({
-      url: variant.url ?? null,
-      container: variant.content_type ?? null,
-      bitrate: numberOrNull(variant.bit_rate),
-    })),
+    variants: (item.variants ?? []).map(
+      (variant): MediaVariant => ({
+        url: variant.url ?? null,
+        container: variant.content_type ?? null,
+        bitrate: numberOrNull(variant.bit_rate),
+      }),
+    ),
   };
 }
 
-export function collectImages(post, max = 6) {
-  const candidates = [];
-  const seen = new Set();
+export function collectImages(post: ImageSource, max = 6): CollectedImage[] {
+  const candidates: CollectedImage[] = [];
+  const seen = new Set<string>();
 
-  const add = (item, label) => {
+  const add = (
+    item: { type: string; url: string | null; posterUrl?: string | null; altText?: string | null } | null,
+    label: string,
+  ): void => {
     if (!item) return;
     const url = item.type === 'video' || item.type === 'gif' ? item.posterUrl : item.url;
     if (!url || seen.has(url)) return;
@@ -467,18 +631,21 @@ export function collectImages(post, max = 6) {
   return candidates.slice(0, max);
 }
 
-function toIso(dateString, timestampSeconds) {
+function toIso(
+  dateString: string | null | undefined,
+  timestampSeconds: number | null | undefined,
+): string | null {
   if (dateString) {
     const date = new Date(dateString);
     if (!Number.isNaN(date.getTime())) return date.toISOString();
   }
   if (Number.isFinite(timestampSeconds)) {
-    const date = new Date(timestampSeconds * 1000);
+    const date = new Date((timestampSeconds as number) * 1000);
     if (!Number.isNaN(date.getTime())) return date.toISOString();
   }
   return null;
 }
 
-function numberOrNull(value) {
+function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }

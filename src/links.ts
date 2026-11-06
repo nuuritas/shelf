@@ -1,3 +1,6 @@
+import type { Env, LinkRead, ParsedGitHubUrl } from './types.ts';
+import { isAbortError } from './util.ts';
+
 const SKIP_HOSTS = new Set([
   'x.com',
   'twitter.com',
@@ -11,15 +14,31 @@ const MAX_LINKS = 2;
 const MAX_TEXT = 25_000;
 const MAX_HTML = 2_000_000;
 
-export function extractExternalUrls(post) {
+/** The parts of a post this module reads links out of. */
+interface LinkPost {
+  text?: string | null;
+  quote?: { text?: string | null } | null;
+}
+
+interface GitHubRepoMeta {
+  full_name?: string | null;
+  description?: string | null;
+  topics?: string[] | null;
+  language?: string | null;
+  stargazers_count?: number;
+  license?: { spdx_id?: string | null } | null;
+  created_at?: string | null;
+}
+
+export function extractExternalUrls(post: LinkPost | null): string[] {
   const text = [post?.text, post?.quote?.text].filter(Boolean).join('\n');
   const matches = text.match(/https?:\/\/[^\s<>"']+/g) ?? [];
-  const urls = [];
-  const seen = new Set();
+  const urls: string[] = [];
+  const seen = new Set<string>();
 
   for (const match of matches) {
-    let value = match.replace(/[),.;:!?]+$/, '');
-    let host;
+    const value = match.replace(/[),.;:!?]+$/, '');
+    let host: string;
     try {
       host = new URL(value).hostname.toLowerCase().replace(/^www\./, '');
     } catch {
@@ -40,12 +59,15 @@ export function extractExternalUrls(post) {
   return urls;
 }
 
-export async function readExternalLinks(post, env = {}) {
+export async function readExternalLinks(
+  post: LinkPost,
+  env: Partial<Env> = {},
+): Promise<LinkRead[]> {
   const urls = extractExternalUrls(post);
   if (!urls.length) return [];
 
   const results = await Promise.all(
-    urls.map(async url => {
+    urls.map(async (url): Promise<LinkRead | null> => {
       try {
         return await readLink(url, env);
       } catch (error) {
@@ -63,15 +85,15 @@ export async function readExternalLinks(post, env = {}) {
     }),
   );
 
-  return results.filter(Boolean);
+  return results.filter((result): result is LinkRead => Boolean(result));
 }
 
-async function readLink(url, env) {
+async function readLink(url: string, env: Partial<Env>): Promise<LinkRead | null> {
   let target = url;
 
   if (hostnameOf(target) === 't.co') {
-    target = await resolveTco(target, env);
-    if (!target) {
+    const resolved = await resolveTco(target, env);
+    if (!resolved) {
       return {
         url,
         finalUrl: url,
@@ -83,6 +105,7 @@ async function readLink(url, env) {
         error: 'Could not resolve the shortened link.',
       };
     }
+    target = resolved;
     if (SKIP_HOSTS.has(hostnameOf(target))) return null;
   }
 
@@ -96,8 +119,8 @@ async function readLink(url, env) {
   return readWebPage(target, env);
 }
 
-export function parseGitHubUrl(input) {
-  let url;
+export function parseGitHubUrl(input: string): ParsedGitHubUrl | null {
+  let url: URL;
   try {
     url = new URL(input);
   } catch {
@@ -125,17 +148,21 @@ export function parseGitHubUrl(input) {
   };
 }
 
-async function readGitHub(repo, originalUrl, env) {
-  const headers = {
+async function readGitHub(
+  repo: ParsedGitHubUrl,
+  originalUrl: string,
+  env: Partial<Env>,
+): Promise<LinkRead> {
+  const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'User-Agent': 'XBookmarkVault/1.0',
     'X-GitHub-Api-Version': '2022-11-28',
   };
   if (env.GITHUB_TOKEN) headers.Authorization = `Bearer ${env.GITHUB_TOKEN}`;
 
-  let meta = null;
+  let meta: GitHubRepoMeta | null = null;
   try {
-    meta = await fetchJson(repo.apiUrl, { headers }, env);
+    meta = await fetchJson<GitHubRepoMeta>(repo.apiUrl, { headers }, env);
   } catch {
     // The API can be rate-limited from shared Cloudflare egress.
   }
@@ -199,7 +226,7 @@ async function readGitHub(repo, originalUrl, env) {
   };
 }
 
-async function readWebPage(url, env) {
+async function readWebPage(url: string, env: Partial<Env>): Promise<LinkRead> {
   const response = await request(
     url,
     {
@@ -266,7 +293,7 @@ async function readWebPage(url, env) {
   };
 }
 
-async function resolveTco(url, env) {
+async function resolveTco(url: string, env: Partial<Env>): Promise<string | null> {
   try {
     const getResponse = await request(
       url,
@@ -284,7 +311,7 @@ async function resolveTco(url, env) {
   return null;
 }
 
-function extractMainHtml(html) {
+function extractMainHtml(html: string): string {
   const articles = [...html.matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi)].map(match => match[1]);
   if (articles.length) {
     return articles.sort((a, b) => b.length - a.length)[0];
@@ -296,7 +323,7 @@ function extractMainHtml(html) {
   return html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || html;
 }
 
-export function htmlToText(html) {
+export function htmlToText(html: unknown): string {
   let value = String(html ?? '')
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
@@ -324,12 +351,12 @@ export function htmlToText(html) {
   return value;
 }
 
-function titleTag(html) {
+function titleTag(html: string): string {
   const match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
   return match ? decodeHtmlEntities(match[1]).replace(/\s+/g, ' ').trim() : '';
 }
 
-function metaContent(html, name) {
+function metaContent(html: string, name: string): string {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const tags = html.match(new RegExp(`<meta\\b[^>]*>`, 'gi')) ?? [];
   for (const tag of tags) {
@@ -341,7 +368,7 @@ function metaContent(html, name) {
   return '';
 }
 
-function cleanTitle(value) {
+function cleanTitle(value: string): string {
   return decodeHtmlEntities(value)
     .replace(/\s*[|–—]\s*[^|–—]{1,40}$/u, '')
     .replace(/\s+/g, ' ')
@@ -349,8 +376,8 @@ function cleanTitle(value) {
     .slice(0, 240);
 }
 
-function decodeHtmlEntities(value) {
-  const named = {
+function decodeHtmlEntities(value: unknown): string {
+  const named: Record<string, string> = {
     amp: '&',
     lt: '<',
     gt: '>',
@@ -369,12 +396,12 @@ function decodeHtmlEntities(value) {
   };
 
   return String(value ?? '')
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => safeCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, decimal) => safeCodePoint(Number.parseInt(decimal, 10)))
-    .replace(/&([a-z]+);/gi, (match, name) => named[name.toLowerCase()] ?? match);
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => safeCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, decimal: string) => safeCodePoint(Number.parseInt(decimal, 10)))
+    .replace(/&([a-z]+);/gi, (match, name: string) => named[name.toLowerCase()] ?? match);
 }
 
-function safeCodePoint(code) {
+function safeCodePoint(code: number): string {
   try {
     return String.fromCodePoint(code);
   } catch {
@@ -382,7 +409,7 @@ function safeCodePoint(code) {
   }
 }
 
-function hostnameOf(url) {
+function hostnameOf(url: string): string {
   try {
     return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
   } catch {
@@ -390,7 +417,7 @@ function hostnameOf(url) {
   }
 }
 
-function isBlockedHost(host) {
+function isBlockedHost(host: string): boolean {
   if (!host) return true;
   if (host === 'localhost' || host.endsWith('.local') || host === '0.0.0.0') return true;
   if (host === '::1' || host === '[::1]') return true;
@@ -401,26 +428,26 @@ function isBlockedHost(host) {
   return false;
 }
 
-async function fetchJson(url, options, env) {
+async function fetchJson<T>(url: string, options: RequestInit, env: Partial<Env>): Promise<T> {
   const response = await request(url, options, timeout(env));
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
+  return (await response.json()) as T;
 }
 
-async function request(url, options, timeoutMs) {
+async function request(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
-    if (error?.name === 'AbortError') throw new Error('The link timed out.');
+    if (isAbortError(error)) throw new Error('The link timed out.');
     throw error;
   } finally {
     clearTimeout(timer);
   }
 }
 
-function timeout(env) {
+function timeout(env: Partial<Env>): number {
   const value = Number(env.LINK_TIMEOUT_MS);
   return Number.isFinite(value) && value > 0 ? value : 12_000;
 }

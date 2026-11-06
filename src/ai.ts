@@ -1,21 +1,47 @@
-import { arrayBufferToBase64, slugify, truncate } from './util.js';
-import { collectImages } from './x.js';
+import type {
+  Bookmark,
+  BootstrapItem,
+  BootstrapTopic,
+  ChatCompletionResponse,
+  ChatImagePart,
+  ChatMessage,
+  ChatRequest,
+  ChatTextPart,
+  ClassifiedTopic,
+  ClassifyInput,
+  ClassifyResult,
+  Env,
+  SummaryResult,
+  TopicOverviewInput,
+} from './types.ts';
+import { arrayBufferToBase64, isAbortError, slugify, truncate } from './util.ts';
+import { collectImages } from './x.ts';
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
-export function isAiConfigured(env) {
+export function isAiConfigured(env: Partial<Env>): boolean {
   return Boolean(env.OPENCODE_API_KEY);
 }
 
-export async function summarizePost(post, env, options = {}) {
+export interface SummaryOptions {
+  instruction?: string;
+  previousSummary?: string;
+  session?: string;
+}
+
+export async function summarizePost(
+  post: Bookmark,
+  env: Partial<Env>,
+  options: SummaryOptions = {},
+): Promise<SummaryResult> {
   if (!env.OPENCODE_API_KEY) {
     throw new Error('OPENCODE_API_KEY is not configured.');
   }
 
   const images = collectImages(post, MAX_IMAGES);
-  const imageParts = [];
-  const imageNotes = [];
+  const imageParts: ChatImagePart[] = [];
+  const imageNotes: string[] = [];
 
   for (const [index, image] of images.entries()) {
     try {
@@ -36,7 +62,7 @@ export async function summarizePost(post, env, options = {}) {
   const base = (env.AI_BASE_URL || 'https://opencode.ai/inference/go/openai/v1').replace(/\/+$/, '');
   const language = String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() === 'en' ? 'English' : 'Turkish';
 
-  const body = {
+  const body: ChatRequest = {
     model,
     messages: [
       {
@@ -64,7 +90,7 @@ export async function summarizePost(post, env, options = {}) {
           ...imageParts,
         ],
       },
-    ],
+    ] satisfies ChatMessage[],
     max_tokens: 4096,
     max_completion_tokens: 4096,
     reasoning_effort: 'low',
@@ -90,9 +116,9 @@ export async function summarizePost(post, env, options = {}) {
     });
 
     const raw = await response.text();
-    let payload = null;
+    let payload: ChatCompletionResponse | null = null;
     try {
-      payload = raw ? JSON.parse(raw) : null;
+      payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
     } catch {
       throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
     }
@@ -123,7 +149,7 @@ export async function summarizePost(post, env, options = {}) {
 
     return { text: text.trim(), model, imagesUsed: imageParts.length };
   } catch (error) {
-    if (error?.name === 'AbortError') {
+    if (isAbortError(error)) {
       throw new Error('AI summary timed out after 90 seconds.');
     }
     throw error;
@@ -132,7 +158,11 @@ export async function summarizePost(post, env, options = {}) {
   }
 }
 
-function buildPrompt(post, imageNotes, options = {}) {
+function buildPrompt(
+  post: Bookmark,
+  imageNotes: string[],
+  options: { instruction?: string; previous?: string } = {},
+): string {
   const lines = [
     'Summarize this saved X post.',
     '',
@@ -204,7 +234,7 @@ function buildPrompt(post, imageNotes, options = {}) {
   return lines.join('\n');
 }
 
-async function imageAsDataUrl(url, env) {
+async function imageAsDataUrl(url: string, env: Partial<Env>): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
 
@@ -238,7 +268,7 @@ async function imageAsDataUrl(url, env) {
   }
 }
 
-function errorMessage(error) {
+function errorMessage(error: unknown): string {
   return error instanceof Error ? truncate(error.message, 120) : 'unknown error';
 }
 
@@ -248,7 +278,10 @@ function errorMessage(error) {
 
 export const MAX_TOPICS = 9;
 
-export async function bootstrapTopics(items, env) {
+export async function bootstrapTopics(
+  items: BootstrapItem[],
+  env: Partial<Env>,
+): Promise<BootstrapTopic[]> {
   if (!items.length) return [];
 
   const language = summaryLanguage(env);
@@ -293,31 +326,35 @@ export async function bootstrapTopics(items, env) {
     temperature: 0.2,
   });
 
-  const parsed = parseJsonReply(raw);
+  const parsed = asRecord(parseJsonReply(raw));
   const topics = Array.isArray(parsed?.topics) ? parsed.topics : [];
   const known = new Set(items.map(item => String(item.id)));
-  const used = new Set();
+  const used = new Set<string>();
 
   return topics
-    .map(topic => {
-      const name = truncate(String(topic?.name || '').trim(), 60);
+    .map((topic): BootstrapTopic | null => {
+      const record = asRecord(topic);
+      const name = truncate(String(record?.name || '').trim(), 60);
       if (!name) return null;
-      const ids = (Array.isArray(topic.items) ? topic.items : [])
+      const ids = (Array.isArray(record?.items) ? record.items : [])
         .map(String)
         .filter(id => known.has(id) && !used.has(id));
       ids.forEach(id => used.add(id));
       return {
         slug: slugify(name),
         name,
-        description: truncate(String(topic?.description || '').trim(), 240),
+        description: truncate(String(record?.description || '').trim(), 240),
         itemIds: ids,
       };
     })
-    .filter(topic => topic && topic.itemIds.length)
+    .filter((topic): topic is BootstrapTopic => Boolean(topic && topic.itemIds.length))
     .slice(0, MAX_TOPICS);
 }
 
-export async function classifyPost({ post, summary, topics }, env) {
+export async function classifyPost(
+  { post, summary, topics }: ClassifyInput,
+  env: Partial<Env>,
+): Promise<ClassifyResult> {
   const language = summaryLanguage(env);
   const existing = topics.length
     ? topics.map(topic => `- ${topic.slug}: ${topic.name} — ${topic.description || ''}`).join('\n')
@@ -359,19 +396,20 @@ export async function classifyPost({ post, summary, topics }, env) {
     temperature: 0.1,
   });
 
-  const parsed = parseJsonReply(raw);
+  const parsed = asRecord(parseJsonReply(raw));
   const valid = new Set(topics.map(topic => topic.slug));
   const slugs = (Array.isArray(parsed?.slugs) ? parsed.slugs : [])
     .map(slug => slugify(String(slug)))
     .filter(slug => valid.has(slug));
 
-  let created = null;
-  const name = truncate(String(parsed?.new_topic?.name || '').trim(), 60);
+  let created: ClassifiedTopic | null = null;
+  const newTopic = asRecord(parsed?.new_topic);
+  const name = truncate(String(newTopic?.name || '').trim(), 60);
   if (!slugs.length && name) {
     created = {
       slug: slugify(name),
       name,
-      description: truncate(String(parsed?.new_topic?.description || '').trim(), 240),
+      description: truncate(String(newTopic?.description || '').trim(), 240),
     };
   }
 
@@ -383,7 +421,10 @@ export async function classifyPost({ post, summary, topics }, env) {
   };
 }
 
-export async function writeTopicOverview({ topic, items, previous }, env) {
+export async function writeTopicOverview(
+  { topic, items, previous }: TopicOverviewInput,
+  env: Partial<Env>,
+): Promise<string> {
   if (!items.length) return '';
 
   const language = summaryLanguage(env);
@@ -424,7 +465,18 @@ export async function writeTopicOverview({ topic, items, previous }, env) {
   return raw.trim();
 }
 
-async function requestChat(env, { session, system, user, maxTokens = 2000, temperature = 0.2 }) {
+interface RequestChatOptions {
+  session: string;
+  system: string;
+  user: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
+async function requestChat(
+  env: Partial<Env>,
+  { session, system, user, maxTokens = 2000, temperature = 0.2 }: RequestChatOptions,
+): Promise<string> {
   if (!env.OPENCODE_API_KEY) {
     throw new Error('OPENCODE_API_KEY is not configured.');
   }
@@ -461,9 +513,9 @@ async function requestChat(env, { session, system, user, maxTokens = 2000, tempe
     });
 
     const raw = await response.text();
-    let payload = null;
+    let payload: ChatCompletionResponse | null = null;
     try {
-      payload = raw ? JSON.parse(raw) : null;
+      payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
     } catch {
       throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
     }
@@ -492,7 +544,7 @@ async function requestChat(env, { session, system, user, maxTokens = 2000, tempe
 
     return text.trim();
   } catch (error) {
-    if (error?.name === 'AbortError') {
+    if (isAbortError(error)) {
       throw new Error('AI request timed out after 90 seconds.');
     }
     throw error;
@@ -501,7 +553,11 @@ async function requestChat(env, { session, system, user, maxTokens = 2000, tempe
   }
 }
 
-function parseJsonReply(raw) {
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function parseJsonReply(raw: unknown): unknown {
   const text = String(raw || '')
     .replace(/^```(?:json)?/i, '')
     .replace(/```$/i, '')
@@ -516,6 +572,6 @@ function parseJsonReply(raw) {
   }
 }
 
-function summaryLanguage(env) {
+function summaryLanguage(env: Partial<Env>): string {
   return String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() === 'en' ? 'English' : 'Turkish';
 }
