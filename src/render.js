@@ -31,11 +31,11 @@ export function renderPage({
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
 
-  const topicChips = topics
+  const topicTabs = topics
     .map(
       entry => `
-        <a class="topic-chip ${topic?.slug === entry.slug ? 'active' : ''}" href="/t/${escapeHtml(entry.slug)}">
-          ${escapeHtml(entry.name)} <span>${entry.count}</span>
+        <a class="topic-tab ${topic?.slug === entry.slug ? 'active' : ''}" href="/t/${escapeHtml(entry.slug)}">
+          ${escapeHtml(entry.name)}<span>${entry.count}</span>
         </a>
       `,
     )
@@ -60,10 +60,18 @@ export function renderPage({
       </header>
 
       <main class="shell">
-        <nav class="topic-bar" aria-label="Topics">
-          <a class="topic-chip all ${topic ? '' : 'active'}" href="/">All <span>${total}</span></a>
-          ${topicChips}
-        </nav>
+        <details class="add-drawer">
+          <summary><span class="add-icon">+</span> Save a link from X</summary>
+          <form class="add-form" method="post" action="/add">
+            <label class="sr-only" for="url">X post URL</label>
+            <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/…" required value="${addValue}">
+            <button type="submit">Save post</button>
+          </form>
+          <p class="fine-print">On Android: <strong>Share → Bookmark Vault</strong> in X. The post, quote, article, links, and images are read and summarized automatically.</p>
+        </details>
+
+        ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
+        ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
 
         ${
           topic
@@ -74,29 +82,13 @@ export function renderPage({
             ${topic.description ? `<p class="topic-description">${escapeHtml(topic.description)}</p>` : ''}
             ${
               topic.overview
-                ? `<div class="topic-overview">${renderParagraphs(topic.overview)}</div>`
+                ? renderTopicOverview(topic.overview)
                 : `<p class="topic-overview-empty">The synthesis for this thread is still being written.</p>`
             }
           </section>
         `
-            : `
-          <section class="hero">
-            <p class="eyebrow">X → your own quiet library</p>
-            <h1>Keep the posts<br>worth rereading.</h1>
-            <p class="lede">Share a link from X, or paste one here. The post, its quote, and its images are saved and summarized automatically.</p>
-
-            <form class="add-form" method="post" action="/add">
-              <label class="sr-only" for="url">X post URL</label>
-              <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/…" required value="${addValue}">
-              <button type="submit">Save post</button>
-            </form>
-            <p class="fine-print">On Android, install this page once, then use <strong>Share → Bookmark Vault</strong> in X.</p>
-          </section>
-        `
+            : ''
         }
-
-        ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
-        ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
 
         <section class="library">
           <div class="library-head">
@@ -110,18 +102,18 @@ export function renderPage({
                     : 'Latest saves'
               }</h2>
             </div>
-            ${
-              topic
-                ? '<a class="clear-search" href="/">← All saves</a>'
-                : `
             <form class="search-form" method="get" action="/">
               <label class="sr-only" for="q">Search bookmarks</label>
               <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
               <button type="submit">Search</button>
               ${query ? '<a class="clear-search" href="/">Clear</a>' : ''}
-            </form>`
-            }
+            </form>
           </div>
+
+          <nav class="topic-tabs" aria-label="Topics">
+            <a class="topic-tab all ${topic ? '' : 'active'}" href="/">All<span>${total}</span></a>
+            ${topicTabs}
+          </nav>
 
           ${
             bookmarks.length
@@ -157,14 +149,32 @@ function renderParagraphs(text) {
     .join('');
 }
 
+function renderTopicOverview(text) {
+  const foldable = String(text || '').length > 700;
+  return `
+    <div class="topic-overview ${foldable ? 'is-folded' : ''}">
+      <div class="topic-overview-body">${renderParagraphs(text)}</div>
+      ${foldable ? '<button class="fold-button" type="button" data-fold>Read the full synthesis</button>' : ''}
+    </div>
+  `;
+}
+
 function renderBookmark(bookmark, aiConfigured) {
   const author = bookmark.author ?? {};
   const handle = author.username ? `@${author.username}` : 'unknown';
   const avatar = safeHttpUrl(author.avatarUrl);
   const initial = escapeHtml((author.name || author.username || '?').slice(0, 1).toUpperCase());
 
+  const extras = [];
+  if (bookmark.article) extras.push('X Article');
+  const mediaCount = (bookmark.media ?? []).filter(item => safeHttpUrl(item.url)).length;
+  if (mediaCount) extras.push(`${mediaCount} ${mediaCount === 1 ? 'image' : 'images'}`);
+  if (bookmark.quote) extras.push('quoted post');
+  const linkCount = (bookmark.links ?? []).length;
+  if (linkCount) extras.push(`${linkCount} ${linkCount === 1 ? 'link' : 'links'}`);
+
   return `
-    <article class="card" id="bookmark-${escapeHtml(bookmark.tweetId)}">
+    <article class="card is-collapsed" id="bookmark-${escapeHtml(bookmark.tweetId)}">
       <header class="card-head">
         <div class="author">
           ${
@@ -203,9 +213,13 @@ function renderBookmark(bookmark, aiConfigured) {
       ${bookmark.links?.length ? renderLinks(bookmark.links) : ''}
       ${renderSummary(bookmark, aiConfigured)}
 
+      ${extras.length ? `<p class="peek-meta">${escapeHtml(extras.join(' · '))}</p>` : ''}
+
       <footer class="card-foot">
         <div class="metrics">${renderMetrics(bookmark.metrics)}</div>
         <div class="card-actions">
+          <button class="expand-button" type="button" data-expand aria-expanded="false">Read more</button>
+          <span class="dot">·</span>
           <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
           <span class="dot">·</span>
           <a href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer">Open on X</a>
@@ -478,6 +492,15 @@ function pageShell({ title, bodyClass, head, body }) {
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="stylesheet" href="/style.css">
   ${head}
+  <noscript><style>
+    .card.is-collapsed .tweet-text,
+    .card.is-collapsed .summary-text { display: block; overflow: visible; -webkit-line-clamp: unset; }
+    .card.is-collapsed .media-grid,
+    .card.is-collapsed .quote,
+    .card.is-collapsed .link-stack,
+    .card.is-collapsed .linked-article { display: block; }
+    .peek-meta, .expand-button { display: none; }
+  </style></noscript>
   <script src="/app.js" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
@@ -1269,88 +1292,169 @@ h1, h2, h3, p { margin-top: 0; }
   overflow-x: auto;
 }
 
-.topic-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 18px 0 0;
+.add-drawer {
+  margin: 16px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow: hidden;
 }
 
-.topic-chip {
-  display: inline-flex;
+.add-drawer summary {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 13px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
+  gap: 10px;
+  padding: 13px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.add-drawer summary::-webkit-details-marker { display: none; }
+
+.add-drawer[open] summary { border-bottom: 1px solid var(--line); }
+
+.add-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  transition: transform 0.18s ease;
+}
+
+.add-drawer[open] .add-icon { transform: rotate(45deg); }
+
+.add-drawer .add-form {
+  margin: 12px;
+  max-width: none;
+  border: none;
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.add-drawer .fine-print {
+  margin: 0;
+  padding: 0 16px 14px;
+}
+
+.topic-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  margin: 14px 0 0;
+  background: var(--bg);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+}
+
+.topic-tabs::-webkit-scrollbar { display: none; }
+
+.topic-tab {
+  flex: 0 0 auto;
+  padding: 12px 13px 11px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0.01em;
   text-decoration: none;
-  line-height: 1.2;
+  white-space: nowrap;
 }
 
-.topic-chip:hover { border-color: var(--ink); }
+.topic-tab:hover { color: var(--ink); }
 
-.topic-chip span {
+.topic-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 650;
+}
+
+.topic-tab span {
+  margin-left: 6px;
   color: var(--faint);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
-.topic-chip.active {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--bg);
+.topic-tab.active span { color: var(--accent); }
+
+.topic-overview.is-folded .topic-overview-body {
+  position: relative;
+  max-height: 7.8em;
+  overflow: hidden;
 }
 
-.topic-chip.active span { color: var(--bg); opacity: 0.6; }
-
-.topic-hero {
-  padding: 46px 0 30px;
-  max-width: 760px;
+.topic-overview.is-folded .topic-overview-body::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3.2em;
+  background: linear-gradient(transparent, var(--surface-soft));
 }
 
-.topic-hero h1 {
-  margin: 6px 0 10px;
-  font-family: var(--serif);
-  font-size: clamp(34px, 6vw, 54px);
-  font-weight: 500;
-  letter-spacing: -0.025em;
-  line-height: 1.02;
+.fold-button {
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.topic-description {
-  margin: 0 0 22px;
-  color: var(--muted);
-  font-size: 16px;
-  line-height: 1.55;
-  max-width: 620px;
+.fold-button:hover { text-decoration: underline; }
+
+.card.is-collapsed { cursor: pointer; }
+
+.card.is-collapsed .tweet-text,
+.card.is-collapsed .summary-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.topic-overview {
-  padding: 20px 22px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  background: var(--surface-soft);
-}
+.card.is-collapsed .media-grid,
+.card.is-collapsed .quote,
+.card.is-collapsed .link-stack,
+.card.is-collapsed .linked-article,
+.card.is-collapsed .summary-retry { display: none; }
 
-.topic-overview p {
-  margin: 0 0 14px;
-  font-size: 15.5px;
-  line-height: 1.68;
-  color: var(--ink);
-}
-
-.topic-overview p:last-child { margin-bottom: 0; }
-
-.topic-overview-empty {
+.peek-meta {
+  display: none;
+  margin: 10px 0 0;
   color: var(--faint);
-  font-size: 14px;
-  font-style: italic;
+  font-size: 12px;
 }
+
+.card.is-collapsed .peek-meta { display: block; }
+
+.expand-button {
+  padding: 5px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.expand-button:hover { border-color: var(--ink); }
 
 .card-topics {
   display: flex;
@@ -1375,8 +1479,10 @@ h1, h2, h3, p { margin-top: 0; }
 @media (max-width: 650px) {
   .shell, .topbar { width: min(100% - 24px, 820px); }
   .topbar { padding-top: 18px; }
-  .topic-bar { padding-top: 12px; gap: 6px; }
-  .topic-chip { padding: 6px 11px; font-size: 12px; }
+  .topic-tabs { margin-top: 10px; }
+  .topic-tab { padding: 10px 11px 9px; font-size: 12.5px; }
+  .card.is-collapsed .tweet-text,
+  .card.is-collapsed .summary-text { -webkit-line-clamp: 2; }
   .hero { padding: 54px 0 38px; }
   .hero h1 { font-size: clamp(38px, 12vw, 58px); }
   .lede { font-size: 15px; }

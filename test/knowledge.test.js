@@ -33,12 +33,12 @@ test('renders topic navigation with counts and an active topic', () => {
 
   assert.match(html, /href="\/t\/ajan-mimarisi"/);
   assert.match(html, /href="\/t\/dogu-akdeniz"/);
-  assert.match(html, /topic-chip active[^>]*href="\/"|href="\/"[^>]*|class="topic-chip all active"/);
+  assert.match(html, /class="topic-tab all "/);
   assert.match(html, /Ajan Mimarisi/);
   assert.match(html, /Ajanların oturum sınırlarını aşması\./);
   assert.match(html, /<p>Birinci paragraf\.<\/p>/);
   assert.match(html, /<p>İkinci paragraf\.<\/p>/);
-  assert.match(html, /topic-chip active/);
+  assert.match(html, /class="topic-tab active"/);
 });
 
 test('escapes topic syntheses before rendering them', () => {
@@ -62,4 +62,29 @@ test('escapes topic syntheses before rendering them', () => {
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.doesNotMatch(html, /<img src=x/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+test('keeps the add form and long syntheses folded by default', () => {
+  const long = Array.from({ length: 8 }, (_, index) => `Paragraf ${index + 1}. `.repeat(12)).join('\n\n');
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: '',
+    topics: [{ slug: 'test', name: 'Test', count: 1 }],
+    topic: {
+      slug: 'test',
+      name: 'Test',
+      description: '',
+      overview: long,
+      count: 1,
+    },
+    notice: null,
+    error: null,
+    aiConfigured: true,
+  });
+
+  assert.match(html, /<details class="add-drawer">/);
+  assert.match(html, /class="topic-overview is-folded"/);
+  assert.match(html, /data-fold/);
+  assert.match(html, /topic-tabs/);
 });
