@@ -35,6 +35,8 @@
       "new_sqlite_classes": ["Bookmarks"]
     }
   ],
+  // Delete these three lines to use the free Workers AI binding instead of an
+  // external endpoint (then AI_API_KEY is not needed either).
   "vars": {
     "AI_BASE_URL": "https://api.openai.com/v1",
     "AI_MODEL": "gpt-4.1-mini",

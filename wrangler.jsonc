@@ -22,11 +22,12 @@
       "new_sqlite_classes": ["Bookmarks"]
     }
   ],
-  // Defaults for a fresh deploy. Override with `wrangler secret put` (keys) or
-  // by editing the vars below (endpoint, model, summary language).
+  // Summaries run on the Workers AI binding above, which needs no API key.
+  // To use an external OpenAI-compatible endpoint instead, set AI_API_KEY as a
+  // secret and add:
+  //   "AI_BASE_URL": "https://api.openai.com/v1",
+  //   "AI_MODEL": "gpt-4.1-mini",
   "vars": {
-    "AI_BASE_URL": "https://api.openai.com/v1",
-    "AI_MODEL": "gpt-4.1-mini",
     "SUMMARY_LANGUAGE": "en"
   }
 }

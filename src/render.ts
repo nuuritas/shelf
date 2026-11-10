@@ -831,7 +831,7 @@ function renderSummary(
         <span class="summary-mark">AI</span>
         <h3>Summary not configured</h3>
       </div>
-      <p class="summary-note">Add the AI_API_KEY secret to turn on automatic summaries.</p>
+      <p class="summary-note">Bind Workers AI as AI, or add an AI_API_KEY secret, to turn on automatic summaries.</p>
     </section>
   `;
 }

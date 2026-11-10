@@ -7,8 +7,9 @@ APP_PASSWORD=replace-with-a-long-password
 # Optional. Signs the session cookie. If omitted, APP_PASSWORD is used.
 # APP_SECRET=replace-with-another-long-secret
 
-# API key for the OpenAI-compatible endpoint configured in wrangler.jsonc.
-# Leave empty to save bookmarks without AI summaries.
+# Optional. Without it, summaries run on the Workers AI binding (free daily
+# allocation, text only). Set a key to use an external OpenAI-compatible
+# endpoint instead; then also set AI_BASE_URL and AI_MODEL in wrangler.jsonc.
 AI_API_KEY=
 
 # Supadata key. Optional: enables YouTube captions inside the Worker.

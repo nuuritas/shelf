@@ -4,7 +4,6 @@ import type {
   BootstrapTopic,
   ChatCompletionResponse,
   ChatImagePart,
-  ChatMessage,
   ChatRequest,
   ChatTextPart,
   ClassifiedTopic,
@@ -25,6 +24,33 @@ const DEFAULT_AI_BASE = 'https://api.openai.com/v1';
 const DEFAULT_AI_MODEL = 'gpt-4.1-mini';
 
 /**
+ * Default model for the Workers AI binding. No key, no signup: the free daily
+ * allocation covers a personal archive. 70B is the smallest model here that
+ * follows the summary prompt well; a key for an external endpoint buys better
+ * prose for a few dollars a month.
+ */
+const DEFAULT_WORKERS_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+
+export type AiProvider = 'http' | 'workers' | 'none';
+
+/**
+ * An explicit API key wins, so a deployment that already pays for a model keeps
+ * using it. With no key, the Workers AI binding is the zero-config path.
+ */
+export function aiProvider(env: Partial<Env>): AiProvider {
+  if (aiApiKey(env)) return 'http';
+  return env.AI ? 'workers' : 'none';
+}
+
+function modelFor(env: Partial<Env>): string {
+  const configured = String(env.AI_MODEL || '').trim();
+  if (aiProvider(env) === 'workers') {
+    return configured.startsWith('@cf/') ? configured : DEFAULT_WORKERS_MODEL;
+  }
+  return configured.replace(/^opencode-go\//, '') || DEFAULT_AI_MODEL;
+}
+
+/**
  * The API key for the OpenAI-compatible endpoint. `OPENCODE_API_KEY` is an
  * older alias, still read so existing deployments keep working after upgrade.
  */
@@ -33,7 +59,7 @@ export function aiApiKey(env: Partial<Env>): string {
 }
 
 export function isAiConfigured(env: Partial<Env>): boolean {
-  return Boolean(aiApiKey(env));
+  return aiProvider(env) !== 'none';
 }
 
 export interface SummaryOptions {
@@ -47,39 +73,44 @@ export async function summarizePost(
   env: Partial<Env>,
   options: SummaryOptions = {},
 ): Promise<SummaryResult> {
-  if (!isAiConfigured(env)) {
-    throw new Error('AI_API_KEY is not configured.');
+  const provider = aiProvider(env);
+  if (provider === 'none') {
+    throw new Error('No AI configured: set AI_API_KEY or bind Workers AI as AI.');
   }
 
   const images = collectImages(post, MAX_IMAGES);
   const imageParts: ChatImagePart[] = [];
   const imageNotes: string[] = [];
 
-  for (const [index, image] of images.entries()) {
-    try {
-      const dataUrl = await imageAsDataUrl(image.url, env);
-      imageParts.push({
-        type: 'image_url',
-        image_url: { url: dataUrl, detail: 'high' },
-      });
-      imageNotes.push(`Image ${index + 1} (${image.label}): attached.`);
-    } catch (error) {
+  if (provider === 'workers') {
+    // The binding path is text-only: it has no portable image message format.
+    if (images.length) {
       imageNotes.push(
-        `Image ${index + 1} (${image.label}): could not be loaded (${errorMessage(error)}).`,
+        `Image ${images.length === 1 ? '1 was' : `${images.length} were`} not attached: the Workers AI path reads text only.`,
       );
+    }
+  } else {
+    for (const [index, image] of images.entries()) {
+      try {
+        const dataUrl = await imageAsDataUrl(image.url, env);
+        imageParts.push({
+          type: 'image_url',
+          image_url: { url: dataUrl, detail: 'high' },
+        });
+        imageNotes.push(`Image ${index + 1} (${image.label}): attached.`);
+      } catch (error) {
+        imageNotes.push(
+          `Image ${index + 1} (${image.label}): could not be loaded (${errorMessage(error)}).`,
+        );
+      }
     }
   }
 
-  const model = String(env.AI_MODEL || DEFAULT_AI_MODEL).replace(/^opencode-go\//, '');
+  const model = modelFor(env);
   const base = (env.AI_BASE_URL || DEFAULT_AI_BASE).replace(/\/+$/, '');
   const language = String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
 
-  const body: ChatRequest = {
-    model,
-    messages: [
-      {
-        role: 'system',
-        content:
+  const systemPrompt =
           (options.instruction
             ? `You are writing a new version of an existing explanation because the reader asked for a different angle. The existing summary is context, not a template: do not repeat it or pad it. Answer the reader's request directly and concretely, and keep the same natural, non-robotic voice. Write in ${language}. `
             : '') +
@@ -87,28 +118,30 @@ export async function summarizePost(
           'Start with one or two sentences: what this is and the situation or context. Then explain the central idea or argument in natural paragraphs, using concrete details and examples from the supplied content. Briefly explain jargon instead of repeating it. ' +
           'If it is a GitHub repository, explain what the project actually does, who it is for, how it works, and its notable features or maturity. If it is an article, explain its thesis, the context it responds to, and its implications. If the post itself is just a comment on a link, connect the comment to the linked content. ' +
           'Do not use headings such as "Özet", "Ana noktalar", or "Görsellerin katkısı". Do not produce a rigid bullet list or a section-by-section recap. Write 3-5 paragraphs, roughly 250-450 words, and end with one natural takeaway sentence. ' +
-          'Use only the supplied content. If some content could not be read or is incomplete, say so naturally. Do not invent facts. Return plain text, not Markdown.',
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: buildPrompt(post, imageNotes, {
-              instruction: options.instruction,
-              previous: options.previousSummary,
-            }),
-          },
-          ...imageParts,
-        ],
-      },
-    ] satisfies ChatMessage[],
+          'Use only the supplied content. If some content could not be read or is incomplete, say so naturally. Do not invent facts. Return plain text, not Markdown.';
+
+  const userText = buildPrompt(post, imageNotes, {
+    instruction: options.instruction,
+    previous: options.previousSummary,
+  });
+
+  const body: ChatRequest = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: [{ type: 'text', text: userText }, ...imageParts] },
+    ],
     max_tokens: 4096,
     max_completion_tokens: 4096,
     reasoning_effort: 'low',
     temperature: 0.2,
     stream: false,
   };
+
+  if (provider === 'workers') {
+    const text = await runWorkersAi(env, model, systemPrompt, userText, 4096, 0.2);
+    return { text, model, imagesUsed: 0 };
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
@@ -168,6 +201,63 @@ export async function summarizePost(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Run one chat completion on the Workers AI binding. The binding is already
+ * used for Whisper, so this needs no extra credential: a fresh deployment gets
+ * summaries from the free daily allocation.
+ */
+export async function runWorkersAi(
+  env: Partial<Env>,
+  model: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string> {
+  const ai = env.AI;
+  if (!ai) throw new Error('The Workers AI binding (AI) is not configured.');
+
+  let result: unknown;
+  try {
+    result = await ai.run(model, {
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      max_tokens: maxTokens,
+      temperature,
+    });
+  } catch (error) {
+    const message = errorMessage(error);
+    if (/neuron|quota|rate.?limit|429|capacity|busy|overload/i.test(message)) {
+      throw new Error(
+        `Workers AI could not serve this request (${truncate(message, 200)}). ` +
+          'The free allocation is 10,000 neurons per day and resets at 00:00 UTC.',
+      );
+    }
+    throw error;
+  }
+
+  const text = extractAiText(result);
+  if (!text) throw new Error('Workers AI returned an empty response.');
+  return text;
+}
+
+/** Workers AI models answer as `{ response }` or in the OpenAI `choices` shape. */
+export function extractAiText(result: unknown): string {
+  if (typeof result === 'string') return result.trim();
+  if (!result || typeof result !== 'object') return '';
+  const record = result as Record<string, unknown>;
+
+  if (typeof record.response === 'string') return record.response.trim();
+  const choices = record.choices as Array<{ message?: { content?: unknown } }> | undefined;
+  const content = choices?.[0]?.message?.content;
+  if (typeof content === 'string') return content.trim();
+  const nested = record.result as Record<string, unknown> | undefined;
+  if (nested && typeof nested.response === 'string') return nested.response.trim();
+  return '';
 }
 
 /** Translate a finished primary summary into English, preserving its shape. */
@@ -542,11 +632,16 @@ async function requestChat(
   env: Partial<Env>,
   { session, system, user, maxTokens = 2000, temperature = 0.2 }: RequestChatOptions,
 ): Promise<string> {
-  if (!isAiConfigured(env)) {
-    throw new Error('AI_API_KEY is not configured.');
+  const provider = aiProvider(env);
+  if (provider === 'none') {
+    throw new Error('No AI configured: set AI_API_KEY or bind Workers AI as AI.');
   }
 
-  const model = String(env.AI_MODEL || DEFAULT_AI_MODEL).replace(/^opencode-go\//, '');
+  const model = modelFor(env);
+  if (provider === 'workers') {
+    return runWorkersAi(env, model, system, user, maxTokens, temperature);
+  }
+
   const base = (env.AI_BASE_URL || DEFAULT_AI_BASE).replace(/\/+$/, '');
 
   const controller = new AbortController();

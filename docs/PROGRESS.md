@@ -36,7 +36,10 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
                                       │
                                       ├─ FxTwitter / official X API (read post)
                                       ├─ GitHub API + readability (read links)
-                                      └─ OpenCode Go (summaries, topics, versions)
+                                      ├─ Workers AI binding (summaries, topics,
+                                      │  versions; no API key, text only)
+                                      └─ OpenAI-compatible endpoint (key; the same
+                                         jobs, plus up to four images)
 ```
 
 - **Worker** is stateless: auth, routing, server-rendered HTML.
@@ -46,6 +49,13 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 - **SSR was chosen deliberately**: one rendering path, no client framework,
   works without JS, auth checked before any HTML is produced. Client JS only
   enhances (expand cards, fold synthesis, swap topic content in place).
+- **Two AI transports, chosen at runtime**: `AI_API_KEY` (or the legacy
+  `OPENCODE_API_KEY`) sends summaries, topics, and versions to any
+  OpenAI-compatible endpoint in `AI_BASE_URL` with `AI_MODEL`; without a key,
+  the `AI` binding runs `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The public
+  `wrangler.jsonc` sets no key, so a fresh clone uses Workers AI. That path is
+  text-only (images go only over HTTP, up to four), and it shares the 10,000
+  free neurons/day with Whisper transcription.
 
 ### Data model
 
@@ -221,7 +231,8 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
   (GBs of RAM). Derive them from the base class instead
   (`ConstructorParameters<typeof DurableObject<Env>>`).
 - **Local OpenCode key is expired**; the production secret still works. Local
-  `wrangler dev` summaries will fail until `.dev.vars` gets a fresh key.
+  `wrangler dev` summaries fail while that expired key is set, because a set key
+  selects the HTTP path; unset it and the `AI` binding takes over.
 - **Topic singletons**: some topics hold one item, so their "synthesis" is a
   restatement. Candidate fix: merge or suppress single-item syntheses.
 - **Some summaries open with "Özet:"**, the old robotic style. Re-summarizing

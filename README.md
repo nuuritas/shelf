@@ -2,7 +2,7 @@
 
 A tiny, self-hosted reader for your X (Twitter) bookmarks: paste or share a post, and it saves the text, quoted post, article, images, and links, then writes a natural-language explanation of what it says and why it might matter.
 
-Runs entirely on Cloudflare — one Worker, one SQLite-backed Durable Object, server-rendered HTML, no build step, no Docker, no X API subscription. It costs nothing on the free plan for personal use.
+Runs entirely on Cloudflare — one Worker, one SQLite-backed Durable Object, server-rendered HTML, no build step, no Docker, no X API subscription, and no AI key to sign up for. It costs nothing on the free plan for personal use.
 
 Live example: <https://bookmark.nuritas.tr>
 
@@ -63,16 +63,31 @@ Everything is optional except the password.
 | --- | --- | --- | --- |
 | `APP_PASSWORD` | secret | — | **Required.** The single password for the web app and API. |
 | `APP_SECRET` | secret | `APP_PASSWORD` | Signs the session cookie. Set it so rotating the password does not invalidate sessions awkwardly. |
-| `AI_API_KEY` | secret | — | Key for the OpenAI-compatible endpoint. Without it, saving works and summaries are skipped. |
-| `AI_BASE_URL` | var | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint. |
-| `AI_MODEL` | var | `gpt-4.1-mini` | Model name at that endpoint. Vision support is needed for image-aware summaries. |
+| `AI_API_KEY` | secret | — | **Optional.** A key for an external OpenAI-compatible endpoint. Without it, summaries run on the Workers AI binding. |
+| `AI_BASE_URL` | var | — | Endpoint used only when `AI_API_KEY` is set. |
+| `AI_MODEL` | var | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` with Workers AI, `gpt-4.1-mini` with a key | Model for the selected provider. |
 | `SUMMARY_LANGUAGE` | var | `en` | `en` or `tr`. With `tr`, an English translation is also stored per bookmark. |
 | `SUPADATA_API_KEY` | secret | — | Enables YouTube captions inside the Worker. |
 | `GITHUB_TOKEN` | secret | — | Read-only token; raises GitHub API limits when reading repo links. |
 | `X_BEARER_TOKEN` + `X_PROVIDER=official` | secret + var | — | Use the official X API instead of the public FxTwitter reader. |
 | `SHARE_TOKEN` | secret | — | Add-only token embedded in the Android share APK. |
 
-`AI_BASE_URL` and `AI_MODEL` live in `wrangler.jsonc`; edit them or override with Wrangler vars. Any endpoint that speaks `POST /chat/completions` works — OpenAI, OpenRouter, a local gateway, or OpenCode Go:
+### AI: free by default, better with a key
+
+With no key configured, summaries go through the `AI` binding already used for video transcription. That means a fresh deploy summarizes bookmarks immediately, with no signup anywhere.
+
+The default model is `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The free allocation is 10,000 neurons per day, roughly 15–20 complete bookmarks (summary, topic filing, synthesis, plus a translation when the primary language is Turkish) before it resets at 00:00 UTC. Bursts above that fail with a visible error and a retry button; nothing is lost.
+
+Two honest tradeoffs:
+
+- **Text only.** The binding path does not attach images, so image-heavy posts are summarized from their text. With an API key, up to four images are sent to the model.
+- **Plainer prose.** A frontier model writes better explanations, especially in Turkish. If that matters to you, add a key.
+
+To use any endpoint that speaks `POST /chat/completions` — OpenAI, OpenRouter, a local gateway, or OpenCode Go — set the secret and two vars:
+
+```bash
+bunx wrangler secret put AI_API_KEY
+```
 
 ```jsonc
 "vars": {
@@ -81,6 +96,8 @@ Everything is optional except the password.
   "SUMMARY_LANGUAGE": "en"
 }
 ```
+
+A key always wins over the binding, so switching back is just deleting the secret.
 
 ## Optional pieces
 
@@ -146,6 +163,7 @@ Longer notes on architecture, API routes, measured usage, and known traps are in
 - **Single user.** One password, one library. There are no accounts and no login rate limiting — put Cloudflare Access in front if you want more than a password.
 - **`POST /api/reindex` is destructive**: it replaces the topic taxonomy and assignments, then rewrites syntheses.
 - **Free-tier CPU** is 10 ms per request. Normal pages are far under it, but very large libraries can approach the cap.
+- **The free AI quota is shared** with video transcription (Whisper), which also runs on Workers AI neurons.
 - **Data stays in your account**: the Durable Object, plus whatever your AI provider receives (post text, links, image bytes).
 - **FxTwitter is unofficial**: no SLA, and X can break or rate-limit it. `X_BEARER_TOKEN` + `X_PROVIDER=official` is the paid alternative.
 

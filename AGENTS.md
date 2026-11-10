@@ -40,7 +40,7 @@ docs/PROGRESS.md     long-form project knowledge
 ```bash
 bun install                 # package manager is bun; npm is not installed
 bun run typecheck           # tsc --noEmit (TS 7.0.2, ~0.1 s)
-node --test                 # 30 tests, runs .ts directly on Node 26
+node --test                 # 38 tests, runs .ts directly on Node 26
 bun run setup               # fresh deploy: write .dev.vars, push secrets, deploy
 bunx wrangler dev           # local Worker (needs .dev.vars)
 bun run deploy:personal     # deploy the maintainer instance (wrangler.personal.jsonc)
@@ -52,11 +52,12 @@ xbv mcp                     # stdio MCP server for Claude/Codex/Cursor
 xbv youtube [--limit 20]    # fetch missing YouTube transcripts from this Mac
 ```
 
-`.dev.vars` (gitignored) needs `APP_PASSWORD`, `APP_SECRET`, `AI_API_KEY`,
-`SHARE_TOKEN`, `KEYSTORE_PASS`, and `SHARE_ENDPOINT` for APK builds.
-`SUPADATA_API_KEY` is optional and only enables YouTube captions. `AI_API_KEY`
-is the OpenAI-compatible key; `OPENCODE_API_KEY` still works as an alias. The
-local OpenCode key is currently expired; production has a working secret.
+`.dev.vars` (gitignored): `APP_PASSWORD` is required and `APP_SECRET` signs the
+session cookie. `SHARE_TOKEN`, `SHARE_ENDPOINT`, and `KEYSTORE_PASS` are only
+needed to build the APK. `AI_API_KEY` is optional: without it, summaries run on
+the Workers AI binding. `OPENCODE_API_KEY` still works as an alias, and
+`SUPADATA_API_KEY` is optional and only enables YouTube captions. The local
+OpenCode key is currently expired; production has a working secret.
 
 ## Maintainer project board (forks can ignore this)
 
@@ -141,7 +142,11 @@ API: see `docs/PROGRESS.md` §3.
 
 ## AI layer rules
 
-- All calls go to the OpenAI-compatible endpoint in `AI_BASE_URL` with model
+- Two transports, one prompt set. `aiProvider()` picks `http` when `AI_API_KEY`
+  (or the legacy `OPENCODE_API_KEY`) is set, otherwise `workers` through the
+  `AI` binding, otherwise `none`. The binding path is text-only: it never
+  receives images, so `summarizePost` skips image downloads there.
+- All HTTP calls go to the OpenAI-compatible endpoint in `AI_BASE_URL` with model
   `AI_MODEL`, authorised by `AI_API_KEY` (`OPENCODE_API_KEY` is a legacy alias).
   Every request also sends `x-opencode-session` with a stable per-job value
   (`xbv-<tweetId>`, `xbv-<tweetId>-v<n>`, `xbv-topic-<slug>`). OpenCode Go
