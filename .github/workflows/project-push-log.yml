@@ -24,7 +24,7 @@ jobs:
   log:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v9
         env:
           PUSH_LOG_ISSUE: ${{ vars.PUSH_LOG_ISSUE }}
         with:
@@ -56,7 +56,7 @@ jobs:
               : '';
             const existingLines = existing ? existing.split('\n').filter(Boolean) : [];
             const known = new Set(
-              [...existing.matchAll(/`([0-9a-f]{7,40})`/gi)].map(match => match[1].slice(0, 7)),
+              [...existing.matchAll(/^- \[`([0-9a-f]{7,40})`\]/gmi)].map(match => match[1].slice(0, 7)),
             );
 
             const fresh = ordered
