@@ -23,10 +23,10 @@
     }
   ],
   // Summaries run on the Workers AI binding above, which needs no API key.
-  // To use an external OpenAI-compatible endpoint instead, set AI_API_KEY as a
-  // secret and add:
-  //   "AI_BASE_URL": "https://api.openai.com/v1",
-  //   "AI_MODEL": "gpt-4.1-mini",
+  // To use another provider, add "AI_PROVIDER" here (opencode, claude, openai,
+  // or custom) and set AI_API_KEY as a secret. A custom endpoint also needs:
+  //   "AI_BASE_URL": "https://api.example.com/v1",
+  //   "AI_MODEL": "some-model",
   "vars": {
     "SUMMARY_LANGUAGE": "en"
   }

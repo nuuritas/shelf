@@ -25,41 +25,133 @@ const DEFAULT_AI_MODEL = 'gpt-4.1-mini';
 
 /**
  * Default model for the Workers AI binding. No key, no signup: the free daily
- * allocation covers a personal archive. 70B is the smallest model here that
- * follows the summary prompt well; a key for an external endpoint buys better
- * prose for a few dollars a month.
+ * allocation covers a personal archive.
  */
 const DEFAULT_WORKERS_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
-export type AiProvider = 'http' | 'workers' | 'none';
+/** Anthropic's Messages API, which is not OpenAI-compatible. */
+const ANTHROPIC_VERSION = '2023-06-01';
+
+export type AiTransport = 'http' | 'anthropic' | 'workers' | 'none';
+
+export interface AiConfig {
+  transport: AiTransport;
+  /** Preset name, or `custom` when nothing was named. */
+  provider: string;
+  baseUrl: string;
+  model: string;
+}
+
+interface ProviderPreset {
+  transport: Exclude<AiTransport, 'none'>;
+  baseUrl: string;
+  model: string;
+}
 
 /**
- * An explicit API key wins, so a deployment that already pays for a model keeps
- * using it. With no key, the Workers AI binding is the zero-config path.
+ * Named providers, so a deployment needs `AI_PROVIDER` plus a key instead of
+ * remembering a base URL, a model id, and a wire format.
  */
-export function aiProvider(env: Partial<Env>): AiProvider {
-  if (aiApiKey(env)) return 'http';
-  return env.AI ? 'workers' : 'none';
-}
-
-function modelFor(env: Partial<Env>): string {
-  const configured = String(env.AI_MODEL || '').trim();
-  if (aiProvider(env) === 'workers') {
-    return configured.startsWith('@cf/') ? configured : DEFAULT_WORKERS_MODEL;
-  }
-  return configured.replace(/^opencode-go\//, '') || DEFAULT_AI_MODEL;
-}
+const PROVIDERS: Record<string, ProviderPreset> = {
+  opencode: {
+    transport: 'http',
+    baseUrl: 'https://opencode.ai/inference/go/openai/v1',
+    model: 'deepseek-v4.1-flash',
+  },
+  claude: {
+    transport: 'anthropic',
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-sonnet-4-5',
+  },
+  openai: {
+    transport: 'http',
+    baseUrl: 'https://api.openai.com/v1',
+    model: DEFAULT_AI_MODEL,
+  },
+  cloudflare: {
+    transport: 'workers',
+    baseUrl: '',
+    model: DEFAULT_WORKERS_MODEL,
+  },
+};
 
 /**
- * The API key for the OpenAI-compatible endpoint. `OPENCODE_API_KEY` is an
- * older alias, still read so existing deployments keep working after upgrade.
+ * The API key for the endpoint. `OPENCODE_API_KEY` is an older alias, still
+ * read so existing deployments keep working after upgrade.
  */
 export function aiApiKey(env: Partial<Env>): string {
   return String(env.AI_API_KEY || env.OPENCODE_API_KEY || '').trim();
 }
 
+/**
+ * Resolve the transport, endpoint, and model for this deployment. An unknown
+ * provider resolves to `none` instead of throwing, because this runs during
+ * rendering: a typo must not 500 every page.
+ */
+export function aiConfig(env: Partial<Env>): AiConfig {
+  const named = String(env.AI_PROVIDER || '').trim().toLowerCase();
+  const preset = PROVIDERS[named];
+  const baseOverride = String(env.AI_BASE_URL || '').trim().replace(/\/+$/, '');
+  const modelOverride = String(env.AI_MODEL || '').trim();
+
+  if (preset) {
+    const model =
+      preset.transport === 'workers'
+        ? (modelOverride.startsWith('@cf/') ? modelOverride : preset.model)
+        : modelOverride || preset.model;
+    return {
+      transport: preset.transport,
+      provider: named,
+      baseUrl: baseOverride || preset.baseUrl,
+      model,
+    };
+  }
+
+  if (named && named !== 'custom') {
+    return { transport: 'none', provider: named, baseUrl: '', model: '' };
+  }
+
+  // Nothing named: keep the selection from before presets existed.
+  if (aiApiKey(env)) {
+    return {
+      transport: 'http',
+      provider: 'custom',
+      baseUrl: baseOverride || DEFAULT_AI_BASE,
+      model: modelOverride || DEFAULT_AI_MODEL,
+    };
+  }
+  if (env.AI) {
+    return {
+      transport: 'workers',
+      provider: 'cloudflare',
+      baseUrl: '',
+      model: modelOverride.startsWith('@cf/') ? modelOverride : DEFAULT_WORKERS_MODEL,
+    };
+  }
+  return { transport: 'none', provider: 'none', baseUrl: '', model: '' };
+}
+
+/** The transport only. Kept for callers that do not need the endpoint. */
+export function aiProvider(env: Partial<Env>): AiTransport {
+  return aiConfig(env).transport;
+}
+
 export function isAiConfigured(env: Partial<Env>): boolean {
-  return aiProvider(env) !== 'none';
+  const config = aiConfig(env);
+  if (config.transport === 'workers') return Boolean(env.AI);
+  if (config.transport === 'none') return false;
+  return Boolean(aiApiKey(env));
+}
+
+/** Point at the provider's endpoint, with an error that names the provider. */
+function requireKey(env: Partial<Env>, config: AiConfig): string {
+  const key = aiApiKey(env);
+  if (!key) {
+    throw new Error(
+      `AI_PROVIDER=${config.provider} needs AI_API_KEY. Set it with \`wrangler secret put AI_API_KEY\`.`,
+    );
+  }
+  return key;
 }
 
 export interface SummaryOptions {
@@ -73,16 +165,20 @@ export async function summarizePost(
   env: Partial<Env>,
   options: SummaryOptions = {},
 ): Promise<SummaryResult> {
-  const provider = aiProvider(env);
-  if (provider === 'none') {
-    throw new Error('No AI configured: set AI_API_KEY or bind Workers AI as AI.');
+  const config = aiConfig(env);
+  if (config.transport === 'none') {
+    throw new Error(
+      config.provider === 'none'
+        ? 'No AI configured: set AI_PROVIDER, AI_API_KEY, or bind Workers AI as AI.'
+        : `Unknown AI_PROVIDER="${config.provider}". Use opencode, claude, openai, cloudflare, or custom.`,
+    );
   }
 
   const images = collectImages(post, MAX_IMAGES);
-  const imageParts: ChatImagePart[] = [];
+  const attached: AttachedImage[] = [];
   const imageNotes: string[] = [];
 
-  if (provider === 'workers') {
+  if (config.transport === 'workers') {
     // The binding path is text-only: it has no portable image message format.
     if (images.length) {
       imageNotes.push(
@@ -93,10 +189,9 @@ export async function summarizePost(
     for (const [index, image] of images.entries()) {
       try {
         const dataUrl = await imageAsDataUrl(image.url, env);
-        imageParts.push({
-          type: 'image_url',
-          image_url: { url: dataUrl, detail: 'high' },
-        });
+        const parsed = parseDataUrl(dataUrl);
+        if (!parsed) throw new Error('unexpected image encoding');
+        attached.push(parsed);
         imageNotes.push(`Image ${index + 1} (${image.label}): attached.`);
       } catch (error) {
         imageNotes.push(
@@ -106,8 +201,13 @@ export async function summarizePost(
     }
   }
 
-  const model = modelFor(env);
-  const base = (env.AI_BASE_URL || DEFAULT_AI_BASE).replace(/\/+$/, '');
+  const httpImageParts: ChatImagePart[] =
+    config.transport === 'http'
+      ? attached.map(image => ({
+          type: 'image_url' as const,
+          image_url: { url: `data:${image.mediaType};base64,${image.data}`, detail: 'high' as const },
+        }))
+      : [];
   const language = String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
 
   const systemPrompt =
@@ -126,10 +226,10 @@ export async function summarizePost(
   });
 
   const body: ChatRequest = {
-    model,
+    model: config.model,
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: [{ type: 'text', text: userText }, ...imageParts] },
+      { role: 'user', content: [{ type: 'text', text: userText }, ...httpImageParts] },
     ],
     max_tokens: 4096,
     max_completion_tokens: 4096,
@@ -138,19 +238,31 @@ export async function summarizePost(
     stream: false,
   };
 
-  if (provider === 'workers') {
-    const text = await runWorkersAi(env, model, systemPrompt, userText, 4096, 0.2);
-    return { text, model, imagesUsed: 0 };
+  if (config.transport === 'workers') {
+    const text = await runWorkersAi(env, config.model, systemPrompt, userText, 4096, 0.2);
+    return { text, model: config.model, imagesUsed: 0 };
   }
 
+  if (config.transport === 'anthropic') {
+    const text = await requestAnthropic(env, config, {
+      system: systemPrompt,
+      user: userText,
+      images: attached,
+      maxTokens: 4096,
+      temperature: 0.2,
+    });
+    return { text, model: config.model, imagesUsed: attached.length };
+  }
+
+  const key = requireKey(env, config);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
 
   try {
-    const response = await fetch(`${base}/chat/completions`, {
+    const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${aiApiKey(env)}`,
+        Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'User-Agent': 'XBookmarkVault/1.0',
@@ -192,11 +304,114 @@ export async function summarizePost(
       );
     }
 
-    return { text: text.trim(), model, imagesUsed: imageParts.length };
+    return { text: text.trim(), model: config.model, imagesUsed: attached.length };
   } catch (error) {
     if (isAbortError(error)) {
       throw new Error('AI summary timed out after 90 seconds.');
     }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+interface AttachedImage {
+  mediaType: string;
+  data: string;
+}
+
+function parseDataUrl(url: string): AttachedImage | null {
+  const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
+  if (!match) return null;
+  return { mediaType: match[1], data: match[2] };
+}
+
+interface AnthropicResponse {
+  content?: Array<{ type?: string; text?: string }>;
+  stop_reason?: string;
+  error?: { message?: string };
+}
+
+/**
+ * Anthropic's Messages API is not OpenAI-compatible: the system prompt is a
+ * top-level field, `max_tokens` is required, images are base64 blocks, and the
+ * reply is a content array. The rest of the app does not care.
+ */
+export async function requestAnthropic(
+  env: Partial<Env>,
+  config: AiConfig,
+  options: {
+    system: string;
+    user: string;
+    images: AttachedImage[];
+    maxTokens: number;
+    temperature: number;
+  },
+): Promise<string> {
+  const key = requireKey(env, config);
+  const endpoint = config.baseUrl.endsWith('/v1')
+    ? `${config.baseUrl}/messages`
+    : `${config.baseUrl}/v1/messages`;
+
+  const content: Array<Record<string, unknown>> = [{ type: 'text', text: options.user }];
+  for (const image of options.images) {
+    content.push({
+      type: 'image',
+      source: { type: 'base64', media_type: image.mediaType, data: image.data },
+    });
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': ANTHROPIC_VERSION,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': 'XBookmarkVault/1.0',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_tokens: options.maxTokens,
+        temperature: options.temperature,
+        system: options.system,
+        messages: [{ role: 'user', content }],
+      }),
+      signal: controller.signal,
+    });
+
+    const raw = await response.text();
+    let payload: AnthropicResponse | null = null;
+    try {
+      payload = raw ? (JSON.parse(raw) as AnthropicResponse) : null;
+    } catch {
+      throw new Error(`Anthropic returned non-JSON (HTTP ${response.status}).`);
+    }
+
+    if (!response.ok) {
+      const message = payload?.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Anthropic error: ${truncate(message, 300)}`);
+    }
+
+    const text = Array.isArray(payload?.content)
+      ? payload.content
+          .filter(part => part?.type === 'text')
+          .map(part => part.text || '')
+          .join('\n')
+      : '';
+
+    if (!text.trim()) {
+      throw new Error(
+        `Anthropic returned an empty response${payload?.stop_reason ? ` (${payload.stop_reason})` : ''}.`,
+      );
+    }
+    return text.trim();
+  } catch (error) {
+    if (isAbortError(error)) throw new Error('Anthropic request timed out after 120 seconds.');
     throw error;
   } finally {
     clearTimeout(timer);
@@ -632,17 +847,25 @@ async function requestChat(
   env: Partial<Env>,
   { session, system, user, maxTokens = 2000, temperature = 0.2 }: RequestChatOptions,
 ): Promise<string> {
-  const provider = aiProvider(env);
-  if (provider === 'none') {
-    throw new Error('No AI configured: set AI_API_KEY or bind Workers AI as AI.');
+  const config = aiConfig(env);
+  if (config.transport === 'none') {
+    throw new Error(
+      config.provider === 'none'
+        ? 'No AI configured: set AI_PROVIDER, AI_API_KEY, or bind Workers AI as AI.'
+        : `Unknown AI_PROVIDER="${config.provider}". Use opencode, claude, openai, cloudflare, or custom.`,
+    );
   }
 
-  const model = modelFor(env);
-  if (provider === 'workers') {
-    return runWorkersAi(env, model, system, user, maxTokens, temperature);
+  if (config.transport === 'workers') {
+    return runWorkersAi(env, config.model, system, user, maxTokens, temperature);
   }
 
-  const base = (env.AI_BASE_URL || DEFAULT_AI_BASE).replace(/\/+$/, '');
+  if (config.transport === 'anthropic') {
+    return requestAnthropic(env, config, { system, user, images: [], maxTokens, temperature });
+  }
+
+  const key = requireKey(env, config);
+  const base = config.baseUrl;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
@@ -651,14 +874,14 @@ async function requestChat(
     const response = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${aiApiKey(env)}`,
+        Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'User-Agent': 'XBookmarkVault/1.0',
         'x-opencode-session': session,
       },
       body: JSON.stringify({
-        model,
+        model: config.model,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },

@@ -10,6 +10,8 @@
 export interface Env {
   APP_PASSWORD: string;
   APP_SECRET?: string;
+  /** Named provider preset: opencode, claude, openai, cloudflare, or custom. */
+  AI_PROVIDER?: string;
   /** API key for the OpenAI-compatible endpoint in `AI_BASE_URL`. */
   AI_API_KEY?: string;
   /** Older name for `AI_API_KEY`; still read so old deployments keep working. */

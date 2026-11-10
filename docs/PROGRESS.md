@@ -49,13 +49,15 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 - **SSR was chosen deliberately**: one rendering path, no client framework,
   works without JS, auth checked before any HTML is produced. Client JS only
   enhances (expand cards, fold synthesis, swap topic content in place).
-- **Two AI transports, chosen at runtime**: `AI_API_KEY` (or the legacy
-  `OPENCODE_API_KEY`) sends summaries, topics, and versions to any
-  OpenAI-compatible endpoint in `AI_BASE_URL` with `AI_MODEL`; without a key,
-  the `AI` binding runs `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The public
-  `wrangler.jsonc` sets no key, so a fresh clone uses Workers AI. That path is
-  text-only (images go only over HTTP, up to four), and it shares the 10,000
-  free neurons/day with Whisper transcription.
+- **AI providers are presets over three wire paths**: `AI_PROVIDER` selects
+  `opencode`, `claude` (Anthropic Messages), `openai`, `cloudflare`, or
+  `custom`; `AI_BASE_URL` and `AI_MODEL` override the preset. With no provider
+  named, a key means OpenAI-compatible HTTP and no key means the `AI` binding,
+  which runs `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The public
+  `wrangler.jsonc` names no provider, so a fresh clone uses Workers AI. That
+  path is text-only (images go only over HTTP, up to four) and shares the 10,000
+  free neurons/day with Whisper transcription. Subscriptions are not API access:
+  Claude Max and ChatGPT Plus tokens from their CLIs cannot be used here.
 
 ### Data model
 

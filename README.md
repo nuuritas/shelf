@@ -63,8 +63,9 @@ Everything is optional except the password.
 | --- | --- | --- | --- |
 | `APP_PASSWORD` | secret | — | **Required.** The single password for the web app and API. |
 | `APP_SECRET` | secret | `APP_PASSWORD` | Signs the session cookie. Set it so rotating the password does not invalidate sessions awkwardly. |
-| `AI_API_KEY` | secret | — | **Optional.** A key for an external OpenAI-compatible endpoint. Without it, summaries run on the Workers AI binding. |
-| `AI_BASE_URL` | var | — | Endpoint used only when `AI_API_KEY` is set. |
+| `AI_PROVIDER` | var | `cloudflare` | `cloudflare`, `opencode`, `claude`, `openai`, or `custom`. |
+| `AI_API_KEY` | secret | — | Key for the chosen provider. Not needed for `cloudflare`. |
+| `AI_BASE_URL` | var | per provider | Overrides the preset endpoint. |
 | `AI_MODEL` | var | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` with Workers AI, `gpt-4.1-mini` with a key | Model for the selected provider. On the binding path, use a `@cf/...` id. |
 | `SUMMARY_LANGUAGE` | var | `en` | `en` or `tr`. With `tr`, an English translation is also stored per bookmark. |
 | `SUPADATA_API_KEY` | secret | — | Enables YouTube captions inside the Worker. |
@@ -72,49 +73,47 @@ Everything is optional except the password.
 | `X_BEARER_TOKEN` + `X_PROVIDER=official` | secret + var | — | Use the official X API instead of the public FxTwitter reader. |
 | `SHARE_TOKEN` | secret | — | Add-only token embedded in the Android share APK. |
 
-### AI: free by default, better with a key
+### AI providers
 
-With no key configured, summaries go through the `AI` binding already used for video transcription. That means a fresh deploy summarizes bookmarks immediately, with no signup anywhere.
+Summaries need a model. Pick a provider with `AI_PROVIDER` and supply a key, except for Cloudflare, which uses the Worker's built-in AI binding and needs no key at all.
 
-The default model is `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The free allocation is 10,000 neurons per day, roughly 15–20 complete bookmarks (summary, topic filing, synthesis, plus a translation when the primary language is Turkish) before it resets at 00:00 UTC. Bursts above that fail with a visible error and a retry button; nothing is lost.
+| `AI_PROVIDER` | Endpoint | Key | Default model |
+| --- | --- | --- | --- |
+| `cloudflare` (default) | `AI` binding | none | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
+| `opencode` | `opencode.ai/inference/go/openai/v1` | `AI_API_KEY` | `deepseek-v4.1-flash` |
+| `claude` | `api.anthropic.com/v1/messages` | `AI_API_KEY` | `claude-sonnet-4-5` |
+| `openai` | `api.openai.com/v1` | `AI_API_KEY` | `gpt-4.1-mini` |
+| `custom` | whatever you set | `AI_API_KEY` | `AI_MODEL` |
 
-Two honest tradeoffs:
-
-- **Text only.** The binding path does not attach images, so image-heavy posts are summarized from their text. With an API key, up to four images are sent to the model.
-- **Plainer prose.** A frontier model writes better explanations, especially in Turkish. If that matters to you, add a key.
-
-To use any endpoint that speaks `POST /chat/completions` — OpenAI, OpenRouter, a local gateway, or OpenCode Go — set the secret and two vars:
+`AI_BASE_URL` and `AI_MODEL` override any preset, so `custom` is just the preset that fills in neither.
 
 ```bash
 bunx wrangler secret put AI_API_KEY
 ```
 
 ```jsonc
-"vars": {
-  "AI_BASE_URL": "https://openrouter.ai/api/v1",
-  "AI_MODEL": "google/gemini-2.5-flash",
-  "SUMMARY_LANGUAGE": "en"
-}
+"vars": { "AI_PROVIDER": "claude", "SUMMARY_LANGUAGE": "en" }
 ```
 
-A key always wins over the binding, so switching back is just deleting the secret.
+**A subscription is not API access.** A Claude Pro/Max plan or a ChatGPT Plus/Pro plan cannot be used here, and neither can the sign-in token from Claude Code or Codex: those credentials are scoped to Anthropic's and OpenAI's own clients and are not a general API. You need an API key from the provider's developer console, which is billed per token, separately from the subscription. OpenCode Go and Cloudflare are the two options in the table that do not require a separate developer account.
 
-### Cloudflare's own OpenAI-compatible endpoint
+#### Cloudflare: free by default
 
-You do not need a second vendor at all: Workers AI exposes `POST /v1/chat/completions` at `https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1`. Point `AI_BASE_URL` there and use a Cloudflare API token with Workers AI access as the key:
+With no provider set, summaries go through the `AI` binding already used for video transcription, so a fresh deploy works with no signup anywhere. The free allocation is 10,000 neurons per day, roughly 15–20 complete bookmarks (summary, topic filing, synthesis, plus a translation when the primary language is Turkish); it resets at 00:00 UTC and is shared with Whisper. Bursts above that fail with a visible error and a retry button.
 
-```bash
-bunx wrangler secret put AI_API_KEY   # a Cloudflare API token, not an OpenAI key
-```
+Two tradeoffs: the binding path is **text only** (no images), and a hosted frontier model writes better prose, especially in Turkish.
+
+Cloudflare also serves its catalog over an OpenAI-compatible endpoint at `https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1`, with a Cloudflare API token as the key:
 
 ```jsonc
 "vars": {
+  "AI_PROVIDER": "custom",
   "AI_BASE_URL": "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1",
   "AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 }
 ```
 
-That is the same model catalog and the same neuron bill as the binding, so it buys nothing on the free plan — it only makes sense if you want the OpenAI wire format for another client. Cloudflare lists its frontier models (DeepSeek, Kimi, GLM) on this endpoint too, but those require a Workers Paid billing method; the free daily allocation does not cover them. On a paid account, the binding path can use them without any token: set `AI_MODEL` to the `@cf/...` id and leave `AI_API_KEY` unset. Check the current catalog in the dashboard first, since individual model ids change.
+That is the same catalog and the same neuron bill as the binding, so it only makes sense if you want the OpenAI wire format for another client. Cloudflare's frontier models (DeepSeek, Kimi, GLM) are listed there too, but they require a Workers Paid billing method; the free daily allocation does not cover them. On a paid account, skip the token: set `AI_MODEL` to the `@cf/...` id and leave `AI_PROVIDER` at `cloudflare`.
 
 ## Optional pieces
 

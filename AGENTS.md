@@ -40,7 +40,7 @@ docs/PROGRESS.md     long-form project knowledge
 ```bash
 bun install                 # package manager is bun; npm is not installed
 bun run typecheck           # tsc --noEmit (TS 7.0.2, ~0.1 s)
-node --test                 # 38 tests, runs .ts directly on Node 26
+node --test                 # unit tests, .ts directly on Node 26
 bun run setup               # fresh deploy: write .dev.vars, push secrets, deploy
 bunx wrangler dev           # local Worker (needs .dev.vars)
 bun run deploy:personal     # deploy the maintainer instance (wrangler.personal.jsonc)
@@ -142,10 +142,16 @@ API: see `docs/PROGRESS.md` §3.
 
 ## AI layer rules
 
-- Two transports, one prompt set. `aiProvider()` picks `http` when `AI_API_KEY`
-  (or the legacy `OPENCODE_API_KEY`) is set, otherwise `workers` through the
-  `AI` binding, otherwise `none`. The binding path is text-only: it never
-  receives images, so `summarizePost` skips image downloads there.
+- One prompt set, three wire paths: OpenAI-compatible HTTP, Anthropic Messages
+  (`/v1/messages`, base64 image blocks, top-level `system`), and the Workers AI
+  binding. `aiConfig()` resolves the path from `AI_PROVIDER` (presets: opencode,
+  claude, openai, cloudflare, custom) with `AI_BASE_URL`/`AI_MODEL` overrides;
+  with no provider named it keeps the old inference (key → http, else binding).
+  The binding path is text-only: it never receives images, so `summarizePost`
+  skips image downloads there.
+- Provider *subscriptions* are not API access: a Claude Max or ChatGPT Plus
+  token from Claude Code/Codex cannot be used, and their OAuth tokens are not a
+  general API. Only console API keys, OpenCode Go, and Cloudflare work.
 - All HTTP calls go to the OpenAI-compatible endpoint in `AI_BASE_URL` with model
   `AI_MODEL`, authorised by `AI_API_KEY` (`OPENCODE_API_KEY` is a legacy alias).
   Every request also sends `x-opencode-session` with a stable per-job value

@@ -7,9 +7,12 @@ APP_PASSWORD=replace-with-a-long-password
 # Optional. Signs the session cookie. If omitted, APP_PASSWORD is used.
 # APP_SECRET=replace-with-another-long-secret
 
-# Optional. Without it, summaries run on the Workers AI binding (free daily
-# allocation, text only). Set a key to use an external OpenAI-compatible
-# endpoint instead; then also set AI_BASE_URL and AI_MODEL in wrangler.jsonc.
+# Optional. Which provider writes summaries: cloudflare (default, no key),
+# opencode, claude, openai, or custom. Normally set it in wrangler.jsonc.
+# AI_PROVIDER=cloudflare
+
+# Key for the chosen provider. Not used by cloudflare, which uses the AI binding.
+# Claude and ChatGPT *subscriptions* are not API keys and cannot be used here.
 AI_API_KEY=
 
 # Supadata key. Optional: enables YouTube captions inside the Worker.
