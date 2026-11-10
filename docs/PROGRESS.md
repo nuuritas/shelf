@@ -174,6 +174,7 @@ wall-clock is long but CPU stays low.
 | Nov 10 | Short `#ref` ids on cards, copy on click | "look at this one" needs a handle shorter than a 19-digit tweet id |
 | Nov 10 | Archive toggle + bilingual summaries | Finished posts should leave the feed without being deleted; the same summaries should be readable in English |
 | Nov 10 | Calendar + single-day library view | Finding what was saved on a date should not require scrolling the whole feed |
+| Nov 11 | Workers AI as the default summarizer, any OpenAI-compatible endpoint as the upgrade | Deploying needed a third-party key before the first summary; the AI binding was already bound for Whisper |
 
 ### Video transcripts
 
