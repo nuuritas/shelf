@@ -11,9 +11,10 @@ SQLite-backed Durable Object (`src/bookmarks-do.ts`). Server-rendered HTML, no
 client framework, no build step. TypeScript 7.0.2 (native compiler), bundled by
 Wrangler.
 
-Live example: <https://bookmark.nuritas.tr>. The repository is public; `main`
-deploys the maintainer's instance. Anyone else deploys their own copy with
-`bun run setup` and keeps their domain in a gitignored `wrangler.personal.jsonc`.
+The repository is public; `main` deploys the maintainer's own instance, whose
+domain and provider live in a gitignored `wrangler.personal.jsonc`. There is no
+hosted demo: every deployment is password-gated, so a shared instance would only
+show a login page. Anyone else deploys their own copy with `bun run setup`.
 
 ## Layout
 

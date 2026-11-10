@@ -1,8 +1,10 @@
 # Project knowledge — X Bookmark Vault
 
 Last updated: 2026-11-10
-Repository: <https://github.com/nuuritas/x-bookmark-vault> (private)
-Live: <https://bookmark.nuritas.tr> (fallback: <https://x-bookmark-vault.nuuritas.workers.dev>)
+Repository: <https://github.com/nuuritas/x-bookmark-vault>
+
+This document describes the maintainer's deployment. Domain names, provider
+choices, and measured quotas refer to that instance; your deployment will differ.
 
 This file is the long-form memory of the project: what exists, why it works
 this way, what was tried, and what is still open. `AGENTS.md` is the short
@@ -16,7 +18,8 @@ Over time the archive organizes itself into topics and writes its own rolling
 syntheses, so it behaves less like a list of bookmarks and more like a small
 knowledge base.
 
-Non-goals so far: multi-user accounts, public sharing, a native iOS app.
+Non-goals: multi-user accounts and public sharing. A native iOS share extension
+is not built yet, but is planned (see §7).
 
 ## 2. Architecture
 
@@ -118,7 +121,7 @@ wall-clock is long but CPU stays low.
   switch re-renders the same page; missing translations show a per-card button,
   and one banner button queues every missing one
 - Collapsed cards (3-line peek, expand on tap) and folded topic syntheses
-- Custom domain `bookmark.nuritas.tr`, workers.dev kept as fallback
+- Custom domain, with the workers.dev URL kept as a fallback
 - `/api/stats` reports row counts and real SQLite database size
 - Local access for AI work: `cli/xbv.ts` (search/show/topics/export) and
   `xbv mcp`, a stdio MCP server exposing `search_bookmarks`, `get_bookmark`,
@@ -267,6 +270,9 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - Topic syntheses are still Turkish-only; the English board translates bookmark
   summaries, not the rolling topic syntheses.
 - Summary versions remain Turkish-only; only the primary summary is translated.
+- iOS share extension. iPhone users can install the PWA but cannot share into it;
+  only the Android APK exists today. Plan is a small share extension that posts
+  to the same `POST /api/bookmarks` endpoint with `SHARE_TOKEN`.
 
 ## 8. Repo conventions
 

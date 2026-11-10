@@ -4,8 +4,6 @@ A tiny, self-hosted reader for your X (Twitter) bookmarks: paste or share a post
 
 Runs entirely on Cloudflare — one Worker, one SQLite-backed Durable Object, server-rendered HTML, no build step, no Docker, no X API subscription, and no AI key to sign up for. It costs nothing on the free plan for personal use.
 
-Live example: <https://bookmark.nuritas.tr>
-
 ## What it does
 
 - **Save** by pasting a link, using the Android share sheet, or calling the API.
@@ -28,9 +26,9 @@ bun install
 bun run setup
 ```
 
-`bun run setup` generates a `.dev.vars` with fresh random secrets, uploads them to your Worker, and deploys. It prints the `https://<your-worker>.workers.dev` URL when it finishes. Open it and log in with the `APP_PASSWORD` from `.dev.vars`.
+`bun run setup` asks which AI provider should write summaries (Cloudflare by default, which needs no key), writes that choice into `wrangler.jsonc`, generates a `.dev.vars` with fresh random secrets, uploads them to your Worker, and deploys. It prints the `https://<your-worker>.workers.dev` URL when it finishes; open it and log in with the `APP_PASSWORD` from `.dev.vars`.
 
-Re-running it is safe: it keeps values that already exist.
+Re-running it is safe: it keeps values that already exist and only changes the provider you pick. To skip the question, pass `--provider cloudflare|opencode|claude|openai|custom`.
 
 If Wrangler is not logged in yet, run `bunx wrangler login` first.
 
@@ -95,8 +93,6 @@ bunx wrangler secret put AI_API_KEY
 "vars": { "AI_PROVIDER": "claude", "SUMMARY_LANGUAGE": "en" }
 ```
 
-**A subscription is not API access.** A Claude Pro/Max plan or a ChatGPT Plus/Pro plan cannot be used here, and neither can the sign-in token from Claude Code or Codex: those credentials are scoped to Anthropic's and OpenAI's own clients and are not a general API. You need an API key from the provider's developer console, which is billed per token, separately from the subscription. OpenCode Go and Cloudflare are the two options in the table that do not require a separate developer account.
-
 #### Cloudflare: free by default
 
 With no provider set, summaries go through the `AI` binding already used for video transcription, so a fresh deploy works with no signup anywhere. The free allocation is 10,000 neurons per day, roughly 15–20 complete bookmarks (summary, topic filing, synthesis, plus a translation when the primary language is Turkish); it resets at 00:00 UTC and is shared with Whisper. Bursts above that fail with a visible error and a retry button.
@@ -136,6 +132,10 @@ KEYSTORE_PASS=<password for the local signing key>
 A keystore is generated on first build and gitignored. The APK embeds `SHARE_TOKEN`, so build it locally and never commit it.
 
 The web app is also a PWA with a share target, but browsers differ: Chrome installs it as a share target, Brave installs a shortcut that does not appear in the share sheet. The APK is the reliable path.
+
+### iOS
+
+There is no iOS app yet. On iPhone the library works as a PWA (Share → Add to Home Screen), but iOS has no share extension for it, so saving still means pasting a link. A native share extension is planned for a later version.
 
 ### CLI and MCP server
 

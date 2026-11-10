@@ -2,8 +2,9 @@
 /**
  * One-command setup for a fresh deploy.
  *
- *   bun run setup                 # write .dev.vars, push secrets, deploy
- *   bun run setup -- --no-deploy  # secrets only
+ *   bun run setup                          # choose a provider, secrets, deploy
+ *   bun run setup -- --provider claude     # skip the provider question
+ *   bun run setup -- --no-deploy           # secrets only
  *
  * It never overwrites a value that already exists in `.dev.vars`, so re-running
  * it is safe. Secrets are printed nowhere; the file is written with mode 0600.
@@ -14,6 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,6 +37,80 @@ const HEADER = [
   '# Regenerate or change values by editing it and re-running the script.',
   '',
 ].join('\n');
+
+interface ProviderChoice {
+  id: string;
+  label: string;
+  detail: string;
+  needsKey: boolean;
+}
+
+const PROVIDERS: ProviderChoice[] = [
+  { id: 'cloudflare', label: 'Cloudflare Workers AI', detail: 'free, no key, text-only summaries', needsKey: false },
+  { id: 'opencode', label: 'OpenCode Go', detail: 'needs AI_API_KEY', needsKey: true },
+  { id: 'claude', label: 'Claude', detail: 'Anthropic API key', needsKey: true },
+  { id: 'openai', label: 'OpenAI', detail: 'OpenAI API key', needsKey: true },
+  { id: 'custom', label: 'Custom endpoint', detail: 'any OpenAI-compatible URL', needsKey: true },
+];
+
+/** `--provider X`, `--provider=X`, then AI_PROVIDER, then the menu. */
+async function chooseProvider(): Promise<ProviderChoice> {
+  const inline = argv.find(item => item.startsWith('--provider='));
+  const positional = argv.indexOf('--provider');
+  const named =
+    (inline ? inline.slice('--provider='.length) : '') ||
+    (positional >= 0 ? String(argv[positional + 1] || '') : '') ||
+    String(process.env.AI_PROVIDER || '');
+
+  if (named) return resolveProvider(named);
+  if (!process.stdin.isTTY) return PROVIDERS[0];
+
+  console.log('\nWhich AI provider should write summaries?\n');
+  PROVIDERS.forEach((provider, index) => {
+    console.log(`  ${index + 1}. ${provider.label} — ${provider.detail}`);
+  });
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = (await rl.question(`\nChoice [1-${PROVIDERS.length}] (default 1): `)).trim();
+  rl.close();
+
+  const index = Number(answer || '1') - 1;
+  return PROVIDERS[index] ?? PROVIDERS[0];
+}
+
+function resolveProvider(name: string): ProviderChoice {
+  const provider = PROVIDERS.find(item => item.id === name.trim().toLowerCase());
+  if (!provider) {
+    console.error(
+      `\nUnknown provider "${name}". Use one of: ${PROVIDERS.map(item => item.id).join(', ')}.`,
+    );
+    process.exit(1);
+  }
+  return provider;
+}
+
+/** Patch the AI_PROVIDER var without disturbing the rest of the file. */
+function writeProvider(provider: string): string {
+  const personal = join(ROOT, 'wrangler.personal.jsonc');
+  const target = existsSync(personal) ? personal : join(ROOT, 'wrangler.jsonc');
+  const text = readFileSync(target, 'utf8');
+
+  const existing = /"AI_PROVIDER"\s*:\s*"[^"]*"/;
+  let next: string;
+  if (existing.test(text)) {
+    next = text.replace(existing, `"AI_PROVIDER": "${provider}"`);
+  } else {
+    const varsBlock = /"vars"\s*:\s*\{/;
+    if (!varsBlock.test(text)) {
+      console.error(`\nCould not find a "vars" block in ${target}. Add "AI_PROVIDER": "${provider}" by hand.`);
+      return target;
+    }
+    next = text.replace(varsBlock, match => `${match}\n    "AI_PROVIDER": "${provider}",`);
+  }
+
+  if (next !== text) writeFileSync(target, next);
+  return target;
+}
 
 function randomSecret(): string {
   return randomBytes(24).toString('base64url');
@@ -72,7 +148,12 @@ function wrangler(args: string[], input?: string) {
   });
 }
 
-function main(): void {
+async function main(): Promise<void> {
+  const provider = await chooseProvider();
+  const configFile = writeProvider(provider.id);
+  const configName = configFile.slice(ROOT.length + 1);
+  console.log(`\nProvider: ${provider.label} (${provider.id}) → ${configName}`);
+
   const existing = existsSync(VARS_PATH) ? parseVars(readFileSync(VARS_PATH, 'utf8')) : new Map<string, string>();
   const vars = new Map(existing);
   const created: string[] = [];
@@ -103,6 +184,10 @@ function main(): void {
     process.exit(1);
   }
 
+  const deployArgs = configName === 'wrangler.personal.jsonc'
+    ? ['deploy', '--config', 'wrangler.personal.jsonc']
+    : ['deploy'];
+
   console.log('\nChecking Wrangler login...');
   const whoami = wrangler(['whoami']);
   if (whoami.status !== 0) {
@@ -127,7 +212,7 @@ function main(): void {
   // normal first-run case: create it with a deploy, then retry.
   if (uploaded.status !== 0) {
     console.log('\nThe Worker does not exist yet, so deploying it first...');
-    const first = wrangler(['deploy']);
+    const first = wrangler(deployArgs);
     if (first.status !== 0) {
       console.error('\nDeploy failed. Fix the error above and re-run `bun run setup`.');
       process.exit(1);
@@ -155,35 +240,61 @@ function main(): void {
     process.exit(1);
   }
 
+  const deployCommand = ['bunx', 'wrangler', ...deployArgs].join(' ');
+  const keyMissing = provider.needsKey && !vars.get('AI_API_KEY');
+  const configText = readFileSync(configFile, 'utf8');
+  const customIncomplete = provider.id === 'custom' && !/"AI_BASE_URL"\s*:/.test(configText);
+
   if (!deploy || deployedAlready) {
     if (deployedAlready) console.log('\nSecrets set. They apply immediately, no redeploy needed.');
-    else console.log('\nSecrets set. Deploy when ready:\n  bunx wrangler deploy');
-    if (deployedAlready) printNextSteps();
+    else console.log(`\nSecrets set. Deploy when ready:\n  ${deployCommand}`);
+    if (keyMissing && !deployedAlready) {
+      console.log(`\nSummaries need a ${provider.label} key before they will work:`);
+      console.log('  bunx wrangler secret put AI_API_KEY');
+    }
+    if (deployedAlready) printNextSteps(provider, keyMissing, customIncomplete);
     return;
   }
 
   console.log('\nDeploying...');
-  const deployed = wrangler(['deploy']);
+  const deployed = wrangler(deployArgs);
   if (deployed.status !== 0) {
-    console.error('\nDeploy failed. Fix the error above and re-run `bunx wrangler deploy`.');
+    console.error(`\nDeploy failed. Fix the error above and re-run \`${deployCommand}\`.`);
     process.exit(1);
   }
 
-  printNextSteps();
+  printNextSteps(provider, keyMissing, customIncomplete);
 }
 
-function printNextSteps(): void {
-  console.log(
-    [
-      '',
-      'Done. Next steps:',
-      '  1. Open the printed workers.dev URL and log in with APP_PASSWORD.',
-      '  2. Optional: add a custom domain in the Cloudflare dashboard, or set "routes"',
-      '     in wrangler.jsonc.',
-      '  3. Optional: build the Android share APK with android/build.sh',
-      '     (needs SHARE_TOKEN, SHARE_ENDPOINT, and KEYSTORE_PASS in .dev.vars).',
-    ].join('\n'),
+function printNextSteps(provider: ProviderChoice, keyMissing: boolean, customIncomplete: boolean): void {
+  const lines = [
+    '',
+    'Done. Next steps:',
+    '  1. Open the printed workers.dev URL and log in with APP_PASSWORD.',
+  ];
+
+  if (keyMissing) {
+    lines.push(
+      `  2. Summaries need a ${provider.label} key:`,
+      '     bunx wrangler secret put AI_API_KEY',
+    );
+  }
+  if (customIncomplete) {
+    lines.push(
+      '     Custom provider: also add "AI_BASE_URL" and "AI_MODEL" to the config file.',
+    );
+  }
+
+  lines.push(
+    keyMissing || customIncomplete ? '  3.' : '  2.',
+    '     Optional: add a custom domain in the Cloudflare dashboard, or set "routes"',
+    '     in wrangler.jsonc.',
+    keyMissing || customIncomplete ? '  4.' : '  3.',
+    '     Optional: build the Android share APK with android/build.sh',
+    '     (needs SHARE_TOKEN, SHARE_ENDPOINT, and KEYSTORE_PASS in .dev.vars).',
   );
+
+  console.log(lines.join('\n'));
 }
 
-main();
+await main();
