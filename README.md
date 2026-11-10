@@ -65,7 +65,7 @@ Everything is optional except the password.
 | `APP_SECRET` | secret | `APP_PASSWORD` | Signs the session cookie. Set it so rotating the password does not invalidate sessions awkwardly. |
 | `AI_API_KEY` | secret | — | **Optional.** A key for an external OpenAI-compatible endpoint. Without it, summaries run on the Workers AI binding. |
 | `AI_BASE_URL` | var | — | Endpoint used only when `AI_API_KEY` is set. |
-| `AI_MODEL` | var | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` with Workers AI, `gpt-4.1-mini` with a key | Model for the selected provider. |
+| `AI_MODEL` | var | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` with Workers AI, `gpt-4.1-mini` with a key | Model for the selected provider. On the binding path, use a `@cf/...` id. |
 | `SUMMARY_LANGUAGE` | var | `en` | `en` or `tr`. With `tr`, an English translation is also stored per bookmark. |
 | `SUPADATA_API_KEY` | secret | — | Enables YouTube captions inside the Worker. |
 | `GITHUB_TOKEN` | secret | — | Read-only token; raises GitHub API limits when reading repo links. |
@@ -98,6 +98,23 @@ bunx wrangler secret put AI_API_KEY
 ```
 
 A key always wins over the binding, so switching back is just deleting the secret.
+
+### Cloudflare's own OpenAI-compatible endpoint
+
+You do not need a second vendor at all: Workers AI exposes `POST /v1/chat/completions` at `https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1`. Point `AI_BASE_URL` there and use a Cloudflare API token with Workers AI access as the key:
+
+```bash
+bunx wrangler secret put AI_API_KEY   # a Cloudflare API token, not an OpenAI key
+```
+
+```jsonc
+"vars": {
+  "AI_BASE_URL": "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1",
+  "AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+}
+```
+
+That is the same model catalog and the same neuron bill as the binding, so it buys nothing on the free plan — it only makes sense if you want the OpenAI wire format for another client. Cloudflare lists its frontier models (DeepSeek, Kimi, GLM) on this endpoint too, but those require a Workers Paid billing method; the free daily allocation does not cover them. On a paid account, the binding path can use them without any token: set `AI_MODEL` to the `@cf/...` id and leave `AI_API_KEY` unset. Check the current catalog in the dashboard first, since individual model ids change.
 
 ## Optional pieces
 

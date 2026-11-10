@@ -151,6 +151,10 @@ API: see `docs/PROGRESS.md` §3.
   Every request also sends `x-opencode-session` with a stable per-job value
   (`xbv-<tweetId>`, `xbv-<tweetId>-v<n>`, `xbv-topic-<slug>`). OpenCode Go
   requires that header; other endpoints ignore it, so keep sending it.
+- Cloudflare's `@cf/` frontier models (DeepSeek, Kimi, GLM) need a Workers Paid
+  billing method. On the binding path, select one by setting `AI_MODEL` to its
+  `@cf/...` id; with a key, point `AI_BASE_URL` at the account's
+  `/client/v4/accounts/<id>/ai/v1`. Do not claim they work on the free plan.
 - Budget `max_tokens`/`max_completion_tokens` at 4096 for prose; smaller models
   otherwise spend the budget on reasoning and return empty text.
 - Structured calls (`bootstrapTopics`, `classifyPost`) parse JSON leniently:
