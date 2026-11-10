@@ -29,6 +29,7 @@ import type {
   ReindexResult,
   SaveResult,
   StatsResult,
+  StoreTranscriptsResult,
   SummaryVersion,
   TopicOverviewItem,
   TopicPageResult,
@@ -394,6 +395,14 @@ export class Bookmarks extends DurableObject<Env> {
         };
         await this.resummarize(body.id, body);
         return jsonResponse({ queued: true });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/transcripts') {
+        const body = (await request.json()) as {
+          id?: string | null;
+          transcripts?: VideoTranscript[];
+        };
+        return jsonResponse(await this.storeTranscripts(body.id ?? null, body.transcripts ?? []));
       }
 
       if (request.method === 'POST' && url.pathname === '/translate-all') {
@@ -950,6 +959,64 @@ export class Bookmarks extends DurableObject<Env> {
     }
 
     await this.ctx.storage.setAlarm(Date.now() + 250);
+  }
+
+  async storeTranscripts(
+    idOrRef: string | null,
+    incoming: VideoTranscript[],
+  ): Promise<StoreTranscriptsResult> {
+    const id = this.resolveId(idOrRef);
+    if (!id) {
+      const error: StatusError = new Error('Missing bookmark id.');
+      error.status = 400;
+      throw error;
+    }
+
+    const row = this.sql
+      .exec<BookmarkRow>('SELECT * FROM bookmarks WHERE tweet_id = ?', id)
+      .toArray()[0];
+    if (!row) {
+      const error: StatusError = new Error('Bookmark not found.');
+      error.status = 404;
+      throw error;
+    }
+
+    const clean = sanitizeTranscripts(incoming);
+    if (!clean.length) {
+      const error: StatusError = new Error('No usable transcripts were supplied.');
+      error.status = 400;
+      throw error;
+    }
+
+    const existing = parseJson<VideoTranscript[]>(row.transcripts_json, []);
+    const merged = [
+      ...existing.filter(transcript => !clean.some(next => next.url === transcript.url)),
+      ...clean,
+    ].slice(-4);
+
+    this.sql.exec(
+      'UPDATE bookmarks SET transcripts_json = ? WHERE tweet_id = ?',
+      JSON.stringify(merged),
+      id,
+    );
+
+    const queued = isAiConfigured(this.env) && clean.some(transcript => transcript.status === 'done');
+    if (queued) {
+      const englishReset = turkishPrimary(this.env)
+        ? `, summary_en = NULL, summary_en_status = 'pending',
+           summary_en_error = NULL, summary_en_started_at = NULL`
+        : '';
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
+             topics_status = 'pending', topics_at = NULL${englishReset}
+         WHERE tweet_id = ?`,
+        id,
+      );
+      await this.ctx.storage.setAlarm(Date.now() + 250);
+    }
+
+    return { stored: clean.length, queued };
   }
 
   stats(): StatsResult {
@@ -1563,6 +1630,48 @@ export class Bookmarks extends DurableObject<Env> {
       );
     }
   }
+}
+
+function sanitizeTranscripts(input: VideoTranscript[]): VideoTranscript[] {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .slice(0, 4)
+    .map((value): VideoTranscript | null => {
+      if (!value || typeof value !== 'object') return null;
+      const record = value as unknown as Record<string, unknown>;
+      const url = String(record.url || '').trim();
+      if (!/^https?:\/\//i.test(url)) return null;
+
+      const text = String(record.text || '').slice(0, 120_000);
+      const status =
+        record.status === 'done' || record.status === 'unavailable' || record.status === 'failed'
+          ? record.status
+          : 'failed';
+      const source = record.source === 'youtube' ? 'youtube' : 'x';
+      const provider =
+        record.provider === 'supadata' ||
+        record.provider === 'workers-ai' ||
+        record.provider === 'local'
+          ? record.provider
+          : null;
+      const durationSec = Number(record.durationSec);
+      const bytes = Number(record.bytes);
+
+      return {
+        url: url.slice(0, 2000),
+        source,
+        provider,
+        lang: record.lang ? String(record.lang).slice(0, 20) : null,
+        text,
+        durationSec: Number.isFinite(durationSec) && durationSec > 0 ? durationSec : null,
+        bytes: Number.isFinite(bytes) && bytes > 0 ? bytes : null,
+        status,
+        error: record.error ? String(record.error).slice(0, 500) : null,
+        at: record.at ? String(record.at) : new Date().toISOString(),
+      };
+    })
+    .filter((transcript): transcript is VideoTranscript => Boolean(transcript));
 }
 
 function rowToBookmark(row: BookmarkRow): Bookmark {

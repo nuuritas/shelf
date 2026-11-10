@@ -18,14 +18,18 @@
  *   xbv mcp
  */
 
+import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { collectYoutubeIds, youtubeVideoId } from '../src/transcript.ts';
 import type {
   Bookmark,
   GetResult,
   ListResult,
+  StoreTranscriptsResult,
   SummaryVersion,
   TopicListResult,
 } from '../src/types.ts';
@@ -161,7 +165,11 @@ function loadConfig(): Config {
 // API
 // ---------------------------------------------------------------------------
 
-async function api<T>(path: string, params?: Record<string, string | number>): Promise<T> {
+async function api<T>(
+  path: string,
+  params?: Record<string, string | number>,
+  init?: RequestInit,
+): Promise<T> {
   const config = loadConfig();
   const url = new URL(path, `${config.url}/`);
 
@@ -170,9 +178,11 @@ async function api<T>(path: string, params?: Record<string, string | number>): P
   }
 
   const response = await fetch(url, {
+    ...init,
     headers: {
       Authorization: `Bearer ${config.password}`,
       Accept: 'application/json',
+      ...((init?.headers as Record<string, string> | undefined) ?? {}),
     },
   });
 
@@ -196,6 +206,14 @@ async function api<T>(path: string, params?: Record<string, string | number>): P
   }
 
   return (body ? JSON.parse(body) : null) as T;
+}
+
+function apiPost<T>(path: string, payload: unknown): Promise<T> {
+  return api<T>(path, undefined, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 /** Page through `/api/bookmarks` until every match is fetched. */
@@ -421,6 +439,107 @@ async function commandShow(args: ParsedArgs): Promise<void> {
   }
 
   console.log(renderBookmark(result.bookmark));
+}
+
+async function commandYoutube(args: ParsedArgs): Promise<void> {
+  const limit = Math.max(1, Math.min(Number(args.flags.limit || 20) || 20, 100));
+  const dryRun = Boolean(args.flags['dry-run']);
+  const bookmarks = await fetchAllBookmarks({ view: 'all' });
+  let processed = 0;
+  let skipped = 0;
+
+  for (const bookmark of bookmarks) {
+    if (processed >= limit) break;
+    const ids = collectYoutubeIds(bookmark);
+    if (!ids.length) continue;
+
+    const done = new Set(
+      (bookmark.transcripts || [])
+        .filter(transcript => transcript.status === 'done')
+        .map(transcript => youtubeVideoId(transcript.url))
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    for (const id of ids) {
+      if (processed >= limit) break;
+      if (done.has(id)) {
+        skipped++;
+        continue;
+      }
+
+      const label = bookmark.ref || bookmark.tweetId;
+      console.log(`${dryRun ? 'Would fetch' : 'Fetching'} ${id} for #${label}…`);
+      if (dryRun) {
+        processed++;
+        continue;
+      }
+
+      try {
+        const transcript = await fetchLocalTranscript(id);
+        const result = await apiPost<StoreTranscriptsResult>(
+          `api/bookmarks/${label}/transcripts`,
+          {
+            transcripts: [
+              {
+                url: `https://www.youtube.com/watch?v=${id}`,
+                source: 'youtube',
+                provider: 'local',
+                lang: transcript.lang,
+                text: transcript.text,
+                durationSec: transcript.durationSec,
+                bytes: null,
+                status: 'done',
+                error: null,
+                at: new Date().toISOString(),
+              },
+            ],
+          },
+        );
+        processed++;
+        console.log(
+          `  stored ${transcript.text.length} chars; ${
+            result.queued ? 'summary queued' : 'summary not queued'
+          }`,
+        );
+      } catch (error) {
+        processed++;
+        console.error(`  failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  console.log(
+    `\n${processed} transcript(s) ${dryRun ? 'would be fetched' : 'processed'}, ${skipped} already done.`,
+  );
+}
+
+const execFileAsync = promisify(execFile);
+
+async function fetchLocalTranscript(
+  videoId: string,
+): Promise<{ text: string; lang: string | null; durationSec: number | null }> {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ['x', 'get-youtube-transcript', videoId, '--format', 'json'],
+    { timeout: 180_000, maxBuffer: 16 * 1024 * 1024 },
+  );
+
+  const data = JSON.parse(String(stdout)) as {
+    text?: string;
+    language?: string;
+    segments?: Array<{ start?: number; duration?: number }>;
+  };
+  const text = String(data.text || '').trim();
+  if (!text) throw new Error('No transcript text returned.');
+
+  const last = data.segments?.at(-1);
+  const end = Number(last?.start ?? 0) + Number(last?.duration ?? 0);
+
+  return {
+    text,
+    lang: data.language || null,
+    durationSec: Number.isFinite(end) && end > 0 ? end : null,
+  };
 }
 
 async function commandTopics(args: ParsedArgs): Promise<void> {
@@ -846,6 +965,7 @@ Usage:
   xbv topic <slug> [--limit 50] [--json]     one topic's synthesis + items
   xbv export [--dir ./dir]                   markdown + jsonl for local RAG
   xbv stats [--json]                         archive counts
+  xbv youtube [--limit 20] [--dry-run]       fetch missing YouTube transcripts on this Mac
   xbv config [--password <pw>] [--url <u>]   show or write credentials
   xbv mcp                                    stdio MCP server for AI clients
 
@@ -888,6 +1008,8 @@ async function main(): Promise<void> {
       return commandTopic(args);
     case 'stats':
       return commandStats(args);
+    case 'youtube':
+      return commandYoutube(args);
     case 'export':
       return commandExport(args);
     case 'config':

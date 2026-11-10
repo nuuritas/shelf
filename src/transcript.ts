@@ -96,9 +96,7 @@ export function collectVideoTargets(bookmark: Bookmark): VideoTarget[] {
     }
   }
 
-  for (const link of bookmark.links ?? []) {
-    const id = youtubeVideoId(link.finalUrl || link.url);
-    if (!id) continue;
+  for (const id of collectYoutubeIds(bookmark)) {
     push({
       url: `https://www.youtube.com/watch?v=${id}`,
       source: 'youtube',
@@ -107,6 +105,22 @@ export function collectVideoTargets(bookmark: Bookmark): VideoTarget[] {
   }
 
   return targets.slice(0, MAX_TARGETS);
+}
+
+/** Video ids in the saved links and in the post text, newest first. */
+export function collectYoutubeIds(bookmark: Bookmark): string[] {
+  const urls = [
+    ...(bookmark.links ?? []).map(link => link.finalUrl || link.url),
+    ...(String(bookmark.text || '').match(/https?:\/\/[^\s<>"']+/g) ?? []),
+  ];
+  const ids = new Set<string>();
+
+  for (const url of urls) {
+    const id = youtubeVideoId(url);
+    if (id) ids.add(id);
+  }
+
+  return [...ids];
 }
 
 /** Read transcripts for every target, one at a time to keep memory bounded. */

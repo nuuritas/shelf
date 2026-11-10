@@ -152,7 +152,17 @@ xbv topic ai-agents                      # one topic's synthesis and its items
 xbv recent --limit 20
 xbv export --dir ~/Documents/bookmarks   # one .md per bookmark + bookmarks.jsonl + INDEX.md
 xbv stats
+xbv youtube --limit 20                   # fetch missing YouTube transcripts on this Mac
 ```
+
+YouTube blocks caption requests from Cloudflare's IP range, so YouTube is the one part that does not run in the Worker. `xbv youtube` runs `get-youtube-transcript` on your own connection, stores the transcript through the API, and re-queues the summary. The first run downloads the helper; after that it is cached. Run it manually or schedule it with `launchd`/`cron`:
+
+```bash
+# ~/Library/LaunchAgents/tr.nuritas.xbv-youtube.plist, or a crontab line:
+0 * * * * cd /path/to/bookmark && /opt/homebrew/bin/bun cli/xbv.ts youtube --limit 10
+```
+
+This is free and unlimited. The alternative is a Supadata key, which the Worker uses directly.
 
 Configuration precedence: `XBV_URL` / `XBV_PASSWORD`, then `~/.config/xbv/config.json`, then `.dev.vars` when run inside the repo.
 
@@ -179,6 +189,7 @@ All API routes require the session cookie or `Authorization: Bearer <APP_PASSWOR
 | `DELETE` | `/api/bookmarks/:id` | Delete by short id or tweet id |
 | `POST` | `/api/bookmarks/:id/archive` | `{ "archived": true }` archives; `false` restores |
 | `POST` | `/api/bookmarks/:id/summarize` | Queue a summary; `{ "mode": "version", "instruction": "..." }` adds a version; `{ "mode": "translate" }` queues English |
+| `POST` | `/api/bookmarks/:id/transcripts` | Store a finished transcript (`{ "transcripts": [...] }`) and re-queue the summary; used by `xbv youtube` |
 | `POST` | `/api/translations/en` | Queue English for every finished summary that lacks it |
 | `GET` | `/api/topics` | Topics with counts and syntheses |
 | `GET` | `/api/calendar?month=YYYY-MM` | Save counts per UTC day for one month |
@@ -194,7 +205,7 @@ A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `s
 - Protected, deleted, age-restricted, or login-gated posts may not be readable.
 - X native Articles (`x.com/i/article/...`) are read in full and included in the summary.
 - External links are fetched, but JavaScript-heavy or paywalled sites may not expose readable text. GitHub repositories use the API and README.
-- Images are downloaded and sent to the AI model as base64. X videos are transcribed from the smallest MP4 variant with Workers AI Whisper (20 MB cap, roughly 8 minutes at the lowest bitrate). YouTube links use native captions through Supadata; without a key, or without captions, the summary falls back to the post and page text. YouTube blocks direct caption scraping from Worker IPs, and Workers cannot run ffmpeg for longer videos.
+- Images are downloaded and sent to the AI model as base64. X videos are transcribed from the smallest MP4 variant with Workers AI Whisper (20 MB cap, roughly 8 minutes at the lowest bitrate). YouTube links use native captions through Supadata when `SUPADATA_API_KEY` is set, or through `xbv youtube` from a residential connection. YouTube blocks direct caption scraping from Worker IPs, and Workers cannot run ffmpeg for longer videos.
 - Summaries are written as natural context-focused explanations, not a fixed sections template.
 - Summaries are generated in Turkish by default (`SUMMARY_LANGUAGE=tr`). Set it to `en` for an English primary. With Turkish primary, an English translation is stored separately.
 - Topic syntheses and summary versions stay in the primary language (Turkish); the English board translates bookmark summaries only.
