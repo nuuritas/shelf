@@ -11,10 +11,12 @@ import type {
   ReindexResult,
   SaveResult,
   StatsResult,
+  StoreTranscriptsResult,
   SummarizeResult,
   TopicListResult,
   TopicPageResult,
   TranslateAllResult,
+  VideoTranscript,
 } from './types.ts';
 import {
   clampInteger,
@@ -162,6 +164,13 @@ const worker: ExportedHandler<Env> = {
     const summaryMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9]{1,25})\/summarize$/);
     if (summaryMatch && request.method === 'POST') {
       return secure(await apiGuard(() => handleApiSummarize(summaryMatch[1], env, request)));
+    }
+
+    const transcriptsMatch = url.pathname.match(
+      /^\/api\/bookmarks\/([A-Za-z0-9]{1,25})\/transcripts$/,
+    );
+    if (transcriptsMatch && request.method === 'POST') {
+      return secure(await apiGuard(() => handleApiTranscripts(transcriptsMatch[1], env, request)));
     }
 
     if (request.method === 'POST' && url.pathname === '/api/translations/en') {
@@ -503,6 +512,28 @@ async function handleApiArchive(id: string, env: Env, request: Request): Promise
 
 async function handleApiTranslateAll(env: Env): Promise<Response> {
   const result = await doJson<TranslateAllResult>(env, '/translate-all', { method: 'POST' });
+  return jsonResponse(result, 202);
+}
+
+async function handleApiTranscripts(
+  id: string,
+  env: Env,
+  request: Request,
+): Promise<Response> {
+  let body: { transcripts?: VideoTranscript[] } = {};
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  const transcripts = Array.isArray(body.transcripts) ? body.transcripts : [];
+  const result = await doJson<StoreTranscriptsResult>(env, '/transcripts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, transcripts }),
+  });
+
   return jsonResponse(result, 202);
 }
 

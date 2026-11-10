@@ -82,7 +82,9 @@ wall-clock is long but CPU stays low.
   X Article bodies, quoted posts, up to two external links, and video transcripts
 - Video transcripts: the smallest MP4 of an X video goes to Workers AI
   `@cf/openai/whisper-large-v3-turbo` (no key, ~214 free audio minutes/day).
-  YouTube links use Supadata native captions when `SUPADATA_API_KEY` is set.
+  YouTube links use Supadata native captions when `SUPADATA_API_KEY` is set, or
+  `xbv youtube` from the Mac's residential IP when there is no key (it runs
+  `get-youtube-transcript` and posts through `/api/bookmarks/:id/transcripts`).
   Results are stored in `bookmarks.transcripts_json`, fed to the summarizer, and
   shown in a fold. Two videos per bookmark, 20 MB each; a failure never blocks
   the summary
@@ -172,11 +174,18 @@ clip took about 40 seconds and produced 6.4k characters. The model auto-detects
 the language, and the summary prompt treats the transcript as the record of what
 was actually said.
 
-YouTube is different: the watch page returns HTTP 429 to Worker IPs, so caption
-tracks cannot be scraped directly. Supadata's `mode=native` returns existing
-captions for 1 credit (100 free per month). Generated transcripts at 2
-credits/minute are intentionally not used. Without a key or captions, the
-summary uses the post and page text.
+YouTube is different: the watch page returns HTTP 429 to Worker IPs, and every
+Innertube client (Android, iOS, TV, mobile web, desktop web, embedded) returns
+`LOGIN_REQUIRED` with "Sign in to confirm you're not a bot". Direct timedtext is
+empty without a signature. Supadata's `mode=native` returns existing captions
+for 1 credit (100 free per month); generated transcripts at 2 credits/minute
+are intentionally not used.
+
+For a zero-cost path, `xbv youtube` runs `get-youtube-transcript` on this Mac's
+residential IP, then posts the result to `/api/bookmarks/:id/transcripts`. The
+DO stores it and re-queues the summary. It is manual or scheduled, not part of
+the Worker request path. Without a key, captions, or a local sync, the summary
+uses the post and page text.
 
 Known limits: 20 MB per video (about 8 minutes at 256 kbps), two videos per
 bookmark. Long videos would need an external transcoder. Re-summarizing an

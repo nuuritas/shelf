@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   collectVideoTargets,
+  collectYoutubeIds,
   readTranscripts,
   youtubeVideoId,
 } from '../src/transcript.ts';
@@ -43,6 +44,26 @@ test('recognises YouTube watch, short, shorts, and embed URLs', () => {
   assert.equal(youtubeVideoId('https://www.youtube.com/embed/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
   assert.equal(youtubeVideoId('https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ'), null);
   assert.equal(youtubeVideoId('https://vimeo.com/12345'), null);
+});
+
+test('collects YouTube ids from links and post text, ignoring channel pages', () => {
+  const ids = collectYoutubeIds(
+    bookmark({
+      links: [
+        {
+          url: 'https://youtu.be/abc123xyz',
+          finalUrl: 'https://www.youtube.com/watch?v=abc123xyz&list=PL1',
+        },
+        {
+          url: 'https://youtube.com/@someone',
+          finalUrl: 'https://youtube.com/@someone',
+        },
+      ],
+      text: 'Also https://www.youtube.com/watch?v=def456uvw and https://youtu.be/abc123xyz',
+    }),
+  );
+
+  assert.deepEqual(ids.sort(), ['abc123xyz', 'def456uvw']);
 });
 
 test('collects the post video first and YouTube links after it', () => {

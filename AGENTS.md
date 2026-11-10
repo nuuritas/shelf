@@ -38,13 +38,14 @@ docs/PROGRESS.md     long-form project knowledge
 ```bash
 bun install                 # package manager is bun; npm is not installed
 bun run typecheck           # tsc --noEmit (TS 7.0.2, ~0.1 s)
-node --test                 # 29 tests, runs .ts directly on Node 26
+node --test                 # 30 tests, runs .ts directly on Node 26
 bunx wrangler dev           # local Worker (needs .dev.vars)
 bunx wrangler deploy        # deploy to bookmark.nuritas.tr + workers.dev
 bunx wrangler tail          # production logs
 ./android/build.sh          # rebuild public/BookmarkShare.apk
 xbv search "claude code"    # CLI → ~/.local/bin/xbv symlink to cli/xbv.ts
 xbv mcp                     # stdio MCP server for Claude/Codex/Cursor
+xbv youtube [--limit 20]    # fetch missing YouTube transcripts from this Mac
 ```
 
 `.dev.vars` (gitignored) needs `APP_PASSWORD`, `APP_SECRET`, `OPENCODE_API_KEY`,
@@ -149,6 +150,10 @@ API: see `docs/PROGRESS.md` §3.
   about 214 audio minutes). YouTube uses Supadata `mode=native` only when
   `SUPADATA_API_KEY` is set; never switch it to `auto`, which bills 2 credits
   per generated minute. A transcript failure must never fail the summary.
+- YouTube is additionally reachable through `POST /api/bookmarks/:id/transcripts`
+  and `xbv youtube`, which runs `get-youtube-transcript` on the Mac's residential
+  IP and re-queues the summary. This is the free path when no Supadata key is
+  set; it is not part of the Worker request path.
 - `SUMMARY_LANGUAGE` sets the main summary language (Turkish in production).
   When the main language is Turkish, a finished summary automatically queues an
   English version in `summary_en` (`translateSummary`, session `xbv-<tweetId>-en`).
@@ -218,5 +223,7 @@ API: see `docs/PROGRESS.md` §3.
 - Transcript caps: 20 MB and two videos per bookmark. Longer X videos need a
   transcoder (the Worker cannot run ffmpeg); Supadata's generated mode is the
   paid fallback, not the default.
-- YouTube returns HTTP 429 to Worker IPs, so do not try to scrape caption
-  tracks directly. Use Supadata or accept the page-description fallback.
+- YouTube returns HTTP 429 to Worker IPs and every Innertube client returns
+  `LOGIN_REQUIRED`, so do not try to scrape caption tracks in the Worker. Use
+  Supadata, `xbv youtube` from a residential connection, or accept the
+  page-description fallback.

@@ -147,7 +147,7 @@ export interface VideoTranscript {
   /** The post or page the video lives on. */
   url: string;
   source: TranscriptSource;
-  provider: 'workers-ai' | 'supadata' | null;
+  provider: 'workers-ai' | 'supadata' | 'local' | null;
   lang: string | null;
   text: string;
   durationSec: number | null;
@@ -358,6 +358,11 @@ export interface StatsResult {
   topics: number;
   bytes?: number;
   rows?: Record<string, number>;
+}
+
+export interface StoreTranscriptsResult {
+  stored: number;
+  queued: boolean;
 }
 
 export interface ReindexResult {
