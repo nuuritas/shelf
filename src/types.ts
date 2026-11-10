@@ -38,8 +38,14 @@ export interface Env {
    * `https://example.com/transcript?url={url}`.
    */
   TRANSCRIPT_API_URL?: string;
-  /** Bearer token for `TRANSCRIPT_API_URL`, if the service needs one. */
+  /** Token for `TRANSCRIPT_API_URL`, if the service needs one. */
   TRANSCRIPT_API_KEY?: string;
+  /**
+   * Header that carries `TRANSCRIPT_API_KEY`. Defaults to
+   * `Authorization: Bearer <key>`; set `x-api-key` or `X-API-Key` for services
+   * that use a raw key header.
+   */
+  TRANSCRIPT_API_HEADER?: string;
 }
 
 /** The small part of the Workers AI binding this app uses. */

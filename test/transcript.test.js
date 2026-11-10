@@ -311,3 +311,53 @@ test('transcript bodies parse from JSON, SRT, and plain text', () => {
   assert.equal(parseTranscriptBody('just words').text, 'just words');
   assert.equal(parseTranscriptBody('').text, '');
 });
+
+test('a raw key header replaces the Authorization header', async () => {
+  const originalFetch = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async (url, init) => {
+    requested = { url: String(url), headers: init.headers };
+    return new Response(JSON.stringify({ content: 'from brevyd', lang: 'en' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const transcripts = await readTranscripts(youtubeBookmark(), {
+      TRANSCRIPT_API_URL: 'https://brevyd.com/api/v1/transcript?url={url}&text=true',
+      TRANSCRIPT_API_KEY: 'brv_live_test',
+      TRANSCRIPT_API_HEADER: 'x-api-key',
+    });
+
+    assert.equal(requested.headers['x-api-key'], 'brv_live_test');
+    assert.equal(requested.headers.Authorization, undefined);
+    assert.equal(transcripts[0].text, 'from brevyd');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('segment arrays from transcript services are joined', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        transcript: [
+          { start: 0, duration: 3.5, text: 'first segment' },
+          { start: 3.5, duration: 3, text: 'second segment' },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+
+  try {
+    const transcripts = await readTranscripts(youtubeBookmark(), {
+      TRANSCRIPT_API_URL: 'https://api.transcriptapi.io/transcript?video_id={videoId}',
+      TRANSCRIPT_API_KEY: 'key',
+    });
+    assert.equal(transcripts[0].text, 'first segment second segment');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

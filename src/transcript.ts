@@ -335,7 +335,11 @@ async function transcribeCustomProvider(
     Accept: 'application/json, text/vtt, text/plain',
   };
   const key = String(env.TRANSCRIPT_API_KEY || '').trim();
-  if (key) headers.Authorization = `Bearer ${key}`;
+  const header = String(env.TRANSCRIPT_API_HEADER || '').trim();
+  if (key) {
+    if (header) headers[header] = key;
+    else headers.Authorization = `Bearer ${key}`;
+  }
 
   const response = await fetchWithTimeout(endpoint, { headers });
   if (response.status === 204 || response.status === 404) {

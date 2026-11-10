@@ -22,6 +22,9 @@ AI_API_KEY=
 # {url} as placeholders. JSON {text}, WebVTT, SRT, or plain text are accepted.
 # TRANSCRIPT_API_URL=https://example.com/transcript?url={url}
 # TRANSCRIPT_API_KEY=
+# Header for that token. Default is Authorization: Bearer. Use x-api-key for
+# Brevyd/Supadata-style services.
+# TRANSCRIPT_API_HEADER=
 
 # Read-only GitHub token. Optional: raises the API rate limit for link reading.
 # GITHUB_TOKEN=

@@ -68,7 +68,8 @@ Everything is optional except the password.
 | `SUMMARY_LANGUAGE` | var | `en` | `en` or `tr`. With `tr`, an English translation is also stored per bookmark. |
 | `SUPADATA_API_KEY` | secret | — | Enables YouTube captions inside the Worker. |
 | `TRANSCRIPT_API_URL` | var | — | Any transcript service, checked before Supadata. A template with `{videoId}` and/or `{url}`. |
-| `TRANSCRIPT_API_KEY` | secret | — | Bearer token for `TRANSCRIPT_API_URL`, if the service needs one. |
+| `TRANSCRIPT_API_KEY` | secret | — | Token for `TRANSCRIPT_API_URL`, if the service needs one. |
+| `TRANSCRIPT_API_HEADER` | var | `Authorization: Bearer` | Header carrying that token; set `x-api-key` for services that want a raw key. |
 | `GITHUB_TOKEN` | secret | — | Read-only token; raises GitHub API limits when reading repo links. |
 | `X_BEARER_TOKEN` + `X_PROVIDER=official` | secret + var | — | Use the official X API instead of the public FxTwitter reader. |
 | `SHARE_TOKEN` | secret | — | Add-only token embedded in the Android share APK. |
@@ -163,6 +164,19 @@ YouTube refuses caption requests from Cloudflare's IP range, so YouTube is the o
    ```
 
    The response can be JSON with `text`, `transcript`, or `content` (string or `[{ "text": ... }]`), or plain WebVTT, SRT, or text. Timestamps and cue numbers are stripped. This is the hook for a paid API, a self-hosted Invidious/Piped instance, a proxy you run, or a small shim in front of anything else.
+
+   Services that work with it today (quotas read in November 2026; check before relying on them):
+
+   | Service | Free tier | Auth | `TRANSCRIPT_API_URL` |
+   | --- | --- | --- | --- |
+   | Supadata | 100 credits/month | `x-api-key` | built in: set `SUPADATA_API_KEY` |
+   | Brevyd | 50 requests/month, 60/min | `x-api-key` | `https://brevyd.com/api/v1/transcript?url={url}&text=true` |
+   | TranscriptAPI | 20 credits, once | Bearer | `https://api.transcriptapi.io/transcript?video_id={videoId}` |
+   | TranscriptHook | 10/month | `X-API-Key` | `https://transcripthook.com/api/transcript?url={url}` |
+   | youtube-transcript.io | 25 tokens/month | API key | see their API docs |
+   | YouTubeTranscript.dev | 10/month, then $5 for 500 | Bearer | POST only, so it needs a small shim |
+
+   Brevyd and TranscriptHook need `TRANSCRIPT_API_HEADER=x-api-key` (or `X-API-Key`); TranscriptAPI and YouTubeTranscript.dev take a bearer token, which is the default.
 
 2. **Supadata.** Set `SUPADATA_API_KEY` and the Worker fetches native captions itself (100 free credits per month).
 
