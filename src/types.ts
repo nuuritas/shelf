@@ -46,6 +46,12 @@ export interface Env {
    * that use a raw key header.
    */
   TRANSCRIPT_API_HEADER?: string;
+  /**
+   * Base URL of a Piped API instance, for example
+   * `https://api.piped.private.coffee`. Keyless best-effort YouTube captions;
+   * instances are volunteer-run, so treat this as a free fallback.
+   */
+  PIPED_API_URL?: string;
 }
 
 /** The small part of the Workers AI binding this app uses. */
@@ -166,7 +172,7 @@ export interface VideoTranscript {
   /** The post or page the video lives on. */
   url: string;
   source: TranscriptSource;
-  provider: 'workers-ai' | 'supadata' | 'custom' | 'local' | null;
+  provider: 'workers-ai' | 'supadata' | 'custom' | 'piped' | 'local' | null;
   lang: string | null;
   text: string;
   durationSec: number | null;

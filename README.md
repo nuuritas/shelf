@@ -70,6 +70,7 @@ Everything is optional except the password.
 | `TRANSCRIPT_API_URL` | var | — | Any transcript service, checked before Supadata. A template with `{videoId}` and/or `{url}`. |
 | `TRANSCRIPT_API_KEY` | secret | — | Token for `TRANSCRIPT_API_URL`, if the service needs one. |
 | `TRANSCRIPT_API_HEADER` | var | `Authorization: Bearer` | Header carrying that token; set `x-api-key` for services that want a raw key. |
+| `PIPED_API_URL` | var | — | Base URL of a Piped instance for keyless captions, e.g. `https://api.piped.private.coffee`. |
 | `GITHUB_TOKEN` | secret | — | Read-only token; raises GitHub API limits when reading repo links. |
 | `X_BEARER_TOKEN` + `X_PROVIDER=official` | secret + var | — | Use the official X API instead of the public FxTwitter reader. |
 | `SHARE_TOKEN` | secret | — | Add-only token embedded in the Android share APK. |
@@ -179,6 +180,14 @@ YouTube refuses caption requests from Cloudflare's IP range, so YouTube is the o
    Brevyd and TranscriptHook need `TRANSCRIPT_API_HEADER=x-api-key` (or `X-API-Key`); TranscriptAPI and YouTubeTranscript.dev take a bearer token, which is the default.
 
    When the custom service answers `429` (monthly quota spent) and `SUPADATA_API_KEY` is also set, the request falls through to Supadata, so two free tiers stack instead of failing.
+
+   **Piped, no key at all.** Set `PIPED_API_URL` to a public Piped instance and the Worker asks it for the stream, then fetches the caption track it returns as WebVTT:
+
+   ```jsonc
+   "vars": { "PIPED_API_URL": "https://api.piped.private.coffee" }
+   ```
+
+   `api.piped.private.coffee` returned real English captions for a test video when this was written, and the code turns them into plain text. Instances are volunteer-run: two others tested were down (502, anti-bot captcha), so it is a free fallback rather than a promise. It is skipped when Supadata is configured, except when Supadata answers 429.
 
 2. **Supadata.** Set `SUPADATA_API_KEY` and the Worker fetches native captions itself (100 free credits per month).
 

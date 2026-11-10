@@ -26,6 +26,10 @@ AI_API_KEY=
 # Brevyd/Supadata-style services.
 # TRANSCRIPT_API_HEADER=
 
+# Keyless YouTube captions through a public Piped instance. Volunteer-run, so
+# treat it as a best-effort fallback.
+# PIPED_API_URL=https://api.piped.private.coffee
+
 # Read-only GitHub token. Optional: raises the API rate limit for link reading.
 # GITHUB_TOKEN=
 

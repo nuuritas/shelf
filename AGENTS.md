@@ -176,6 +176,9 @@ API: see `docs/PROGRESS.md` §3.
   about 214 audio minutes). YouTube uses Supadata `mode=native` only when
   `SUPADATA_API_KEY` is set; never switch it to `auto`, which bills 2 credits
   per generated minute. A transcript failure must never fail the summary.
+- `PIPED_API_URL` is the keyless fallback: `GET /streams/{id}` then the
+  subtitle URL with `fmt=vtt`. Instances are volunteer-run and flaky, so every
+  failure becomes an `unavailable` transcript, never an exception.
 - `TRANSCRIPT_API_URL` (a template with `{videoId}`/`{url}`) is tried before
   Supadata and accepts JSON, VTT, SRT, or plain text; `parseTranscriptBody` is
   the only parser. Keep it forgiving: it is the integration point for any
