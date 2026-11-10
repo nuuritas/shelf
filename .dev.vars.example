@@ -12,7 +12,6 @@ APP_PASSWORD=replace-with-a-long-password
 # AI_PROVIDER=cloudflare
 
 # Key for the chosen provider. Not used by cloudflare, which uses the AI binding.
-# Claude and ChatGPT *subscriptions* are not API keys and cannot be used here.
 AI_API_KEY=
 
 # Supadata key. Optional: enables YouTube captions inside the Worker.
@@ -26,9 +25,10 @@ AI_API_KEY=
 # Brevyd/Supadata-style services.
 # TRANSCRIPT_API_HEADER=
 
-# Keyless YouTube captions through a public Piped instance. Volunteer-run, so
-# treat it as a best-effort fallback.
-# PIPED_API_URL=https://api.piped.private.coffee
+# YouTube captions work with no key: two public Piped instances are tried by
+# default. Override with one instance or a comma-separated ladder, or "off" to
+# skip Piped (for example when SUPADATA_API_KEY is set).
+# PIPED_API_URL=https://api.piped.private.coffee,https://pipedapi.ducks.party
 
 # Read-only GitHub token. Optional: raises the API rate limit for link reading.
 # GITHUB_TOKEN=

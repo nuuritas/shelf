@@ -4,6 +4,7 @@ import {
   collectVideoTargets,
   collectYoutubeIds,
   parseTranscriptBody,
+  pipedInstances,
   readTranscripts,
   youtubeVideoId,
 } from '../src/transcript.ts';
@@ -170,7 +171,8 @@ test('reads YouTube captions through Supadata when a key is set', async () => {
           },
         ],
       }),
-      { SUPADATA_API_KEY: 'test-key' },
+      // Piped off: this test is about the Supadata wire format.
+      { SUPADATA_API_KEY: 'test-key', PIPED_API_URL: 'off' },
     );
 
     assert.match(requested.url, /mode=native/);
@@ -183,20 +185,83 @@ test('reads YouTube captions through Supadata when a key is set', async () => {
   }
 });
 
-test('skips YouTube quietly when Supadata is not configured', async () => {
-  const transcripts = await readTranscripts(
-    bookmark({
-      links: [
-        {
-          url: 'https://youtu.be/dQw4w9WgXcQ',
-          finalUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-        },
-      ],
-    }),
-    {},
-  );
+test('PIPED_API_URL=off keeps the request path offline', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error('no transcript source should be called');
+  };
 
-  assert.deepEqual(transcripts, []);
+  try {
+    const transcripts = await readTranscripts(youtubeBookmark(), { PIPED_API_URL: 'off' });
+    assert.deepEqual(transcripts, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Piped is on by default, so a fresh deploy needs no key', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async url => {
+    const href = String(url);
+    calls.push(href);
+    if (href.includes('/streams/')) {
+      return new Response(
+        JSON.stringify({
+          subtitles: [{ url: 'https://proxy.example.com/timedtext?fmt=ttml&lang=en', code: 'en' }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return new Response('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nDefault captions', {
+      status: 200,
+      headers: { 'Content-Type': 'text/vtt' },
+    });
+  };
+
+  try {
+    assert.equal(pipedInstances({})[0], 'https://api.piped.private.coffee');
+    const transcripts = await readTranscripts(youtubeBookmark(), {});
+    assert.match(calls[0], /^https:\/\/api\.piped\.private\.coffee\/streams\/dQw4w9WgXcQ$/);
+    assert.equal(transcripts[0].provider, 'piped');
+    assert.equal(transcripts[0].text, 'Default captions');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('a ladder of instances moves on when the first one is down', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async url => {
+    const href = String(url);
+    calls.push(href);
+    if (href.startsWith('https://dead.example.com')) return new Response('bad', { status: 502 });
+    if (href.includes('/streams/')) {
+      return new Response(
+        JSON.stringify({
+          subtitles: [{ url: 'https://proxy.example.com/timedtext?fmt=ttml&lang=en', code: 'en' }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return new Response('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nSecond instance', {
+      status: 200,
+      headers: { 'Content-Type': 'text/vtt' },
+    });
+  };
+
+  try {
+    const transcripts = await readTranscripts(youtubeBookmark(), {
+      PIPED_API_URL: 'https://dead.example.com, https://alive.example.com/',
+    });
+    assert.equal(calls.length, 3);
+    assert.equal(calls[1], 'https://alive.example.com/streams/dQw4w9WgXcQ');
+    assert.equal(transcripts[0].status, 'done');
+    assert.equal(transcripts[0].text, 'Second instance');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 const youtubeBookmark = () =>
@@ -380,6 +445,7 @@ test('a spent custom quota falls back to Supadata', async () => {
     const transcripts = await readTranscripts(youtubeBookmark(), {
       TRANSCRIPT_API_URL: 'https://captions.example.com/{videoId}',
       SUPADATA_API_KEY: 'supadata-key',
+      PIPED_API_URL: 'off',
     });
 
     assert.equal(calls.length, 2);

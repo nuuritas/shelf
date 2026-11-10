@@ -27,6 +27,8 @@
   // or custom) and set AI_API_KEY as a secret. A custom endpoint also needs:
   //   "AI_BASE_URL": "https://api.example.com/v1",
   //   "AI_MODEL": "some-model",
+  // YouTube captions also work with no key: public Piped instances are tried
+  // unless you set "PIPED_API_URL" (a ladder, or "off").
   "vars": {
     "SUMMARY_LANGUAGE": "en"
   }
