@@ -158,6 +158,41 @@ export async function summarizePost(
   }
 }
 
+/** Translate a finished primary summary into English, preserving its shape. */
+export async function translateSummary(
+  summary: string,
+  env: Partial<Env>,
+  options: { session?: string } = {},
+): Promise<SummaryResult> {
+  if (!env.OPENCODE_API_KEY) {
+    throw new Error('OPENCODE_API_KEY is not configured.');
+  }
+
+  const text = await requestChat(env, {
+    session: options.session || 'xbv-translate-en',
+    system:
+      'You translate explanations for one reader\'s private reading archive. ' +
+      'Translate the supplied text into natural, idiomatic English. Keep the meaning, the paragraph order, and every concrete detail. ' +
+      'Leave names, product names, handles, and URLs exactly as they are. Do not add context, do not summarize, and do not comment on the translation. ' +
+      'Return plain text only, no headings, no Markdown.',
+    user: [
+      'Translate this explanation into English.',
+      '',
+      '---',
+      String(summary || '').slice(0, 12_000),
+      '---',
+    ].join('\n'),
+    maxTokens: 4096,
+    temperature: 0.1,
+  });
+
+  return {
+    text,
+    model: String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, ''),
+    imagesUsed: 0,
+  };
+}
+
 function buildPrompt(
   post: Bookmark,
   imageNotes: string[],

@@ -250,7 +250,8 @@ function topicNames(bookmark: Bookmark): string {
 }
 
 function renderCard(bookmark: Bookmark, index: number): string {
-  const lines = [`${index}. ${authorLabel(bookmark)} · ${isoDay(bookmark.savedAt)} · ${bookmark.url}`];
+  const flags = bookmark.archivedAt ? ' · archived' : '';
+  const lines = [`${index}. ${authorLabel(bookmark)} · ${isoDay(bookmark.savedAt)}${flags} · ${bookmark.url}`];
   const topics = topicNames(bookmark);
   if (topics) lines.push(`   topics: ${topics}`);
   const summary = (bookmark.summary || bookmark.text || '').replace(/\s+/g, ' ').trim();
@@ -287,14 +288,20 @@ function renderBookmark(bookmark: Bookmark): string {
   const meta = [`Saved ${isoDay(bookmark.savedAt)}`];
   const topics = topicNames(bookmark);
   if (topics) meta.push(`Topics: ${topics}`);
+  if (bookmark.archivedAt) meta.push('Archived');
   if (bookmark.ref) meta.push(`id: ${bookmark.ref}`);
   meta.push(`tweet: ${bookmark.tweetId}`);
   lines.push('', meta.join(' · '));
 
   if (bookmark.summary) {
-    lines.push('', '## AI summary', '', bookmark.summary.trim());
+    const heading = bookmark.summaryEn ? '## AI summary (Turkish)' : '## AI summary';
+    lines.push('', heading, '', bookmark.summary.trim());
   } else if (bookmark.summaryStatus === 'pending') {
     lines.push('', '## AI summary', '', `_Still pending (status: ${bookmark.summaryStatus})._`);
+  }
+
+  if (bookmark.summaryEn) {
+    lines.push('', '## AI summary (English)', '', bookmark.summaryEn.trim());
   }
 
   lines.push('', '## Original post', '', bookmark.text?.trim() || '_No text captured._');
@@ -330,7 +337,8 @@ function renderTopics(data: TopicListResult): string {
   if (!data.topics.length) return 'No topics yet — save a few more bookmarks.';
   return data.topics
     .map(topic => {
-      const header = `## ${topic.name} (${topic.slug}) — ${topic.count} bookmark${topic.count === 1 ? '' : 's'}`;
+      const counts = `${topic.count} active${topic.archivedCount ? `, ${topic.archivedCount} archived` : ''}`;
+      const header = `## ${topic.name} (${topic.slug}) — ${counts}`;
       const parts = [header];
       if (topic.description) parts.push('', topic.description);
       if (topic.overview) parts.push('', topic.overview.trim());
@@ -354,7 +362,7 @@ async function commandSearch(args: ParsedArgs): Promise<void> {
   if (!query) throw new Error('Usage: xbv search <words> [--limit 10] [--json]');
 
   const limit = clampLimit(args.flags.limit, 10, 50);
-  const result = await api<ListResult>('api/bookmarks', { q: query, limit });
+  const result = await api<ListResult>('api/bookmarks', { q: query, limit, view: 'all' });
 
   if (args.flags.json) {
     console.log(JSON.stringify(result, null, 2));
@@ -425,14 +433,15 @@ async function commandTopic(args: ParsedArgs): Promise<void> {
     throw new Error(`Unknown topic “${slug}”. Known: ${known}`);
   }
 
-  const result = await api<ListResult>('api/bookmarks', { topic: topic.slug, limit });
+  const result = await api<ListResult>('api/bookmarks', { topic: topic.slug, limit, view: 'all' });
 
   if (args.flags.json) {
     console.log(JSON.stringify({ topic, bookmarks: result.bookmarks, total: result.total }, null, 2));
     return;
   }
 
-  const parts = [`# ${topic.name} — ${topic.count} bookmark${topic.count === 1 ? '' : 's'}`];
+  const counts = `${topic.count} active${topic.archivedCount ? `, ${topic.archivedCount} archived` : ''}`;
+  const parts = [`# ${topic.name} — ${counts}`];
   if (topic.description) parts.push('', topic.description);
   if (topic.overview) parts.push('', '## Synthesis', '', topic.overview.trim());
   parts.push('', `## Items (showing ${result.bookmarks.length} of ${result.total})`, '');
@@ -478,6 +487,7 @@ function frontMatter(bookmark: Bookmark): string {
     `author: "${authorLabel(bookmark)}"`,
     `saved: ${isoDay(bookmark.savedAt)}`,
     `created: ${isoDay(bookmark.createdAt) || 'unknown'}`,
+    `archived: ${Boolean(bookmark.archivedAt)}`,
     `topics: [${topics.map(name => JSON.stringify(name)).join(', ')}]`,
     '---',
   ];
@@ -492,7 +502,7 @@ function exportFileName(bookmark: Bookmark): string {
 async function commandExport(args: ParsedArgs): Promise<void> {
   const target = String(args.flags.dir || args.positional[0] || 'bookmarks-export');
   const dir = resolve(target);
-  const bookmarks = await fetchAllBookmarks({});
+  const bookmarks = await fetchAllBookmarks({ view: 'all' });
   const topics = await api<TopicListResult>('api/topics');
 
   mkdirSync(dir, { recursive: true });
@@ -511,7 +521,9 @@ async function commandExport(args: ParsedArgs): Promise<void> {
         savedAt: bookmark.savedAt,
         createdAt: bookmark.createdAt,
         topics: (bookmark.topics || []).map(topic => topic.name),
+        archived: Boolean(bookmark.archivedAt),
         summary: bookmark.summary,
+        summaryEn: bookmark.summaryEn,
         text: bookmark.text,
         links: (bookmark.links || []).map(link => ({ url: link.finalUrl || link.url, title: link.title })),
         file: exportFileName(bookmark),
@@ -584,7 +596,7 @@ const MCP_TOOLS = [
     description:
       "Search the user's private X/Twitter bookmark vault. Matches post text, AI summaries, " +
       'authors, linked-page text and topic names. Every whitespace-separated term must match. ' +
-      'Returns compact cards (author, date, topics, summary excerpt, URL, tweet id).',
+      'Searches both active and archived items. Returns compact cards (author, date, topics, summary excerpt, URL, tweet id).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -604,8 +616,8 @@ const MCP_TOOLS = [
   {
     name: 'get_bookmark',
     description:
-      'Fetch one saved bookmark in full: AI summary, original post, quoted post, X Article, ' +
-      'linked-page text, topics, and alternative summary versions. Accepts the short id shown on ' +
+      'Fetch one saved bookmark in full: the Turkish AI summary, its English translation, original post, ' +
+      'quoted post, X Article, linked-page text, topics, archive state, and alternative summary versions. Accepts the short id shown on ' +
       'each card (e.g. "k7f3"), a tweet id, or an x.com status URL.',
     inputSchema: {
       type: 'object',
@@ -646,7 +658,8 @@ const MCP_INSTRUCTIONS =
   'This server exposes the user\'s personal X bookmark archive. When the user refers to something ' +
   'they saved or asks what they have read about a subject, call search_bookmarks first, then ' +
   'get_bookmark for the entries worth quoting. Prefer quoting the AI summary and original post text ' +
-  'verbatim; the archive is in Turkish by default.';
+  'verbatim. Summaries have a Turkish primary (`summary`) and often an English translation (`summaryEn`); ' +
+  'archived items are still part of the archive and are included in search.';
 
 async function callTool(name: string, input: Record<string, unknown>): Promise<string> {
   switch (name) {
@@ -654,7 +667,7 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
       const query = String(input.query || '').trim();
       if (!query) throw new Error('`query` is required.');
       const limit = clampLimit(String(input.limit ?? 10), 10, 50);
-      const result = await api<ListResult>('api/bookmarks', { q: query, limit });
+      const result = await api<ListResult>('api/bookmarks', { q: query, limit, view: 'all' });
       if (!result.bookmarks.length) return `No bookmarks matched “${query}”.`;
       return [
         `${result.total} match${result.total === 1 ? '' : 'es'} for “${query}”:`,
@@ -694,8 +707,9 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
       if (!topic) {
         return `Unknown topic “${slug}”. Known slugs: ${topics.topics.map(item => item.slug).join(', ') || '(none)'}`;
       }
-      const result = await api<ListResult>('api/bookmarks', { topic: topic.slug, limit });
-      const parts = [`# ${topic.name} — ${topic.count} bookmarks`];
+      const result = await api<ListResult>('api/bookmarks', { topic: topic.slug, limit, view: 'all' });
+      const counts = `${topic.count} active${topic.archivedCount ? `, ${topic.archivedCount} archived` : ''}`;
+      const parts = [`# ${topic.name} — ${counts}`];
       if (topic.description) parts.push('', topic.description);
       if (topic.overview) parts.push('', '## Synthesis', '', topic.overview.trim());
       parts.push('', ...result.bookmarks.map((bookmark, index) => renderCard(bookmark, index + 1)));

@@ -51,7 +51,7 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 
 | Table | Purpose |
 |---|---|
-| `bookmarks` | One row per X post: text, author, media JSON, quote JSON, article JSON, links JSON, metrics, `summary`, `summary_status`, topic and version job state |
+| `bookmarks` | One row per X post: text, author, media JSON, quote JSON, article JSON, links JSON, metrics, `summary`, `summary_en`, `archived_at`, topic/version/translation job state |
 | `topics` | AI-induced areas of interest: `slug`, `name`, `description`, `overview` (rolling synthesis), `overview_count` |
 | `item_topics` | Many-to-many filing, with confidence |
 | `summary_versions` | v2+ summaries, each with the instruction that produced it. v1 lives in `bookmarks.summary` |
@@ -66,9 +66,10 @@ pass, in priority order:
 
 1. summarize a pending bookmark (`summary_status = 'pending'`)
 2. generate a requested summary version (`version_status = 'pending'`)
-3. if the archive has ≥3 summarized items and no topics, bootstrap topics
-4. file a summarized item into topics (`topics_status = 'pending'`)
-5. rewrite one stale topic synthesis (`overview_count` ≠ item count)
+3. write a missing English version (`summary_en_status = 'pending'`)
+4. if the archive has ≥3 summarized items and no topics, bootstrap topics
+5. file a summarized item into topics (`topics_status = 'pending'`)
+6. rewrite one stale topic synthesis (`overview_count` ≠ item count)
 
 Each step re-arms the alarm if more work remains. AI calls wait on network, so
 wall-clock is long but CPU stays low.
@@ -83,6 +84,14 @@ wall-clock is long but CPU stays low.
 - Summary versions: "New version" with an optional instruction; original is
   never overwritten
 - Topic tabs that swap only the library region over `fetch`, preserving scroll
+- Archive instead of delete: `archived_at` removes a card from the default
+  Active view but keeps the row, summary, topics, and searchability. Active and
+  Archived are a toggle on the library and on topic pages; re-sharing an
+  archived post puts it back in the inbox
+- English board: the Turkish summary is primary; when it finishes, an English
+  translation is queued automatically into `summary_en`. The `Türkçe / English`
+  switch re-renders the same page; missing translations show a per-card button,
+  and one banner button queues every missing one
 - Collapsed cards (3-line peek, expand on tap) and folded topic syntheses
 - Custom domain `bookmark.nuritas.tr`, workers.dev kept as fallback
 - `/api/stats` reports row counts and real SQLite database size
@@ -104,14 +113,16 @@ wall-clock is long but CPU stays low.
 
 | Method | Route | Notes |
 |---|---|---|
-| `GET` | `/api/bookmarks?q=&topic=&limit=&offset=` | list; `q` terms are ANDed and match text, author, summary, links, and topic names |
+| `GET` | `/api/bookmarks?q=&topic=&view=&limit=&offset=` | list; `view=active|archived|all` (default active); `q` terms are ANDed and match text, author, both summaries, links, and topic names |
 | `POST` | `/api/bookmarks` | `{ "url": ... }`; also accepts `SHARE_TOKEN` bearer |
 | `GET` | `/api/bookmarks/:id` | one bookmark by short ref (`k7f3`) or tweet id |
 | `DELETE` | `/api/bookmarks/:id` | delete by short ref or tweet id |
-| `POST` | `/api/bookmarks/:id/summarize` | `{ "mode": "version", "instruction": "..." }` adds a version |
+| `POST` | `/api/bookmarks/:id/archive` | `{ "archived": true }` archives; `false` restores. Accepts a ref |
+| `POST` | `/api/bookmarks/:id/summarize` | `{ "mode": "version", "instruction": "..." }` adds a version; `{ "mode": "translate" }` queues English |
+| `POST` | `/api/translations/en` | queue English for every finished summary that lacks it |
 | `GET` | `/api/topics` | topics with syntheses and counts |
 | `POST` | `/api/reindex` | re-induce the whole taxonomy |
-| `GET` | `/api/stats` | `total`, `summarized`, `pending`, `topics`, `bytes`, `rows` |
+| `GET` | `/api/stats` | `total`, `archived`, `summarized`, `translated`, `pending`, `topics`, `bytes`, `rows` |
 | `GET` | `/healthz` | no auth |
 
 ## 4. Measured state (2026-11-07)
@@ -137,6 +148,7 @@ wall-clock is long but CPU stays low.
 | Nov 7–10 | Motion digest experiments (v1–v5) | Monthly/Offprint-style artifact, eventually narrated |
 | Nov 10 | `xbv` CLI + MCP server | Saved posts must be usable inside local AI chats, not only in the browser |
 | Nov 10 | Short `#ref` ids on cards, copy on click | "look at this one" needs a handle shorter than a 19-digit tweet id |
+| Nov 10 | Archive toggle + bilingual summaries | Finished posts should leave the feed without being deleted; the same summaries should be readable in English |
 
 ### Video digest pipeline (experiments, not in the app yet)
 
@@ -189,6 +201,9 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - Music bed and sentence-level caption timing for the video.
 - Optional `GET /api/export` for a full JSON backup.
 - Merge or hide single-item topics.
+- Topic syntheses are still Turkish-only; the English board translates bookmark
+  summaries, not the rolling topic syntheses.
+- Summary versions remain Turkish-only; only the primary summary is translated.
 
 ## 8. Repo conventions
 

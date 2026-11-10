@@ -25,6 +25,11 @@ const NOTICES: Record<string, string> = {
   deleted: 'Bookmark removed.',
   queued: 'Summary queued again.',
   version: 'New version queued. The original summary stays as it is.',
+  archived: 'Bookmark archived. It leaves the active list but stays in the archive.',
+  unarchived: 'Bookmark moved back to the active list.',
+  translating: 'English summaries queued. Each one appears when the background job finishes it.',
+  translated: 'English summary queued.',
+  'translated-none': 'Every finished summary already has an English version.',
 };
 
 export interface RenderPageOptions {
@@ -36,6 +41,29 @@ export interface RenderPageOptions {
   notice?: string | null;
   error?: string | null;
   aiConfigured?: boolean;
+  view?: 'active' | 'archived';
+  lang?: 'tr' | 'en';
+  activeTotal?: number;
+  archivedTotal?: number;
+  missingEnglish?: number;
+  bilingual?: boolean;
+}
+
+/** Build a library/topic URL without empty or default parameters. */
+function libraryHref(
+  path: string,
+  { query = '', view = 'active', lang = 'tr' }: {
+    query?: string;
+    view?: 'active' | 'archived';
+    lang?: 'tr' | 'en';
+  } = {},
+): string {
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (view === 'archived') params.set('view', 'archived');
+  if (lang === 'en') params.set('lang', 'en');
+  const search = params.toString();
+  return search ? `${path}?${search}` : path;
 }
 
 export function renderPage({
@@ -47,28 +75,64 @@ export function renderPage({
   notice,
   error,
   aiConfigured = false,
+  view: viewOption = 'active',
+  lang: langOption = 'tr',
+  activeTotal = 0,
+  archivedTotal = 0,
+  missingEnglish = 0,
+  bilingual = false,
 }: RenderPageOptions): string {
+  const view = viewOption === 'archived' ? 'archived' : 'active';
+  const lang = langOption === 'en' ? 'en' : 'tr';
   const pending = bookmarks.some(
     bookmark =>
       ['pending', 'working'].includes(bookmark.summaryStatus) ||
-      ['pending', 'working'].includes(bookmark.versionStatus || ''),
+      ['pending', 'working'].includes(bookmark.versionStatus || '') ||
+      (lang === 'en' && ['pending', 'working'].includes(bookmark.summaryEnStatus || '')),
   );
-  const returnTo = topic ? `/t/${topic.slug}` : '/';
+  const path = topic ? `/t/${topic.slug}` : '/';
+  const currentQuery = topic ? '' : query;
+  const activeCount = topic ? topic.count : activeTotal;
+  const archivedCount = topic ? topic.archivedCount : archivedTotal;
+  const returnTo = libraryHref(path, { query: currentQuery, view, lang });
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
+  const showTranslateBanner =
+    lang === 'en' && bilingual && aiConfigured && missingEnglish > 0;
 
   const topicTabs = topics
-    .map(
-      entry => `
-        <a class="topic-tab ${topic?.slug === entry.slug ? 'active' : ''}" href="/t/${escapeHtml(entry.slug)}">
-          ${escapeHtml(entry.name)}<span>${entry.count}</span>
+    .map(entry => {
+      const tabCount = view === 'archived' ? entry.archivedCount : entry.count;
+      return `
+        <a class="topic-tab ${topic?.slug === entry.slug ? 'active' : ''}" href="${escapeHtml(
+          libraryHref(`/t/${entry.slug}`, { view, lang }),
+        )}"${entry.archivedCount ? ` title="${entry.archivedCount} archived"` : ''}>
+          ${escapeHtml(entry.name)}<span>${tabCount ?? 0}</span>
         </a>
-      `,
-    )
+      `;
+    })
     .join('');
 
+  const eyebrow = topic
+    ? `Topic · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
+    : view === 'archived'
+      ? `Archive · ${archivedCount} saved`
+      : `Library · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`;
+
+  const heading = query
+    ? `Results for “${escapeHtml(query)}”`
+    : topic
+      ? escapeHtml(topic.name)
+      : view === 'archived'
+        ? 'Archived bookmarks'
+        : 'Latest saves';
+
   return pageShell({
-    title: topic ? `${topic.name} · X Bookmark Vault` : 'X Bookmark Vault',
+    title: topic
+      ? `${topic.name} · X Bookmark Vault`
+      : view === 'archived'
+        ? 'Archive · X Bookmark Vault'
+        : 'X Bookmark Vault',
     bodyClass: 'home',
     head: pending ? '<meta http-equiv="refresh" content="4">' : '',
     body: `
@@ -78,7 +142,7 @@ export function renderPage({
           <span>Bookmark Vault</span>
         </a>
         <div class="top-actions">
-          <span class="count">${total} saved</span>
+          <span class="count">${total} ${view === 'archived' ? 'archived' : 'active'}</span>
           <form method="post" action="/logout">
             <button class="link-button" type="submit">Log out</button>
           </form>
@@ -102,21 +166,41 @@ export function renderPage({
         <section class="library" id="library">
           <div class="library-head">
             <div>
-              <p class="eyebrow">${topic ? `Topic · ${topic.count} saved` : 'Library'}</p>
-              <h2>${
-                query
-                  ? `Results for “${escapeHtml(query)}”`
-                  : topic
-                    ? escapeHtml(topic.name)
-                    : 'Latest saves'
-              }</h2>
+              <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+              <h2>${heading}</h2>
             </div>
-            <form class="search-form" method="get" action="/">
-              <label class="sr-only" for="q">Search bookmarks</label>
-              <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
-              <button type="submit">Search</button>
-              ${query ? '<a class="clear-search" href="/">Clear</a>' : ''}
-            </form>
+            <div class="library-tools">
+              <form class="search-form" method="get" action="/">
+                ${view === 'archived' ? '<input type="hidden" name="view" value="archived">' : ''}
+                ${lang === 'en' ? '<input type="hidden" name="lang" value="en">' : ''}
+                <label class="sr-only" for="q">Search bookmarks</label>
+                <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
+                <button type="submit">Search</button>
+                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { view, lang }))}">Clear</a>` : ''}
+              </form>
+              <div class="library-switches">
+                <nav class="view-switch" role="group" aria-label="Archive filter">
+                  <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
+                    libraryHref(path, { query: currentQuery, view: 'active', lang }),
+                  )}">Active<span>${activeCount}</span></a>
+                  <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
+                    libraryHref(path, { query: currentQuery, view: 'archived', lang }),
+                  )}">Archived<span>${archivedCount}</span></a>
+                </nav>
+                ${
+                  bilingual
+                    ? `<nav class="lang-switch" role="group" aria-label="Summary language">
+                        <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
+                          libraryHref(path, { query: currentQuery, view, lang: 'tr' }),
+                        )}">Türkçe</a>
+                        <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
+                          libraryHref(path, { query: currentQuery, view, lang: 'en' }),
+                        )}">English</a>
+                      </nav>`
+                    : ''
+                }
+              </div>
+            </div>
           </div>
 
           ${
@@ -128,21 +212,43 @@ export function renderPage({
                       ? renderTopicOverview(topic.overview)
                       : `<p class="topic-overview-empty">The synthesis for this thread is still being written.</p>`
                   }
+                  ${
+                    lang === 'en' && topic.overview
+                      ? '<p class="topic-language-note">Topic syntheses are written in Turkish.</p>'
+                      : ''
+                  }
+                </div>`
+              : ''
+          }
+
+          ${
+            showTranslateBanner
+              ? `<div class="translate-banner">
+                  <div>
+                    <strong>English board</strong>
+                    <p>${missingEnglish} finished ${missingEnglish === 1 ? 'summary has' : 'summaries have'} no English version yet. They are written in the background, one at a time.</p>
+                  </div>
+                  <form method="post" action="/translate-missing">
+                    <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+                    <button class="small-button" type="submit">Write them</button>
+                  </form>
                 </div>`
               : ''
           }
 
           <nav class="topic-tabs" aria-label="Topics">
-            <a class="topic-tab all ${topic ? '' : 'active'}" href="/">All<span>${total}</span></a>
+            <a class="topic-tab all ${topic ? '' : 'active'}" href="${escapeHtml(
+              libraryHref('/', { view, lang }),
+            )}">All${topic ? '' : `<span>${view === 'archived' ? archivedCount : activeCount}</span>`}</a>
             ${topicTabs}
           </nav>
 
           ${
             bookmarks.length
               ? `<div class="cards">${bookmarks
-                  .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo))
+                  .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual))
                   .join('')}</div>`
-              : renderEmpty(query)
+              : renderEmpty(query, view)
           }
 
           ${
@@ -187,11 +293,14 @@ function renderBookmark(
   bookmark: Bookmark,
   aiConfigured: boolean,
   returnTo = '/',
+  lang: 'tr' | 'en' = 'tr',
+  bilingual = false,
 ): string {
   const author: Partial<Author> = bookmark.author ?? {};
   const handle = author.username ? `@${author.username}` : 'unknown';
   const avatar = safeHttpUrl(author.avatarUrl);
   const initial = escapeHtml((author.name || author.username || '?').slice(0, 1).toUpperCase());
+  const archived = Boolean(bookmark.archivedAt);
 
   const extras = [];
   if (bookmark.article) extras.push('X Article');
@@ -202,7 +311,7 @@ function renderBookmark(
   if (linkCount) extras.push(`${linkCount} ${linkCount === 1 ? 'link' : 'links'}`);
 
   return `
-    <article class="card is-collapsed" id="bookmark-${escapeHtml(bookmark.tweetId)}">
+    <article class="card is-collapsed${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}">
       <header class="card-head">
         <div class="author">
           ${
@@ -223,6 +332,7 @@ function renderBookmark(
                   ? `<button class="ref-chip" type="button" data-copy="${escapeHtml(bookmark.ref)}" title="Copy bookmark id" aria-label="Bookmark id ${escapeHtml(bookmark.ref)}, click to copy">#${escapeHtml(bookmark.ref)}</button>`
                   : ''
               }
+              ${archived ? '<span class="archive-chip">Archived</span>' : ''}
             </div>
           </div>
         </div>
@@ -246,7 +356,7 @@ function renderBookmark(
       ${renderMedia(bookmark.media, 'main')}
       ${bookmark.quote ? renderQuote(bookmark.quote) : ''}
       ${bookmark.links?.length ? renderLinks(bookmark.links) : ''}
-      ${renderSummary(bookmark, aiConfigured, returnTo)}
+      ${renderSummary(bookmark, aiConfigured, returnTo, lang, bilingual)}
 
       ${extras.length ? `<p class="peek-meta">${escapeHtml(extras.join(' · '))}</p>` : ''}
 
@@ -259,8 +369,16 @@ function renderBookmark(
           <span class="dot">·</span>
           <a href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer">Open on X</a>
           <span class="dot">·</span>
+          <form method="post" action="/archive" class="inline-form">
+            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+            <input type="hidden" name="archived" value="${archived ? '0' : '1'}">
+            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+            <button class="link-button" type="submit">${archived ? 'Unarchive' : 'Archive'}</button>
+          </form>
+          <span class="dot">·</span>
           <form method="post" action="/delete" class="inline-form">
             <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
             <button class="link-button danger" type="submit">Remove</button>
           </form>
         </div>
@@ -385,24 +503,64 @@ function renderSummary(
   bookmark: Bookmark,
   aiConfigured: boolean,
   returnTo = '/',
+  lang: 'tr' | 'en' = 'tr',
+  bilingual = false,
 ): string {
   const status = bookmark.summaryStatus || (aiConfigured ? 'pending' : 'disabled');
 
   if (status === 'done' && bookmark.summary) {
     const versions = Array.isArray(bookmark.versions) ? bookmark.versions : [];
     const busy = ['pending', 'working'].includes(bookmark.versionStatus ?? '');
+    const preferEnglish = bilingual && lang === 'en';
+    const englishReady = Boolean(bookmark.summaryEn) && bookmark.summaryEnStatus === 'done';
+    const englishBusy = ['pending', 'working'].includes(bookmark.summaryEnStatus ?? '');
+    const englishFailed = bookmark.summaryEnStatus === 'failed';
+    const useEnglish = preferEnglish && englishReady;
+    const shownSummary = useEnglish ? String(bookmark.summaryEn) : bookmark.summary;
+    const languageTag = useEnglish ? 'EN' : bilingual ? 'TR' : '';
+
+    const translateForm =
+      preferEnglish && !englishReady && aiConfigured
+        ? `<form method="post" action="/summarize" class="summary-translate">
+            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+            <input type="hidden" name="mode" value="translate">
+            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+            <button class="small-button" type="submit">Write English summary</button>
+          </form>`
+        : '';
+
+    const englishNote = preferEnglish
+      ? englishBusy
+        ? '<p class="summary-note">The English version is being written. The Turkish original is shown below.</p>'
+        : englishFailed
+          ? `<p class="summary-note error">English translation failed: ${escapeHtml(
+              truncate(bookmark.summaryEnError || 'unknown error', 200),
+            )}</p>${translateForm}`
+          : useEnglish
+            ? '<p class="summary-note">Translated from the Turkish summary.</p>'
+            : `<p class="summary-note">No English version yet. The Turkish original is shown below.</p>${translateForm}`
+      : '';
 
     return `
       <section class="summary">
         <div class="summary-head">
           <span class="summary-mark">AI</span>
           <h3>Summary</h3>
+          ${languageTag ? `<span class="lang-tag">${languageTag}</span>` : ''}
           ${versions.length ? `<span class="summary-count">${versions.length + 1} versions</span>` : ''}
-          <span class="summary-time">${escapeHtml(formatDate(bookmark.summarizedAt))}</span>
+          <span class="summary-time">${escapeHtml(
+            formatDate(useEnglish ? bookmark.summaryEnAt : bookmark.summarizedAt),
+          )}</span>
         </div>
-        <div class="summary-text">${linkifyText(bookmark.summary)}</div>
+        <div class="summary-text"${useEnglish ? ' lang="en"' : ''}>${linkifyText(shownSummary)}</div>
+        ${englishNote}
 
         ${versions.length ? `<div class="versions">${versions.map(renderVersion).join('')}</div>` : ''}
+        ${
+          versions.length && preferEnglish
+            ? '<p class="version-language-note">Alternative versions are in Turkish.</p>'
+            : ''
+        }
         ${busy ? `<p class="version-note">Writing version ${versions.length + 2}…</p>` : ''}
         ${
           bookmark.versionError
@@ -420,7 +578,7 @@ function renderSummary(
             <input class="regen-input" id="instruction-${escapeHtml(bookmark.tweetId)}" name="instruction" maxlength="500" placeholder="Optional: explain the tradeoffs, the history, what to do…">
             <button type="submit">Write</button>
           </form>
-          <p class="regen-note">The original summary stays as it is. Each request becomes a new version.</p>
+          <p class="regen-note">The original summary stays as it is. Each request becomes a new version, written in Turkish.</p>
         </details>
       </section>
     `;
@@ -482,14 +640,25 @@ function renderMetrics(metrics: Partial<Metrics> = {}) {
   return items.join('<span class="dot">·</span>');
 }
 
-function renderEmpty(query: string): string {
+function renderEmpty(query: string, view: 'active' | 'archived' = 'active'): string {
   if (query) {
     return `
       <div class="empty">
         <p class="empty-mark">∅</p>
-        <h3>No matches</h3>
-        <p>Nothing in the library matches “${escapeHtml(query)}”.</p>
-        <a class="small-button" href="/">Clear search</a>
+        <h3>${view === 'archived' ? 'No matches in the archive' : 'No matches'}</h3>
+        <p>Nothing ${view === 'archived' ? 'archived ' : ''}in the library matches “${escapeHtml(query)}”.</p>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { view }))}">Clear search</a>
+      </div>
+    `;
+  }
+
+  if (view === 'archived') {
+    return `
+      <div class="empty">
+        <p class="empty-mark">▣</p>
+        <h3>Nothing archived yet</h3>
+        <p>Archive a bookmark when you are done with it. It leaves the active list but stays searchable and keeps its summary.</p>
+        <a class="small-button" href="/">Back to active bookmarks</a>
       </div>
     `;
   }
@@ -563,7 +732,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=6">
+  <link rel="stylesheet" href="/style.css?v=7">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -836,6 +1005,120 @@ h1, h2, h3, p { margin-top: 0; }
   margin: 0;
   font-size: 24px;
   letter-spacing: -0.03em;
+}
+
+.library-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.library-switches {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.view-switch,
+.lang-switch {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.view-switch a,
+.lang-switch a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.view-switch a:hover,
+.lang-switch a:hover { color: var(--ink); }
+
+.view-switch a.active,
+.lang-switch a.active {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.view-switch span {
+  color: inherit;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+
+.archive-chip {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.card.is-archived {
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+}
+
+.card.is-archived .tweet-text { color: var(--muted); }
+
+.lang-tag {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.summary-translate { margin-top: 8px; }
+
+.summary-note.error { color: var(--red); }
+
+.translate-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.translate-banner strong { font-size: 13px; }
+
+.translate-banner p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.translate-banner form { flex: 0 0 auto; }
+
+.topic-language-note,
+.version-language-note {
+  margin: 8px 0 0;
+  color: var(--faint);
+  font-size: 11.5px;
 }
 
 .search-form {
@@ -1742,6 +2025,9 @@ h1, h2, h3, p { margin-top: 0; }
   .add-form { flex-direction: column; padding: 6px; }
   .add-form button { width: 100%; }
   .library-head { align-items: flex-start; flex-direction: column; }
+  .library-tools { width: 100%; align-items: stretch; }
+  .library-switches { justify-content: space-between; }
+  .translate-banner { align-items: flex-start; flex-direction: column; }
   .search-form { width: 100%; }
   .search-form input { flex: 1; width: auto; }
   .card { padding: 16px; border-radius: 18px; }

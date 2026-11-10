@@ -13,10 +13,14 @@ Paste an X link, or share one from Android:
 1. The Worker reads the post through the public FxTwitter API (or the official X API if you add a bearer token).
 2. It saves the text, author, quote, X Article content, images, video URLs, and metrics.
 3. It reads the first external link(s) in the post: GitHub repos use the GitHub API + README; normal pages use a small readability extractor.
-4. It sends the post, article, link text, and images to OpenCode Go for a natural-language explanation.
+4. It sends the post, article, link text, and images to OpenCode Go for a natural-language explanation, then queues an English translation of that explanation.
 5. It renders a private, mobile-friendly library.
 
 The first summary is never overwritten. From any card you can ask for a new version with an optional direction ("explain the tradeoffs", "give the history"), and the result is stored beside the original as v2, v3, and so on.
+
+When you are done with a post, **Archive** it. It leaves the Active list but stays in the archive with its summary, topics, and search text; switch to Archived to read it again or restore it. Nothing is deleted unless you press Remove.
+
+Summaries live on two boards: **Türkçe** (primary) and **English** (translation). The switch at the top of the library re-renders the same page in either language. New summaries get an English version automatically; for older rows, the English board offers a button to queue the missing translations.
 
 If no OpenCode key is configured, saving still works; the card simply says the summary is not configured.
 
@@ -28,7 +32,7 @@ The vault is not a flat list. After a few saves it becomes a small, self-organiz
 - **Rolling syntheses.** Each topic page carries a 3-4 paragraph synthesis written from *all* the items in it, not from a single post. As new items arrive it is rewritten: recurring concerns, how later items sharpen or contradict earlier ones, and what is still open.
 - **New topic creation.** If nothing existing is a reasonable home, the filing step may create one new topic — never a one-off or a format.
 
-The engine runs in the background inside the same Durable Object. Each alarm pass does one unit of work, in order: summarize a new save, file it into topics, then rewrite the one topic whose synthesis is stale. Nothing else is needed to keep the archive coherent.
+The engine runs in the background inside the same Durable Object. Each alarm pass does one unit of work, in order: summarize a new save, write a requested version or English translation, file the item into topics, then rewrite the one topic whose synthesis is stale. Nothing else is needed to keep the archive coherent.
 
 `POST /api/reindex` re-induces the whole taxonomy from the archive (useful after a prompt change or a large import). It replaces existing topics and assignments, then the alarm rewrites every synthesis.
 
@@ -166,17 +170,19 @@ All API routes require the session cookie or `Authorization: Bearer <APP_PASSWOR
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/bookmarks?q=&topic=&limit=&offset=` | List saved bookmarks; `q` terms are ANDed and match text, author, summary, links, and topic names |
+| `GET` | `/api/bookmarks?q=&topic=&view=&limit=&offset=` | List bookmarks; `view=active|archived|all` (default active); `q` terms are ANDed and match text, author, both summaries, links, and topic names |
 | `POST` | `/api/bookmarks` | Save `{ "url": "https://x.com/..." }` |
 | `GET` | `/api/bookmarks/:id` | Get one bookmark by short id (e.g. `k7f3`) or tweet id |
 | `DELETE` | `/api/bookmarks/:id` | Delete by short id or tweet id |
-| `POST` | `/api/bookmarks/:id/summarize` | Queue a summary; `{ "mode": "version", "instruction": "..." }` adds a version instead |
+| `POST` | `/api/bookmarks/:id/archive` | `{ "archived": true }` archives; `false` restores |
+| `POST` | `/api/bookmarks/:id/summarize` | Queue a summary; `{ "mode": "version", "instruction": "..." }` adds a version; `{ "mode": "translate" }` queues English |
+| `POST` | `/api/translations/en` | Queue English for every finished summary that lacks it |
 | `GET` | `/api/topics` | Topics with counts and syntheses |
 | `POST` | `/api/reindex` | Rebuild the topic taxonomy from the archive |
 | `GET` | `/api/stats` | Counts |
 | `GET` | `/healthz` | Health check, no auth |
 
-A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, `summaryStatus`, `topics`, and `versions` (v2 and later, each with the instruction that produced it). Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs.
+A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, `summaryEn`, `summaryStatus`, `archivedAt`, `topics`, and `versions` (v2 and later, each with the instruction that produced it). Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs.
 
 ## Notes and limits
 
@@ -186,5 +192,6 @@ A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `s
 - External links are fetched, but JavaScript-heavy or paywalled sites may not expose readable text. GitHub repositories use the API and README.
 - Images are downloaded and sent to the AI model as base64. Videos are saved as URLs/posters, but are not transcribed in this first version.
 - Summaries are written as natural context-focused explanations, not a fixed sections template.
-- Summaries are generated in Turkish by default (`SUMMARY_LANGUAGE=tr`). Set it to `en` for English.
+- Summaries are generated in Turkish by default (`SUMMARY_LANGUAGE=tr`). Set it to `en` for an English primary. With Turkish primary, an English translation is stored separately.
+- Topic syntheses and summary versions stay in the primary language (Turkish); the English board translates bookmark summaries only.
 - This is a single-user app: one password, one shared library.

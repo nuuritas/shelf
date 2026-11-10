@@ -1,9 +1,18 @@
 import { DurableObject } from 'cloudflare:workers';
-import { bootstrapTopics, classifyPost, isAiConfigured, summarizePost, writeTopicOverview } from './ai.ts';
+import {
+  bootstrapTopics,
+  classifyPost,
+  isAiConfigured,
+  summarizePost,
+  translateSummary,
+  writeTopicOverview,
+} from './ai.ts';
 import { readExternalLinks } from './links.ts';
 import { clampInteger, jsonResponse } from './util.ts';
 import { readPost } from './x.ts';
 import type {
+  ArchiveResult,
+  ArchiveView,
   Bookmark,
   BookmarkRow,
   BootstrapItem,
@@ -23,6 +32,7 @@ import type {
   TopicPageResult,
   TopicRow,
   TopicSummary,
+  TranslateAllResult,
   XArticle,
 } from './types.ts';
 
@@ -42,6 +52,15 @@ function randomRef(): string {
     for (const byte of bytes) ref += REF_ALPHABET[byte % REF_ALPHABET.length];
     if (/[a-z]/.test(ref)) return ref;
   }
+}
+
+/** The default summaries are Turkish unless the deployment switched to English. */
+function turkishPrimary(env: Partial<Env>): boolean {
+  return String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() !== 'en';
+}
+
+function parseView(value: string | null | undefined): ArchiveView {
+  return value === 'archived' || value === 'all' ? value : 'active';
 }
 
 /* Take the context and SQL types from the base class: importing SqlStorage from
@@ -80,14 +99,22 @@ type TopicCountRow = {
   overview: string | null;
   overview_at: string | null;
   count: number;
+  archived_count: number;
 };
 
 type TopicRefRow = { tweet_id: string; slug: string; name: string };
 
 type StatsRow = {
   total: number;
+  archived: number | null;
   summarized: number | null;
+  translated: number | null;
   pending: number | null;
+};
+
+type ArchiveCountsRow = {
+  active: number | null;
+  archived: number | null;
 };
 
 type AlarmCountsRow = { done: number; topics: number };
@@ -96,8 +123,8 @@ type PendingCountsRow = {
   summaries: number;
   filings: number;
   overviews: number;
-
   versions: number;
+  translations: number;
 };
 
 type ReindexRow = {
@@ -223,6 +250,25 @@ export class Bookmarks extends DurableObject<Env> {
       // Fresh databases already have the column.
     }
 
+    for (const statement of [
+      'ALTER TABLE bookmarks ADD COLUMN archived_at TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN summary_en TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN summary_en_status TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN summary_en_error TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN summary_en_started_at INTEGER',
+      'ALTER TABLE bookmarks ADD COLUMN summary_en_at TEXT',
+    ]) {
+      try {
+        this.sql.exec(statement);
+      } catch {
+        // Fresh databases already have the column.
+      }
+    }
+
+    this.sql.exec(
+      'CREATE INDEX IF NOT EXISTS idx_bookmarks_archived_at ON bookmarks (archived_at)',
+    );
+
     // Give rows saved before refs existed a handle. Runs on wake, so it is a
     // no-op unless something is actually missing.
     const missingRefs = this.sql
@@ -267,7 +313,14 @@ export class Bookmarks extends DurableObject<Env> {
       }
 
       if (request.method === 'GET' && url.pathname === '/topic') {
-        return jsonResponse(this.topic(url.searchParams.get('slug')));
+        return jsonResponse(
+          this.topic(url.searchParams.get('slug'), parseView(url.searchParams.get('view'))),
+        );
+      }
+
+      if (request.method === 'POST' && url.pathname === '/archive') {
+        const body = (await request.json()) as { id: string | null; archived?: boolean };
+        return jsonResponse(this.archive(body.id, Boolean(body.archived)));
       }
 
       if (request.method === 'POST' && url.pathname === '/reindex') {
@@ -293,6 +346,10 @@ export class Bookmarks extends DurableObject<Env> {
         };
         await this.resummarize(body.id, body);
         return jsonResponse({ queued: true });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/translate-all') {
+        return jsonResponse(await this.translateAll());
       }
 
       if (request.method === 'GET' && url.pathname === '/stats') {
@@ -354,26 +411,35 @@ export class Bookmarks extends DurableObject<Env> {
     ];
 
     if (existing) {
+      const englishReset =
+        shouldSummarize && turkishPrimary(this.env)
+          ? `, summary_en = NULL, summary_en_status = 'pending',
+             summary_en_error = NULL, summary_en_started_at = NULL`
+          : '';
+      // Re-sharing an archived post means the reader wants it back in the inbox.
       this.sql.exec(
         `UPDATE bookmarks SET
           url = ?, author_name = ?, author_username = ?, author_avatar_url = ?,
           author_verified = ?, text = ?, created_at = ?, saved_at = ?, provider = ?,
           media_json = ?, quote_json = ?, article_json = ?, metrics_json = ?,
-          summary_status = ?, summary_error = NULL
+          summary_status = ?, summary_error = NULL, archived_at = NULL${englishReset}
         WHERE tweet_id = ?`,
         ...values.slice(1),
         post.tweetId,
       );
     } else {
+      const initialEnglishStatus =
+        shouldSummarize && turkishPrimary(this.env) ? 'pending' : null;
       this.sql.exec(
         `INSERT INTO bookmarks (
           tweet_id, ref, url, author_name, author_username, author_avatar_url, author_verified,
           text, created_at, saved_at, provider, media_json, quote_json, article_json,
-          metrics_json, summary_status, summary_started_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          metrics_json, summary_status, summary_en_status, summary_started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         values[0],
         this.uniqueRef(),
         ...values.slice(1),
+        initialEnglishStatus,
       );
     }
 
@@ -394,6 +460,7 @@ export class Bookmarks extends DurableObject<Env> {
   list(searchParams: URLSearchParams): ListResult {
     const query = (searchParams.get('q') || '').trim();
     const topicSlug = (searchParams.get('topic') || '').trim();
+    const view = parseView(searchParams.get('view'));
     const limit = clampInteger(searchParams.get('limit'), 50, 1, 100);
     const offset = clampInteger(searchParams.get('offset'), 0, 0, 10_000);
 
@@ -415,6 +482,7 @@ export class Bookmarks extends DurableObject<Env> {
           OR instr(lower(COALESCE(author_name, '')), lower(?)) > 0
           OR instr(lower(COALESCE(author_username, '')), lower(?)) > 0
           OR instr(lower(COALESCE(summary, '')), lower(?)) > 0
+          OR instr(lower(COALESCE(summary_en, '')), lower(?)) > 0
           OR instr(lower(COALESCE(links_json, '')), lower(?)) > 0
           OR instr(lower(COALESCE(article_json, '')), lower(?)) > 0
           OR tweet_id IN (
@@ -425,9 +493,37 @@ export class Bookmarks extends DurableObject<Env> {
                OR instr(lower(t.slug), lower(?)) > 0
           )
         )`);
-        args.push(term, term, term, term, term, term, term, term);
+        args.push(term, term, term, term, term, term, term, term, term);
       }
     }
+
+    // Counts for the Active/Archived switch: same query and topic, both sides.
+    const baseWhere = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const counts = this.sql
+      .exec<ArchiveCountsRow>(
+        `SELECT
+           SUM(CASE WHEN archived_at IS NULL THEN 1 ELSE 0 END) AS active,
+           SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived
+         FROM bookmarks ${baseWhere}`,
+        ...args,
+      )
+      .toArray()[0];
+
+    // Count translations missing inside the current query/topic, so the banner
+    // does not promise work for cards that are not on screen.
+    const missingEnglish = this.sql
+      .exec<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM bookmarks
+         ${baseWhere ? `${baseWhere} AND` : 'WHERE'} summary_status = 'done'
+           AND summary IS NOT NULL AND summary != ''
+           AND (summary_en IS NULL OR summary_en = '')
+           AND COALESCE(summary_en_status, '') NOT IN ('pending', 'working')`,
+        ...args,
+      )
+      .toArray()[0];
+
+    if (view === 'active') filters.push('archived_at IS NULL');
+    if (view === 'archived') filters.push('archived_at IS NOT NULL');
 
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
@@ -452,6 +548,10 @@ export class Bookmarks extends DurableObject<Env> {
       total: Number(countRow?.count ?? 0),
       query,
       topic: topicSlug || null,
+      view,
+      activeTotal: Number(counts?.active ?? 0),
+      archivedTotal: Number(counts?.archived ?? 0),
+      missingEnglish: Number(missingEnglish?.count ?? 0),
       limit,
       offset,
     };
@@ -520,7 +620,12 @@ export class Bookmarks extends DurableObject<Env> {
     return this.sql
       .exec<TopicCountRow>(
         `SELECT t.slug, t.name, t.description, t.overview, t.overview_at,
-                (SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug) AS count
+                (SELECT COUNT(*) FROM item_topics it
+                 JOIN bookmarks b ON b.tweet_id = it.tweet_id
+                 WHERE it.slug = t.slug AND b.archived_at IS NULL) AS count,
+                (SELECT COUNT(*) FROM item_topics it
+                 JOIN bookmarks b ON b.tweet_id = it.tweet_id
+                 WHERE it.slug = t.slug AND b.archived_at IS NOT NULL) AS archived_count
          FROM topics t
          ORDER BY count DESC, t.name COLLATE NOCASE`,
       )
@@ -532,21 +637,29 @@ export class Bookmarks extends DurableObject<Env> {
         overview: row.overview || '',
         overviewAt: row.overview_at,
         count: Number(row.count ?? 0),
+        archivedCount: Number(row.archived_count ?? 0),
       }));
   }
 
-  topic(slug: string | null): TopicPageResult {
+  topic(slug: string | null, view: ArchiveView = 'active'): TopicPageResult {
     const clean = String(slug || '').trim();
     const row = clean
       ? this.sql.exec<TopicRow>('SELECT * FROM topics WHERE slug = ?', clean).toArray()[0]
       : null;
     if (!row) return { topic: null, bookmarks: [], total: 0 };
 
+    const archiveFilter =
+      view === 'active'
+        ? 'AND b.archived_at IS NULL'
+        : view === 'archived'
+          ? 'AND b.archived_at IS NOT NULL'
+          : '';
+
     const bookmarks = this.sql
       .exec<BookmarkRow>(
         `SELECT b.* FROM bookmarks b
          JOIN item_topics it ON it.tweet_id = b.tweet_id
-         WHERE it.slug = ?
+         WHERE it.slug = ? ${archiveFilter}
          ORDER BY b.saved_at DESC
          LIMIT 100`,
         clean,
@@ -556,6 +669,18 @@ export class Bookmarks extends DurableObject<Env> {
     this.attachTopics(bookmarks);
     this.attachVersions(bookmarks);
 
+    const counts = this.sql
+      .exec<ArchiveCountsRow>(
+        `SELECT
+           SUM(CASE WHEN b.archived_at IS NULL THEN 1 ELSE 0 END) AS active,
+           SUM(CASE WHEN b.archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived
+         FROM item_topics it
+         JOIN bookmarks b ON b.tweet_id = it.tweet_id
+         WHERE it.slug = ?`,
+        clean,
+      )
+      .toArray()[0];
+
     return {
       topic: {
         slug: row.slug,
@@ -563,7 +688,8 @@ export class Bookmarks extends DurableObject<Env> {
         description: row.description,
         overview: row.overview || '',
         overviewAt: row.overview_at,
-        count: bookmarks.length,
+        count: Number(counts?.active ?? 0),
+        archivedCount: Number(counts?.archived ?? 0),
       },
       bookmarks,
       total: bookmarks.length,
@@ -641,18 +767,63 @@ export class Bookmarks extends DurableObject<Env> {
     return true;
   }
 
-  async resummarize(
-    tweetId: string | null,
-    options: { mode?: string; instruction?: string } = {},
-  ): Promise<void> {
-    if (!tweetId) throw new Error('Missing bookmark id.');
-    const id = String(tweetId);
-    const bookmark = this.get(id);
+  archive(idOrRef: string | null, archived: boolean): ArchiveResult {
+    const id = this.resolveId(idOrRef);
+    const bookmark = id ? this.get(id) : null;
     if (!bookmark) {
       const error: StatusError = new Error('Bookmark not found.');
       error.status = 404;
       throw error;
     }
+
+    this.sql.exec(
+      'UPDATE bookmarks SET archived_at = ? WHERE tweet_id = ?',
+      archived ? new Date().toISOString() : null,
+      id,
+    );
+
+    return { archived, bookmark: this.get(id) };
+  }
+
+  async translateAll(): Promise<TranslateAllResult> {
+    if (!isAiConfigured(this.env)) {
+      throw new Error('OPENCODE_API_KEY is not configured.');
+    }
+    if (!turkishPrimary(this.env)) return { queued: 0 };
+
+    const where = `summary_status = 'done' AND summary IS NOT NULL AND summary != ''
+      AND (summary_en IS NULL OR summary_en = '')
+      AND COALESCE(summary_en_status, '') NOT IN ('pending', 'working')`;
+
+    const count = Number(
+      this.sql
+        .exec<{ count: number }>(`SELECT COUNT(*) AS count FROM bookmarks WHERE ${where}`)
+        .toArray()[0]?.count ?? 0,
+    );
+    if (!count) return { queued: 0 };
+
+    this.sql.exec(
+      `UPDATE bookmarks
+       SET summary_en_status = 'pending', summary_en_error = NULL, summary_en_started_at = NULL
+       WHERE ${where}`,
+    );
+    await this.ctx.storage.setAlarm(Date.now() + 250);
+
+    return { queued: count };
+  }
+
+  async resummarize(
+    tweetId: string | null,
+    options: { mode?: string; instruction?: string } = {},
+  ): Promise<void> {
+    if (!tweetId) throw new Error('Missing bookmark id.');
+    const bookmark = this.get(tweetId);
+    if (!bookmark) {
+      const error: StatusError = new Error('Bookmark not found.');
+      error.status = 404;
+      throw error;
+    }
+    const id = bookmark.tweetId;
     if (!isAiConfigured(this.env)) {
       throw new Error('OPENCODE_API_KEY is not configured.');
     }
@@ -666,11 +837,27 @@ export class Bookmarks extends DurableObject<Env> {
         String(options.instruction || '').slice(0, 500),
         id,
       );
+    } else if (options.mode === 'translate') {
+      if (!bookmark.summary || bookmark.summaryStatus !== 'done') {
+        const error: StatusError = new Error('The primary summary is not ready yet.');
+        error.status = 409;
+        throw error;
+      }
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_en_status = 'pending', summary_en_error = NULL, summary_en_started_at = NULL
+         WHERE tweet_id = ?`,
+        id,
+      );
     } else {
+      const englishReset = turkishPrimary(this.env)
+        ? `, summary_en = NULL, summary_en_status = 'pending',
+           summary_en_error = NULL, summary_en_started_at = NULL`
+        : '';
       this.sql.exec(
         `UPDATE bookmarks
          SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
-             topics_status = 'pending', topics_at = NULL
+             topics_status = 'pending', topics_at = NULL${englishReset}
          WHERE tweet_id = ?`,
         id,
       );
@@ -684,7 +871,9 @@ export class Bookmarks extends DurableObject<Env> {
       .exec<StatsRow>(
         `SELECT
           COUNT(*) AS total,
+          SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived,
           SUM(CASE WHEN summary_status = 'done' THEN 1 ELSE 0 END) AS summarized,
+          SUM(CASE WHEN summary_en_status = 'done' THEN 1 ELSE 0 END) AS translated,
           SUM(CASE WHEN summary_status IN ('pending', 'working') THEN 1 ELSE 0 END) AS pending
         FROM bookmarks`,
       )
@@ -707,7 +896,9 @@ export class Bookmarks extends DurableObject<Env> {
 
     return {
       total: Number(row?.total ?? 0),
+      archived: Number(row?.archived ?? 0),
       summarized: Number(row?.summarized ?? 0),
+      translated: Number(row?.translated ?? 0),
       pending: Number(row?.pending ?? 0),
       topics: rows.topics ?? 0,
       bytes,
@@ -728,6 +919,13 @@ export class Bookmarks extends DurableObject<Env> {
       `UPDATE bookmarks
        SET version_status = 'pending', version_started_at = NULL
        WHERE version_status = 'working' AND version_started_at < ?`,
+      staleBefore,
+    );
+
+    this.sql.exec(
+      `UPDATE bookmarks
+       SET summary_en_status = 'pending', summary_en_started_at = NULL
+       WHERE summary_en_status = 'working' AND summary_en_started_at < ?`,
       staleBefore,
     );
 
@@ -757,6 +955,32 @@ export class Bookmarks extends DurableObject<Env> {
 
     if (pendingVersion) {
       await this.generateVersion(pendingVersion);
+      await this.scheduleNext();
+      return;
+    }
+
+    // An English translation can only be written from a finished primary
+    // summary. If the primary failed, clear the orphan so the queue can drain.
+    this.sql.exec(
+      `UPDATE bookmarks
+       SET summary_en_status = 'failed',
+           summary_en_error = 'The primary summary is not available, so there is nothing to translate.',
+           summary_en_started_at = NULL
+       WHERE summary_en_status = 'pending'
+         AND (summary_status != 'done' OR summary IS NULL OR summary = '')`,
+    );
+
+    const pendingTranslation = this.sql
+      .exec<BookmarkRow>(
+        `SELECT * FROM bookmarks
+         WHERE summary_en_status = 'pending'
+         ORDER BY saved_at ASC
+         LIMIT 1`,
+      )
+      .toArray()[0];
+
+    if (pendingTranslation) {
+      await this.translateRow(pendingTranslation);
       await this.scheduleNext();
       return;
     }
@@ -832,6 +1056,7 @@ export class Bookmarks extends DurableObject<Env> {
            (SELECT COUNT(*) FROM bookmarks
              WHERE summary_status = 'done' AND topics_status = 'pending') AS filings,
            (SELECT COUNT(*) FROM bookmarks WHERE version_status = 'pending') AS versions,
+           (SELECT COUNT(*) FROM bookmarks WHERE summary_en_status = 'pending') AS translations,
            (SELECT COUNT(*) FROM topics t WHERE t.overview IS NULL OR t.overview_count != (
              SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug
            )) AS overviews`,
@@ -841,6 +1066,7 @@ export class Bookmarks extends DurableObject<Env> {
     const remaining =
       Number(pending?.summaries ?? 0) +
       Number(pending?.versions ?? 0) +
+      Number(pending?.translations ?? 0) +
       (hasTopics ? Number(pending?.filings ?? 0) : 0) +
       Number(pending?.overviews ?? 0);
 
@@ -1118,13 +1344,71 @@ export class Bookmarks extends DurableObject<Env> {
     }
   }
 
-  async summarizeRow(row: BookmarkRow): Promise<void> {
+  async translateRow(row: BookmarkRow): Promise<void> {
     const tweetId = String(row.tweet_id);
 
     if (!isAiConfigured(this.env)) {
       this.sql.exec(
         `UPDATE bookmarks
-         SET summary_status = 'disabled', summary_error = NULL, summary_started_at = NULL
+         SET summary_en_status = NULL, summary_en_error = NULL, summary_en_started_at = NULL
+         WHERE tweet_id = ?`,
+        tweetId,
+      );
+      return;
+    }
+
+    if (!row.summary || row.summary_status !== 'done') {
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_en_status = 'failed',
+             summary_en_error = 'The primary summary is not available, so there is nothing to translate.',
+             summary_en_started_at = NULL
+         WHERE tweet_id = ?`,
+        tweetId,
+      );
+      return;
+    }
+
+    this.sql.exec(
+      `UPDATE bookmarks
+       SET summary_en_status = 'working', summary_en_error = NULL, summary_en_started_at = ?
+       WHERE tweet_id = ?`,
+      Date.now(),
+      tweetId,
+    );
+
+    try {
+      const result = await translateSummary(row.summary, this.env, {
+        session: `xbv-${tweetId}-en`,
+      });
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_en = ?, summary_en_status = 'done', summary_en_error = NULL,
+             summary_en_started_at = NULL, summary_en_at = ?
+         WHERE tweet_id = ?`,
+        result.text,
+        new Date().toISOString(),
+        tweetId,
+      );
+    } catch (error) {
+      console.error('English summary failed', tweetId, error);
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_en_status = 'failed', summary_en_error = ?, summary_en_started_at = NULL
+         WHERE tweet_id = ?`,
+        error instanceof Error ? error.message.slice(0, 500) : 'Unknown translation error.',
+        tweetId,
+      );
+    }
+  }
+
+  async summarizeRow(row: BookmarkRow): Promise<void> {    const tweetId = String(row.tweet_id);
+
+    if (!isAiConfigured(this.env)) {
+      this.sql.exec(
+        `UPDATE bookmarks
+         SET summary_status = 'disabled', summary_error = NULL, summary_started_at = NULL,
+             summary_en_status = NULL, summary_en_started_at = NULL
          WHERE tweet_id = ?`,
         tweetId,
       );
@@ -1154,11 +1438,16 @@ export class Bookmarks extends DurableObject<Env> {
       }
 
       const result = await summarizePost(bookmark, this.env);
+      const english =
+        turkishPrimary(this.env)
+          ? `, summary_en = NULL, summary_en_status = 'pending',
+             summary_en_error = NULL, summary_en_started_at = NULL`
+          : '';
       this.sql.exec(
         `UPDATE bookmarks
          SET summary = ?, summary_status = 'done', summary_error = NULL,
              summary_started_at = NULL, summarized_at = ?,
-             topics_status = 'pending', topics_at = NULL
+             topics_status = 'pending', topics_at = NULL${english}
          WHERE tweet_id = ?`,
         result.text,
         new Date().toISOString(),
@@ -1203,6 +1492,11 @@ function rowToBookmark(row: BookmarkRow): Bookmark {
     summaryStatus: row.summary_status,
     summaryError: row.summary_error,
     summarizedAt: row.summarized_at,
+    summaryEn: row.summary_en ?? null,
+    summaryEnStatus: row.summary_en_status ?? null,
+    summaryEnError: row.summary_en_error ?? null,
+    summaryEnAt: row.summary_en_at ?? null,
+    archivedAt: row.archived_at ?? null,
     versionStatus: row.version_status,
     versionError: row.version_error,
   };

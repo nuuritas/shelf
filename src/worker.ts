@@ -1,6 +1,8 @@
 import { Bookmarks } from './bookmarks-do.ts';
 import { CSS, renderLogin, renderPage, renderSetup } from './render.ts';
 import type {
+  ArchiveResult,
+  ArchiveView,
   DeleteResult,
   Env,
   GetResult,
@@ -11,6 +13,7 @@ import type {
   SummarizeResult,
   TopicListResult,
   TopicPageResult,
+  TranslateAllResult,
 } from './types.ts';
 import {
   clampInteger,
@@ -114,6 +117,14 @@ const worker: ExportedHandler<Env> = {
       return secure(await handleDeleteForm(request, env));
     }
 
+    if (request.method === 'POST' && url.pathname === '/archive') {
+      return secure(await handleArchiveForm(request, env));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/translate-missing') {
+      return secure(await handleTranslateMissingForm(request, env));
+    }
+
     if (request.method === 'POST' && url.pathname === '/summarize') {
       return secure(await handleSummarizeForm(request, env));
     }
@@ -128,6 +139,11 @@ const worker: ExportedHandler<Env> = {
     }
 
     // Digits are tweet ids; anything alphanumeric is a short bookmark ref.
+    const archiveMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9]{1,25})\/archive$/);
+    if (archiveMatch && request.method === 'POST') {
+      return secure(await apiGuard(() => handleApiArchive(archiveMatch[1], env, request)));
+    }
+
     const bookmarkMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9]{1,25})$/);
     if (bookmarkMatch) {
       if (request.method === 'GET') {
@@ -138,9 +154,13 @@ const worker: ExportedHandler<Env> = {
       }
     }
 
-    const summaryMatch = url.pathname.match(/^\/api\/bookmarks\/(\d{1,25})\/summarize$/);
+    const summaryMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9]{1,25})\/summarize$/);
     if (summaryMatch && request.method === 'POST') {
       return secure(await apiGuard(() => handleApiSummarize(summaryMatch[1], env, request)));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/translations/en') {
+      return secure(await apiGuard(() => handleApiTranslateAll(env)));
     }
 
     if (request.method === 'GET' && url.pathname === '/api/stats') {
@@ -163,8 +183,10 @@ export default worker;
 
 async function handleHome(url: URL, env: Env): Promise<Response> {
   const query = (url.searchParams.get('q') || '').trim();
+  const view = parseView(url.searchParams.get('view'));
+  const lang = parseLang(url.searchParams.get('lang'));
   const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
-  const params = new URLSearchParams({ limit: String(limit) });
+  const params = new URLSearchParams({ limit: String(limit), view });
   if (query) params.set('q', query);
 
   try {
@@ -178,6 +200,12 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         total: data.total,
         query,
         topics: topicData.topics,
+        view,
+        lang,
+        activeTotal: data.activeTotal,
+        archivedTotal: data.archivedTotal,
+        missingEnglish: data.missingEnglish,
+        bilingual: isBilingual(env) && Boolean(env.OPENCODE_API_KEY),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
         aiConfigured: Boolean(env.OPENCODE_API_KEY),
@@ -190,6 +218,11 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         total: 0,
         query,
         topics: [],
+        view,
+        lang,
+        activeTotal: 0,
+        archivedTotal: 0,
+        bilingual: isBilingual(env) && Boolean(env.OPENCODE_API_KEY),
         notice: null,
         error: errorMessage(error),
         aiConfigured: Boolean(env.OPENCODE_API_KEY),
@@ -204,9 +237,15 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
     return htmlResponse('<h1>Topic not found</h1><p><a href="/">Go home</a></p>', 404);
   }
 
+  const view = parseView(url.searchParams.get('view'));
+  const lang = parseLang(url.searchParams.get('lang'));
+
   try {
     const [data, topicData] = await Promise.all([
-      doJson<TopicPageResult>(env, `/topic?slug=${encodeURIComponent(slug)}`),
+      doJson<TopicPageResult>(
+        env,
+        `/topic?slug=${encodeURIComponent(slug)}&view=${encodeURIComponent(view)}`,
+      ),
       doJson<TopicListResult>(env, '/topics').catch((): TopicListResult => ({ topics: [] })),
     ]);
 
@@ -221,6 +260,9 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
         query: '',
         topics: topicData.topics,
         topic: data.topic,
+        view,
+        lang,
+        bilingual: isBilingual(env) && Boolean(env.OPENCODE_API_KEY),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
         aiConfigured: Boolean(env.OPENCODE_API_KEY),
@@ -277,13 +319,46 @@ async function handleDeleteForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const id = String(form.get('id') || '');
   if (!/^\d{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+  const back = safeReturn(form.get('returnTo'), '/');
   try {
     await doJson<DeleteResult>(env, '/delete', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     });
-    return redirect('/?notice=deleted');
+    return redirect(withNotice(back, 'deleted'));
+  } catch (error) {
+    return redirect(`/?error=${encodeURIComponent(errorMessage(error))}`);
+  }
+}
+
+async function handleArchiveForm(request: Request, env: Env): Promise<Response> {
+  const form = await request.formData();
+  const id = String(form.get('id') || '');
+  if (!/^[A-Za-z0-9]{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+
+  const archived = String(form.get('archived') || '') === '1';
+  const back = safeReturn(form.get('returnTo'), '/');
+
+  try {
+    await doJson<ArchiveResult>(env, '/archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, archived }),
+    });
+    return redirect(withNotice(back, archived ? 'archived' : 'unarchived'));
+  } catch (error) {
+    return redirect(`/?error=${encodeURIComponent(errorMessage(error))}`);
+  }
+}
+
+async function handleTranslateMissingForm(request: Request, env: Env): Promise<Response> {
+  const form = await request.formData();
+  const back = safeReturn(form.get('returnTo'), '/?lang=en');
+
+  try {
+    const result = await doJson<TranslateAllResult>(env, '/translate-all', { method: 'POST' });
+    return redirect(withNotice(back, result.queued ? 'translating' : 'translated-none'));
   } catch (error) {
     return redirect(`/?error=${encodeURIComponent(errorMessage(error))}`);
   }
@@ -294,7 +369,8 @@ async function handleSummarizeForm(request: Request, env: Env): Promise<Response
   const id = String(form.get('id') || '');
   if (!/^\d{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
 
-  const mode = form.get('mode') === 'version' ? 'version' : 'default';
+  const requested = String(form.get('mode') || '');
+  const mode = requested === 'version' ? 'version' : requested === 'translate' ? 'translate' : 'default';
   const instruction = String(form.get('instruction') || '').slice(0, 500);
 
   try {
@@ -303,10 +379,9 @@ async function handleSummarizeForm(request: Request, env: Env): Promise<Response
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, mode, instruction }),
     });
-    const back = String(form.get('returnTo') || '/');
-    const target = back.startsWith('/') && !back.startsWith('//') ? back : '/';
-    const notice = mode === 'version' ? 'version' : 'queued';
-    return redirect(`${target}${target.includes('?') ? '&' : '?'}notice=${notice}`);
+    const target = safeReturn(form.get('returnTo'), '/');
+    const notice = mode === 'version' ? 'version' : mode === 'translate' ? 'translated' : 'queued';
+    return redirect(withNotice(target, notice));
   } catch (error) {
     return redirect(`/?error=${encodeURIComponent(errorMessage(error))}`);
   }
@@ -318,6 +393,7 @@ async function handleApiList(url: URL, env: Env): Promise<Response> {
   if (q) params.set('q', q);
   const topic = (url.searchParams.get('topic') || '').trim();
   if (topic) params.set('topic', topic);
+  params.set('view', parseListView(url.searchParams.get('view')));
   params.set('limit', String(clampInteger(url.searchParams.get('limit'), 50, 1, 100)));
   params.set('offset', String(clampInteger(url.searchParams.get('offset'), 0, 0, 10_000)));
   return jsonResponse(await doJson<ListResult>(env, `/list?${params.toString()}`));
@@ -362,6 +438,27 @@ async function handleApiDelete(id: string, env: Env): Promise<Response> {
   return jsonResponse(result);
 }
 
+async function handleApiArchive(id: string, env: Env, request: Request): Promise<Response> {
+  let body: { archived?: boolean } = {};
+  try {
+    body = (await request.json()) as { archived?: boolean };
+  } catch {
+    body = {};
+  }
+
+  const result = await doJson<ArchiveResult>(env, '/archive', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, archived: Boolean(body?.archived) }),
+  });
+  return jsonResponse(result);
+}
+
+async function handleApiTranslateAll(env: Env): Promise<Response> {
+  const result = await doJson<TranslateAllResult>(env, '/translate-all', { method: 'POST' });
+  return jsonResponse(result, 202);
+}
+
 async function handleApiSummarize(
   id: string,
   env: Env,
@@ -374,7 +471,8 @@ async function handleApiSummarize(
     body = {};
   }
 
-  const mode = body?.mode === 'version' ? 'version' : 'default';
+  const requested = String(body?.mode || '');
+  const mode = requested === 'version' ? 'version' : requested === 'translate' ? 'translate' : 'default';
   const instruction = String(body?.instruction || '').slice(0, 500);
 
   const result = await doJson<SummarizeResult>(env, '/resummarize', {
@@ -537,6 +635,33 @@ function timingSafeEqual(a: unknown, b: unknown): boolean {
 function safeNext(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
   return value;
+}
+
+/** A local path from a form field, never an absolute redirect. */
+function safeReturn(value: unknown, fallback = '/'): string {
+  const text = String(value ?? '');
+  return text.startsWith('/') && !text.startsWith('//') ? text : fallback;
+}
+
+function withNotice(path: string, notice: string): string {
+  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(notice)}`;
+}
+
+function parseView(value: string | null): 'active' | 'archived' {
+  return value === 'archived' ? 'archived' : 'active';
+}
+
+function parseListView(value: string | null): ArchiveView {
+  return value === 'archived' || value === 'all' ? value : 'active';
+}
+
+function parseLang(value: string | null): 'tr' | 'en' {
+  return value === 'en' ? 'en' : 'tr';
+}
+
+/** The archive has a Turkish primary summary, so the English board is useful. */
+function isBilingual(env: Env): boolean {
+  return String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() !== 'en';
 }
 
 function secure(response: Response): Response {

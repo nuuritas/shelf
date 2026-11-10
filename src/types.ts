@@ -149,11 +149,16 @@ export interface Topic {
   description: string;
 }
 
+/** How the library is filtered by archive state. */
+export type ArchiveView = 'active' | 'archived' | 'all';
+
 /** A topic with its rolling synthesis, as rendered in the library. */
 export interface TopicSummary extends Topic {
   overview: string;
   overviewAt: string | null;
+  /** Active (non-archived) items. */
   count: number;
+  archivedCount: number;
 }
 
 /** A row from the `topics` SQLite table (`SELECT *`). */
@@ -195,6 +200,13 @@ export interface Bookmark {
   summaryStatus: string;
   summaryError: string | null;
   summarizedAt: string | null;
+  /** English translation of the primary summary, generated on demand. */
+  summaryEn: string | null;
+  summaryEnStatus: string | null;
+  summaryEnError: string | null;
+  summaryEnAt: string | null;
+  /** Set when the bookmark is archived; archived items leave the default views. */
+  archivedAt: string | null;
   topics?: TopicRef[];
   versions?: SummaryVersion[];
   versionStatus?: string | null;
@@ -224,6 +236,12 @@ export type BookmarkRow = {
   summary_error: string | null;
   summary_started_at: number | null;
   summarized_at: string | null;
+  summary_en: string | null;
+  summary_en_status: string | null;
+  summary_en_error: string | null;
+  summary_en_started_at: number | null;
+  summary_en_at: string | null;
+  archived_at: string | null;
   version_status?: string | null;
   version_instruction?: string | null;
   version_error?: string | null;
@@ -240,6 +258,12 @@ export interface ListResult {
   total: number;
   query: string;
   topic: string | null;
+  view: ArchiveView;
+  /** Counts under the same query/topic, ignoring the archive filter. */
+  activeTotal: number;
+  archivedTotal: number;
+  /** Finished summaries that still have no English version. */
+  missingEnglish: number;
   limit: number;
   offset: number;
 }
@@ -271,9 +295,20 @@ export interface SummarizeResult {
   queued: boolean;
 }
 
+export interface ArchiveResult {
+  archived: boolean;
+  bookmark: Bookmark | null;
+}
+
+export interface TranslateAllResult {
+  queued: number;
+}
+
 export interface StatsResult {
   total: number;
+  archived: number;
   summarized: number;
+  translated: number;
   pending: number;
   topics: number;
   bytes?: number;

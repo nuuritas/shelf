@@ -131,3 +131,33 @@ test('keeps the original summary and renders new versions beside it', () => {
   assert.match(html, /name="mode" value="version"/);
   assert.match(html, /The original summary stays as it is/);
 });
+
+test('translateSummary asks the AI for English and returns plain text', async () => {
+  const { translateSummary } = await import('../src/ai.ts');
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+
+  globalThis.fetch = async (url, init) => {
+    captured = { url: String(url), init };
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: 'An English explanation.' } }] }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  };
+
+  try {
+    const result = await translateSummary('Türkçe bir açıklama.', {
+      OPENCODE_API_KEY: 'test-key',
+      AI_MODEL: 'deepseek-v4.1-flash',
+    }, { session: 'xbv-20-en' });
+
+    assert.equal(result.text, 'An English explanation.');
+    assert.match(captured.url, /chat\/completions$/);
+    assert.equal(captured.init.headers['x-opencode-session'], 'xbv-20-en');
+    const body = JSON.parse(captured.init.body);
+    assert.match(body.messages[0].content, /English/);
+    assert.match(body.messages[1].content, /Türkçe bir açıklama\./);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

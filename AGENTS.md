@@ -18,7 +18,7 @@ Live: <https://bookmark.nuritas.tr>. Repo: private GitHub, `main` is deployed.
 ```
 src/worker.ts        routing, auth, redirects, HTML responses
 src/bookmarks-do.ts  Durable Object: schema, queries, alarm queue, AI jobs
-src/ai.ts            OpenCode prompts + requests (summary, bootstrap, filing, synthesis)
+src/ai.ts            OpenCode prompts + requests (summary, translation, topics, synthesis)
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
 src/render.ts        SSR HTML + the entire stylesheet as a template string
@@ -36,7 +36,7 @@ docs/PROGRESS.md     long-form project knowledge
 ```bash
 bun install                 # package manager is bun; npm is not installed
 bun run typecheck           # tsc --noEmit (TS 7.0.2, ~0.1 s)
-node --test                 # 16 tests, runs .ts directly on Node 26
+node --test                 # 20 tests, runs .ts directly on Node 26
 bunx wrangler dev           # local Worker (needs .dev.vars)
 bunx wrangler deploy        # deploy to bookmark.nuritas.tr + workers.dev
 bunx wrangler tail          # production logs
@@ -55,6 +55,8 @@ production has a working secret.
 `POST /api/bookmarks` → `doJson(env, path)` → DO stub (`library`) → JSON/HTML.
 
 Pages: `/` (library), `/t/:slug` (topic), `/login`, `/share` (PWA fallback).
+The library and topic pages accept `view=active|archived` and `lang=tr|en`;
+forms carry a `returnTo` so a mutation keeps the current view and language.
 API: see `docs/PROGRESS.md` §3.
 
 ## Durable Object rules
@@ -73,16 +75,17 @@ API: see `docs/PROGRESS.md` §3.
   ```
 
 - Asynchronous work goes through `alarm()`, one unit per pass, in this order:
-  summary → version → topic bootstrap → filing → stale synthesis. Re-arm only
-  if work remains (`scheduleNext`). Never loop inside one alarm.
+  summary → version → English translation → topic bootstrap → filing → stale
+  synthesis. Re-arm only if work remains (`scheduleNext`). Never loop inside one
+  alarm.
 - Writes are serialized; do not add background promises outside the queue.
 - Row types come from `src/types.ts`; use `sql.exec<RowType>(...)` rather than
   casting results.
 - Every bookmark carries a short `ref` (5 chars, alphabet without `0/o/1/l/i`).
   It is generated on insert, backfilled for older rows in the constructor, and
-  resolves in `get`/`delete` via `resolveId`: all-digit input is a tweet id,
-  anything else is a ref. Refs always contain a letter so the two cannot
-  collide.
+  resolves in `get`/`delete`/`archive` via `resolveId`: all-digit input is a
+  tweet id, anything else is a ref. Refs always contain a letter so the two
+  cannot collide.
 
 ## AI layer rules
 
@@ -97,7 +100,11 @@ API: see `docs/PROGRESS.md` §3.
 - Prompts are product decisions. The summary voice is natural Turkish prose
   (3–5 paragraphs, no headings, no "Özet/Ana noktalar"), not a template. Keep it
   that way unless explicitly asked.
-- `SUMMARY_LANGUAGE` switches Turkish/English.
+- `SUMMARY_LANGUAGE` sets the main summary language (Turkish in production).
+  When the main language is Turkish, a finished summary automatically queues an
+  English version in `summary_en` (`translateSummary`, session `xbv-<tweetId>-en`).
+  The UI's English board reads that column; `POST /translate-all` only queues
+  missing translations, so it is safe to click repeatedly.
 
 ## Rendering and CSS
 
@@ -111,6 +118,9 @@ API: see `docs/PROGRESS.md` §3.
   drop the old copy. Forgetting this makes new markup render unstyled.
 - Client JS (`public/app.js`) is progressive enhancement only: card expand,
   synthesis fold, in-place topic swap. No framework, no build.
+- Archive and language are presentation state: `view=archived` and `lang=en` are
+  query parameters, not stored columns. `archived_at` is the only archive state
+  (`NULL` = active). Keep both parameters when adding a link or a form redirect.
 - Keep the no-JS fallback working (`<noscript>` overrides in `pageShell`).
 
 ## Security
@@ -149,5 +159,7 @@ API: see `docs/PROGRESS.md` §3.
   it makes the workers.dev URL return 404.
 - Summary rows can contain "Özet:" prefixes from older prompts; that is data,
   not a rendering bug.
+- English translations are a second AI call; a failure must not change
+  `summary_status`. The primary summary stays readable and the card offers retry.
 - Video/TTS work is experimental and not part of the app; see
   `docs/PROGRESS.md` §5.
