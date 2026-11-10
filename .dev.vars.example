@@ -18,6 +18,11 @@ AI_API_KEY=
 # Supadata key. Optional: enables YouTube captions inside the Worker.
 # SUPADATA_API_KEY=
 
+# Optional: any transcript service, tried before Supadata. Use {videoId} and/or
+# {url} as placeholders. JSON {text}, WebVTT, SRT, or plain text are accepted.
+# TRANSCRIPT_API_URL=https://example.com/transcript?url={url}
+# TRANSCRIPT_API_KEY=
+
 # Read-only GitHub token. Optional: raises the API rate limit for link reading.
 # GITHUB_TOKEN=
 

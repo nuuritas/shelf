@@ -176,6 +176,10 @@ API: see `docs/PROGRESS.md` §3.
   about 214 audio minutes). YouTube uses Supadata `mode=native` only when
   `SUPADATA_API_KEY` is set; never switch it to `auto`, which bills 2 credits
   per generated minute. A transcript failure must never fail the summary.
+- `TRANSCRIPT_API_URL` (a template with `{videoId}`/`{url}`) is tried before
+  Supadata and accepts JSON, VTT, SRT, or plain text; `parseTranscriptBody` is
+  the only parser. Keep it forgiving: it is the integration point for any
+  third-party or self-hosted caption source.
 - YouTube is additionally reachable through `POST /api/bookmarks/:id/transcripts`
   and `xbv youtube`, which runs `get-youtube-transcript` on the Mac's residential
   IP and re-queues the summary. This is the free path when no Supadata key is
@@ -253,8 +257,8 @@ API: see `docs/PROGRESS.md` §3.
   paid fallback, not the default.
 - YouTube returns HTTP 429 to Worker IPs and every Innertube client returns
   `LOGIN_REQUIRED`, so do not try to scrape caption tracks in the Worker. Use
-  Supadata, `xbv youtube` from a residential connection, or accept the
-  page-description fallback.
+  `TRANSCRIPT_API_URL`, Supadata, `xbv youtube` from a residential connection,
+  or accept the page-description fallback.
 - A VPS and several commercial proxy providers were also tested and get the
   same 429/`LOGIN_REQUIRED`; backbone ports sometimes refuse connections. Do not
   retry datacenter egress for YouTube; only a residential IP or a managed API

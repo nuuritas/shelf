@@ -197,6 +197,9 @@ empty without a signature. Supadata's `mode=native` returns existing captions
 for 1 credit (100 free per month); generated transcripts at 2 credits/minute
 are intentionally not used.
 
+A `TRANSCRIPT_API_URL` template is tried first, so any third-party or
+self-hosted caption source can be plugged in without touching the Worker: JSON
+(`text`, `transcript`, `content`), WebVTT, SRT, and plain text are all accepted.
 For a zero-cost path, `xbv youtube` runs `get-youtube-transcript` on this Mac's
 residential IP, then posts the result to `/api/bookmarks/:id/transcripts`. The
 DO stores it and re-queues the summary. It is manual or scheduled, not part of

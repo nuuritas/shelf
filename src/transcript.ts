@@ -202,6 +202,9 @@ async function transcribeYouTube(
   target: VideoTarget,
   env: Partial<Env>,
 ): Promise<VideoTranscript | null> {
+  const custom = await transcribeCustomProvider(target, env);
+  if (custom) return custom;
+
   const key = env.SUPADATA_API_KEY;
   if (!key) return null;
 
@@ -308,6 +311,123 @@ function failure(target: VideoTarget, error: unknown): VideoTranscript {
     error: error instanceof Error ? error.message.slice(0, 500) : 'Could not read this video.',
     at: new Date().toISOString(),
   };
+}
+
+/**
+ * Any user-supplied transcript service, tried before Supadata. The contract is
+ * deliberately loose so a shim around a paid API, a self-hosted instance, or a
+ * proxy works: the endpoint may reply with JSON (`text`, `transcript`, or
+ * `content`), WebVTT, SRT, or plain text.
+ */
+async function transcribeCustomProvider(
+  target: VideoTarget,
+  env: Partial<Env>,
+): Promise<VideoTranscript | null> {
+  const template = String(env.TRANSCRIPT_API_URL || '').trim();
+  if (!template || target.source !== 'youtube') return null;
+
+  const videoId = youtubeVideoId(target.url) || '';
+  const endpoint = template
+    .replaceAll('{videoId}', encodeURIComponent(videoId))
+    .replaceAll('{url}', encodeURIComponent(target.url));
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json, text/vtt, text/plain',
+  };
+  const key = String(env.TRANSCRIPT_API_KEY || '').trim();
+  if (key) headers.Authorization = `Bearer ${key}`;
+
+  const response = await fetchWithTimeout(endpoint, { headers });
+  if (response.status === 204 || response.status === 404) {
+    return unavailable(target, 'The transcript service has no captions for this video.');
+  }
+  if (!response.ok) {
+    throw new Error(`Transcript service returned HTTP ${response.status}.`);
+  }
+
+  const raw = await response.text();
+  const { text, lang } = parseTranscriptBody(raw);
+  if (!text) {
+    return unavailable(target, 'The transcript service returned an empty transcript.');
+  }
+
+  return {
+    url: target.url,
+    source: 'youtube',
+    provider: 'custom',
+    lang,
+    text: text.slice(0, MAX_CHARS),
+    durationSec: target.durationSec,
+    bytes: null,
+    status: 'done',
+    error: null,
+    at: new Date().toISOString(),
+  };
+}
+
+/** JSON, VTT, SRT, or plain text into one clean line-per-cue paragraph. */
+export function parseTranscriptBody(raw: string): { text: string; lang: string | null } {
+  const body = raw.trim();
+  if (!body) return { text: '', lang: null };
+
+  if (body.startsWith('{') || body.startsWith('[')) {
+    try {
+      const data = JSON.parse(body) as unknown;
+      const lang =
+        data && typeof data === 'object'
+          ? String((data as Record<string, unknown>).lang || (data as Record<string, unknown>).language || '') || null
+          : null;
+      const text = pickJsonText(data);
+      if (text) return { text: cleanTranscriptText(text), lang };
+    } catch {
+      // Not JSON after all; fall through to the text formats.
+    }
+  }
+
+  return { text: cleanTranscriptText(body), lang: null };
+}
+
+function pickJsonText(data: unknown): string {
+  if (typeof data === 'string') return data;
+  if (!data || typeof data !== 'object') return '';
+
+  const record = data as Record<string, unknown>;
+  for (const key of ['text', 'transcript', 'content', 'captions']) {
+    const value = record[key];
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+      const joined = value
+        .map(part =>
+          typeof part === 'string'
+            ? part
+            : String((part as { text?: string } | null)?.text || ''),
+        )
+        .join(' ');
+      if (joined.trim()) return joined;
+    }
+  }
+  return '';
+}
+
+/** Strip cue numbers, timestamps, and inline tags from VTT/SRT, keep the words. */
+function cleanTranscriptText(raw: string): string {
+  const lines = raw.replace(/\r/g, '').split('\n');
+  const kept: string[] = [];
+
+  for (const line of lines) {
+    const value = line.trim();
+    if (!value) continue;
+    if (/^WEBVTT/i.test(value)) continue;
+    if (/^NOTE\b/i.test(value)) continue;
+    if (/^\d+$/.test(value)) continue;
+    if (value.includes('-->')) continue;
+    const stripped = value.replace(/<[^>]+>/g, '').trim();
+    if (!stripped) continue;
+    if (kept[kept.length - 1] === stripped) continue;
+    kept.push(stripped);
+  }
+
+  return kept.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 function unavailable(target: VideoTarget, message: string): VideoTranscript {

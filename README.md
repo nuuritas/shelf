@@ -67,6 +67,8 @@ Everything is optional except the password.
 | `AI_MODEL` | var | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` with Workers AI, `gpt-4.1-mini` with a key | Model for the selected provider. On the binding path, use a `@cf/...` id. |
 | `SUMMARY_LANGUAGE` | var | `en` | `en` or `tr`. With `tr`, an English translation is also stored per bookmark. |
 | `SUPADATA_API_KEY` | secret | — | Enables YouTube captions inside the Worker. |
+| `TRANSCRIPT_API_URL` | var | — | Any transcript service, checked before Supadata. A template with `{videoId}` and/or `{url}`. |
+| `TRANSCRIPT_API_KEY` | secret | — | Bearer token for `TRANSCRIPT_API_URL`, if the service needs one. |
 | `GITHUB_TOKEN` | secret | — | Read-only token; raises GitHub API limits when reading repo links. |
 | `X_BEARER_TOKEN` + `X_PROVIDER=official` | secret + var | — | Use the official X API instead of the public FxTwitter reader. |
 | `SHARE_TOKEN` | secret | — | Add-only token embedded in the Android share APK. |
@@ -152,12 +154,21 @@ xbv mcp                          # stdio MCP server for Claude/Codex/Cursor
 
 ### YouTube transcripts
 
-YouTube refuses caption requests from Cloudflare's IP range, so YouTube is the only part that cannot run in the Worker.
+YouTube refuses caption requests from Cloudflare's IP range, so YouTube is the only part that cannot read captions directly. Three ways to fill that gap, checked in this order:
 
-- Free path: `xbv youtube` runs a local extractor on your residential connection, posts the transcript back, and re-queues the summary. Manual or scheduled; nothing else in the app depends on it.
-- Managed path: set `SUPADATA_API_KEY` and the Worker fetches native captions itself.
+1. **Your own transcript service.** Set `TRANSCRIPT_API_URL` to a URL template using `{videoId}` or `{url}`, plus `TRANSCRIPT_API_KEY` if it needs a bearer token:
 
-Either way, a missing transcript never blocks saving or summarizing.
+   ```jsonc
+   "vars": { "TRANSCRIPT_API_URL": "https://captions.example.com/transcript?url={url}" }
+   ```
+
+   The response can be JSON with `text`, `transcript`, or `content` (string or `[{ "text": ... }]`), or plain WebVTT, SRT, or text. Timestamps and cue numbers are stripped. This is the hook for a paid API, a self-hosted Invidious/Piped instance, a proxy you run, or a small shim in front of anything else.
+
+2. **Supadata.** Set `SUPADATA_API_KEY` and the Worker fetches native captions itself (100 free credits per month).
+
+3. **Your own machine.** `xbv youtube` runs a local extractor on a residential connection, posts the transcript back through the API, and re-queues the summary.
+
+With none configured, YouTube items still save and summarize from the post and page text. A missing transcript never blocks anything.
 
 ## Local development
 

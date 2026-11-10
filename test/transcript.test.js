@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   collectVideoTargets,
   collectYoutubeIds,
+  parseTranscriptBody,
   readTranscripts,
   youtubeVideoId,
 } from '../src/transcript.ts';
@@ -196,4 +197,117 @@ test('skips YouTube quietly when Supadata is not configured', async () => {
   );
 
   assert.deepEqual(transcripts, []);
+});
+
+const youtubeBookmark = () =>
+  bookmark({
+    links: [
+      {
+        url: 'https://youtu.be/dQw4w9WgXcQ',
+        finalUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      },
+    ],
+  });
+
+test('a custom transcript service is tried before Supadata', async () => {
+  const originalFetch = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async (url, init) => {
+    requested = { url: String(url), headers: init.headers };
+    return new Response(JSON.stringify({ text: 'Custom captions.', language: 'en' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const transcripts = await readTranscripts(youtubeBookmark(), {
+      TRANSCRIPT_API_URL: 'https://captions.example.com/{videoId}.json',
+      TRANSCRIPT_API_KEY: 'svc-key',
+      SUPADATA_API_KEY: 'supadata-key',
+    });
+
+    assert.equal(requested.url, 'https://captions.example.com/dQw4w9WgXcQ.json');
+    assert.equal(requested.headers.Authorization, 'Bearer svc-key');
+    assert.equal(transcripts[0].provider, 'custom');
+    assert.equal(transcripts[0].lang, 'en');
+    assert.equal(transcripts[0].text, 'Custom captions.');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('the {url} placeholder receives the encoded watch URL', async () => {
+  const originalFetch = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async url => {
+    requested = String(url);
+    return new Response('plain text transcript', { status: 200 });
+  };
+
+  try {
+    await readTranscripts(youtubeBookmark(), {
+      TRANSCRIPT_API_URL: 'https://captions.example.com/get?url={url}',
+    });
+    assert.match(requested, /url=https%3A%2F%2Fwww\.youtube\.com%2Fwatch%3Fv%3DdQw4w9WgXcQ/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('a WebVTT body is reduced to words', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      [
+        'WEBVTT',
+        '',
+        '00:00:00.000 --> 00:00:02.000 align:start position:0%',
+        '<c>Hello</c> there',
+        '',
+        '00:00:02.000 --> 00:00:04.000',
+        'Hello there',
+        'second line',
+      ].join('\n'),
+      { status: 200, headers: { 'Content-Type': 'text/vtt' } },
+    );
+
+  try {
+    const transcripts = await readTranscripts(youtubeBookmark(), {
+      TRANSCRIPT_API_URL: 'https://captions.example.com/{videoId}',
+    });
+    assert.equal(transcripts[0].text, 'Hello there second line');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('a service that has no captions is reported, not thrown', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('', { status: 404 });
+
+  try {
+    const transcripts = await readTranscripts(youtubeBookmark(), {
+      TRANSCRIPT_API_URL: 'https://captions.example.com/{videoId}',
+    });
+    assert.equal(transcripts[0].status, 'unavailable');
+    assert.equal(transcripts[0].provider, null);
+    assert.match(transcripts[0].error, /no captions/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('transcript bodies parse from JSON, SRT, and plain text', () => {
+  assert.equal(parseTranscriptBody('{"transcript":"from json"}').text, 'from json');
+  assert.equal(
+    parseTranscriptBody('{"content":[{"text":"one"},{"text":"two"}]}').text,
+    'one two',
+  );
+  assert.equal(
+    parseTranscriptBody('1\n00:00:01,000 --> 00:00:03,000\nfirst\n\n2\n00:00:03,000 --> 00:00:05,000\nsecond').text,
+    'first second',
+  );
+  assert.equal(parseTranscriptBody('just words').text, 'just words');
+  assert.equal(parseTranscriptBody('').text, '');
 });

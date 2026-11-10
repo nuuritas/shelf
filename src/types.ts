@@ -32,6 +32,14 @@ export interface Env {
   AI?: WorkersAi;
   /** Supadata key, used for YouTube captions. Optional: without it only X is transcribed. */
   SUPADATA_API_KEY?: string;
+  /**
+   * Any transcript service, used before Supadata. A URL template with
+   * `{videoId}` and/or `{url}`, for example
+   * `https://example.com/transcript?url={url}`.
+   */
+  TRANSCRIPT_API_URL?: string;
+  /** Bearer token for `TRANSCRIPT_API_URL`, if the service needs one. */
+  TRANSCRIPT_API_KEY?: string;
 }
 
 /** The small part of the Workers AI binding this app uses. */
@@ -152,7 +160,7 @@ export interface VideoTranscript {
   /** The post or page the video lives on. */
   url: string;
   source: TranscriptSource;
-  provider: 'workers-ai' | 'supadata' | 'local' | null;
+  provider: 'workers-ai' | 'supadata' | 'custom' | 'local' | null;
   lang: string | null;
   text: string;
   durationSec: number | null;
