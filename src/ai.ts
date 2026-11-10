@@ -20,6 +20,15 @@ import { collectImages } from './x.ts';
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
+/* The gateway answers 429/5xx while a model is briefly busy. Waiting a few
+   seconds is worth far more than a dead card, so those answers and fetch
+   network failures are retried. An abort means the attempt already used its
+   whole timeout budget, so it is reported instead of retried. */
+const AI_TIMEOUT_MS = 180_000;
+const AI_RETRY_DELAYS_MS = [1_000, 3_000];
+const AI_RETRY_AFTER_MAX_MS = 15_000;
+const AI_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+
 export function isAiConfigured(env: Partial<Env>): boolean {
   return Boolean(env.OPENCODE_API_KEY);
 }
@@ -59,7 +68,6 @@ export async function summarizePost(
   }
 
   const model = String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, '');
-  const base = (env.AI_BASE_URL || 'https://opencode.ai/inference/go/openai/v1').replace(/\/+$/, '');
   const language = String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() === 'en' ? 'English' : 'Turkish';
 
   const body: ChatRequest = {
@@ -98,11 +106,8 @@ export async function summarizePost(
     stream: false,
   };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90_000);
-
   try {
-    const response = await fetch(`${base}/chat/completions`, {
+    const response = await fetchChat(env, 'summary', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${env.OPENCODE_API_KEY}`,
@@ -112,7 +117,6 @@ export async function summarizePost(
         'x-opencode-session': options.session || `xbv-${post.tweetId}`,
       },
       body: JSON.stringify(body),
-      signal: controller.signal,
     });
 
     const raw = await response.text();
@@ -126,7 +130,9 @@ export async function summarizePost(
     if (!response.ok) {
       const upstreamMessage =
         payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-      throw new Error(`AI endpoint error: ${truncate(upstreamMessage, 300)}`);
+      throw new Error(
+        `AI endpoint error (HTTP ${response.status}): ${truncate(upstreamMessage, 300)}`,
+      );
     }
 
     const content = payload?.choices?.[0]?.message?.content;
@@ -150,11 +156,9 @@ export async function summarizePost(
     return { text: text.trim(), model, imagesUsed: imageParts.length };
   } catch (error) {
     if (isAbortError(error)) {
-      throw new Error('AI summary timed out after 90 seconds.');
+      throw new Error('AI summary timed out after 180 seconds.');
     }
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -535,13 +539,9 @@ async function requestChat(
   }
 
   const model = String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, '');
-  const base = (env.AI_BASE_URL || 'https://opencode.ai/inference/go/openai/v1').replace(/\/+$/, '');
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90_000);
 
   try {
-    const response = await fetch(`${base}/chat/completions`, {
+    const response = await fetchChat(env, 'request', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${env.OPENCODE_API_KEY}`,
@@ -562,7 +562,6 @@ async function requestChat(
         temperature,
         stream: false,
       }),
-      signal: controller.signal,
     });
 
     const raw = await response.text();
@@ -576,7 +575,9 @@ async function requestChat(
     if (!response.ok) {
       const upstreamMessage =
         payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-      throw new Error(`AI endpoint error: ${truncate(upstreamMessage, 300)}`);
+      throw new Error(
+        `AI endpoint error (HTTP ${response.status}): ${truncate(upstreamMessage, 300)}`,
+      );
     }
 
     const content = payload?.choices?.[0]?.message?.content;
@@ -598,12 +599,78 @@ async function requestChat(
     return text.trim();
   } catch (error) {
     if (isAbortError(error)) {
-      throw new Error('AI request timed out after 90 seconds.');
+      throw new Error('AI request timed out after 180 seconds.');
     }
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
+}
+
+/**
+ * The chat endpoint with the shared per-attempt timeout and retry policy.
+ * Returns the response for the caller to read; only transient answers and
+ * connection failures are retried before that.
+ */
+async function fetchChat(
+  env: Partial<Env>,
+  label: string,
+  init: Omit<RequestInit, 'signal'>,
+): Promise<Response> {
+  const base = (env.AI_BASE_URL || 'https://opencode.ai/inference/go/openai/v1').replace(/\/+$/, '');
+  const endpoint = `${base}/chat/completions`;
+
+  for (let attempt = 0; ; attempt += 1) {
+    const canRetry = attempt < AI_RETRY_DELAYS_MS.length;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+    let retryDelay: number | null = null;
+
+    try {
+      const response = await fetch(endpoint, { ...init, signal: controller.signal });
+      if (canRetry && AI_RETRY_STATUSES.has(response.status)) {
+        retryDelay = retryDelayMs(attempt, response.headers.get('retry-after'));
+      }
+      if (retryDelay === null) return response;
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw new Error(`AI ${label} timed out after ${AI_TIMEOUT_MS / 1000} seconds.`);
+      }
+      // fetch() reports connection failures as TypeError; those are transient.
+      if (!canRetry || !(error instanceof TypeError)) throw error;
+      retryDelay = retryDelayMs(attempt, null);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    await sleep(retryDelay ?? 0);
+  }
+}
+
+/** `Retry-After` is delta-seconds or an HTTP date; cap either at 15 seconds. */
+function retryAfterMs(header: string | null): number | null {
+  const value = String(header || '').trim();
+  if (!value) return null;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(Math.round(seconds * 1000), AI_RETRY_AFTER_MAX_MS);
+  }
+
+  const at = Date.parse(value);
+  if (Number.isNaN(at)) return null;
+  return Math.min(Math.max(at - Date.now(), 0), AI_RETRY_AFTER_MAX_MS);
+}
+
+/** 1 s, then 3 s, each with a little jitter so retries do not line up. */
+function retryDelayMs(attempt: number, retryAfter: string | null): number {
+  const hinted = retryAfterMs(retryAfter);
+  if (hinted !== null) return hinted;
+
+  const base = AI_RETRY_DELAYS_MS[Math.min(attempt, AI_RETRY_DELAYS_MS.length - 1)];
+  return base + Math.round(base * 0.25 * Math.random());
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -42,6 +42,10 @@ import type {
 
 const STALE_SUMMARY_MS = 10 * 60 * 1000;
 
+/* A summary that fails once is parked in `retry` for one automatic attempt. The
+   due time lives in `summary_started_at`, so the queue needs no extra column. */
+const SUMMARY_RETRY_MS = 60 * 1000;
+
 /* Short bookmark handles. The alphabet drops 0/o/1/l/i so a ref can be read
    aloud or typed without ambiguity. Refs always contain a letter: a digit-only
    ref would be indistinguishable from a tweet id (which is all digits). */
@@ -1027,7 +1031,7 @@ export class Bookmarks extends DurableObject<Env> {
           SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived,
           SUM(CASE WHEN summary_status = 'done' THEN 1 ELSE 0 END) AS summarized,
           SUM(CASE WHEN summary_en_status = 'done' THEN 1 ELSE 0 END) AS translated,
-          SUM(CASE WHEN summary_status IN ('pending', 'working') THEN 1 ELSE 0 END) AS pending
+          SUM(CASE WHEN summary_status IN ('pending', 'working', 'retry') THEN 1 ELSE 0 END) AS pending
         FROM bookmarks`,
       )
       .toArray()[0];
@@ -1081,6 +1085,26 @@ export class Bookmarks extends DurableObject<Env> {
        WHERE summary_en_status = 'working' AND summary_en_started_at < ?`,
       staleBefore,
     );
+
+    const retrySummary = this.sql
+      .exec<BookmarkRow>(
+        `SELECT * FROM bookmarks
+         WHERE summary_status = 'retry'
+         ORDER BY summary_started_at ASC
+         LIMIT 1`,
+      )
+      .toArray()[0];
+
+    if (retrySummary) {
+      const dueAt = Number(retrySummary.summary_started_at ?? 0);
+      if (dueAt <= Date.now()) {
+        await this.summarizeRow(retrySummary);
+        await this.scheduleNext();
+        return;
+      }
+      // Not due yet: keep the alarm armed even if every other queue is empty.
+      await this.ctx.storage.setAlarm(Math.max(dueAt, Date.now() + 600));
+    }
 
     const pendingSummary = this.sql
       .exec<BookmarkRow>(
@@ -1223,8 +1247,16 @@ export class Bookmarks extends DurableObject<Env> {
       (hasTopics ? Number(pending?.filings ?? 0) : 0) +
       Number(pending?.overviews ?? 0);
 
+    const nextRetry = this.sql
+      .exec<{ at: number | null }>(
+        `SELECT MIN(summary_started_at) AS at FROM bookmarks WHERE summary_status = 'retry'`,
+      )
+      .toArray()[0]?.at;
+
     if (remaining > 0) {
       await this.ctx.storage.setAlarm(Date.now() + 600);
+    } else if (nextRetry !== null && nextRetry !== undefined) {
+      await this.ctx.storage.setAlarm(Math.max(Number(nextRetry), Date.now() + 600));
     }
   }
 
@@ -1232,6 +1264,13 @@ export class Bookmarks extends DurableObject<Env> {
     if (!isAiConfigured(this.env)) {
       throw new Error('OPENCODE_API_KEY is not configured.');
     }
+
+    // A reindex resets the one automatic summary retry: a parked row goes back
+    // into the regular queue instead of waiting out its 60 seconds.
+    this.sql.exec(
+      `UPDATE bookmarks SET summary_status = 'pending', summary_started_at = NULL
+       WHERE summary_status = 'retry'`,
+    );
 
     const rows = this.sql
       .exec<ReindexRow>(
@@ -1243,7 +1282,11 @@ export class Bookmarks extends DurableObject<Env> {
       )
       .toArray();
 
-    if (!rows.length) return { topics: [], assigned: 0 };
+    if (!rows.length) {
+      // The reset above may have unparked a summary; make sure the queue wakes.
+      await this.ctx.storage.setAlarm(Date.now() + 500);
+      return { topics: [], assigned: 0 };
+    }
 
     const items: BootstrapItem[] = rows.map(row => ({
       id: String(row.tweet_id),
@@ -1555,7 +1598,8 @@ export class Bookmarks extends DurableObject<Env> {
     }
   }
 
-  async summarizeRow(row: BookmarkRow): Promise<void> {    const tweetId = String(row.tweet_id);
+  async summarizeRow(row: BookmarkRow): Promise<void> {
+    const tweetId = String(row.tweet_id);
 
     if (!isAiConfigured(this.env)) {
       this.sql.exec(
@@ -1621,13 +1665,28 @@ export class Bookmarks extends DurableObject<Env> {
       );
     } catch (error) {
       console.error('Summary failed', tweetId, error);
-      this.sql.exec(
-        `UPDATE bookmarks
-         SET summary_status = 'failed', summary_error = ?, summary_started_at = NULL
-         WHERE tweet_id = ?`,
-        error instanceof Error ? error.message.slice(0, 500) : 'Unknown summary error.',
-        tweetId,
-      );
+      const message =
+        error instanceof Error ? error.message.slice(0, 500) : 'Unknown summary error.';
+      // The snapshot tells us whether this run was already the automatic retry:
+      // a second failure is final until the reader asks again.
+      if (row.summary_status === 'retry') {
+        this.sql.exec(
+          `UPDATE bookmarks
+           SET summary_status = 'failed', summary_error = ?, summary_started_at = NULL
+           WHERE tweet_id = ?`,
+          message,
+          tweetId,
+        );
+      } else {
+        this.sql.exec(
+          `UPDATE bookmarks
+           SET summary_status = 'retry', summary_error = ?, summary_started_at = ?
+           WHERE tweet_id = ?`,
+          message,
+          Date.now() + SUMMARY_RETRY_MS,
+          tweetId,
+        );
+      }
     }
   }
 }
@@ -1698,7 +1757,8 @@ function rowToBookmark(row: BookmarkRow): Bookmark {
     // (renderMetrics treats missing fields as "no count").
     metrics: parseJson<Metrics>(row.metrics_json, {} as Metrics),
     summary: row.summary,
-    summaryStatus: row.summary_status,
+    // `retry` is internal queue state; the UI and API only see pending/working.
+    summaryStatus: row.summary_status === 'retry' ? 'pending' : row.summary_status,
     summaryError: row.summary_error,
     summarizedAt: row.summarized_at,
     summaryEn: row.summary_en ?? null,
