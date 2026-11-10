@@ -25,7 +25,7 @@ document.addEventListener('click', event => {
 
   const card = event.target.closest('.card');
   if (!card) return;
-  if (event.target.closest('a, video, form, input, label, summary')) return;
+  if (event.target.closest('a, video, form, input, label, summary, button')) return;
   setExpanded(card, card.classList.contains('is-collapsed'));
 });
 
@@ -83,4 +83,41 @@ window.addEventListener('popstate', () => {
   if (location.pathname === '/' || location.pathname.startsWith('/t/')) {
     swapLibrary(`${location.pathname}${location.search}`, false);
   }
+});
+
+
+document.addEventListener('click', async event => {
+  const chip = event.target.closest('[data-copy]');
+  if (!chip) return;
+  event.stopPropagation();
+
+  const value = chip.getAttribute('data-copy') || '';
+  if (!value) return;
+
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    const field = document.createElement('input');
+    field.value = value;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    try {
+      document.execCommand('copy');
+    } catch {
+      // Nothing else to try; the id is still visible to select by hand.
+    }
+    field.remove();
+  }
+
+  const label = chip.dataset.label || chip.textContent;
+  chip.dataset.label = label;
+  chip.textContent = 'copied';
+  chip.classList.add('is-copied');
+  window.setTimeout(() => {
+    chip.textContent = label;
+    chip.classList.remove('is-copied');
+  }, 1200);
 });

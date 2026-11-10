@@ -28,6 +28,22 @@ import type {
 
 const STALE_SUMMARY_MS = 10 * 60 * 1000;
 
+/* Short bookmark handles. The alphabet drops 0/o/1/l/i so a ref can be read
+   aloud or typed without ambiguity. Refs always contain a letter: a digit-only
+   ref would be indistinguishable from a tweet id (which is all digits). */
+const REF_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyz';
+const REF_LENGTH = 5;
+
+function randomRef(): string {
+  for (;;) {
+    const bytes = new Uint8Array(REF_LENGTH);
+    crypto.getRandomValues(bytes);
+    let ref = '';
+    for (const byte of bytes) ref += REF_ALPHABET[byte % REF_ALPHABET.length];
+    if (/[a-z]/.test(ref)) return ref;
+  }
+}
+
 /* Take the context and SQL types from the base class: importing SqlStorage from
    @cloudflare/workers-types creates a second, structurally different copy and
    makes tsc compare two large recursive interfaces. */
@@ -200,6 +216,37 @@ export class Bookmarks extends DurableObject<Env> {
     } catch {
       // Fresh databases already have the column.
     }
+
+    try {
+      this.sql.exec('ALTER TABLE bookmarks ADD COLUMN ref TEXT');
+    } catch {
+      // Fresh databases already have the column.
+    }
+
+    // Give rows saved before refs existed a handle. Runs on wake, so it is a
+    // no-op unless something is actually missing.
+    const missingRefs = this.sql
+      .exec<{ tweet_id: string }>('SELECT tweet_id FROM bookmarks WHERE ref IS NULL')
+      .toArray();
+    for (const row of missingRefs) {
+      this.sql.exec('UPDATE bookmarks SET ref = ? WHERE tweet_id = ?', this.uniqueRef(), row.tweet_id);
+    }
+
+    try {
+      this.sql.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmarks_ref ON bookmarks (ref)');
+    } catch {
+      // Pre-existing duplicate refs would block the index; refs stay optional.
+    }
+  }
+
+  /** A ref that is not in use yet. */
+  uniqueRef(): string {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const ref = randomRef();
+      const taken = this.sql.exec('SELECT 1 FROM bookmarks WHERE ref = ?', ref).toArray();
+      if (!taken.length) return ref;
+    }
+    throw new Error('Could not allocate a bookmark ref.');
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -320,11 +367,13 @@ export class Bookmarks extends DurableObject<Env> {
     } else {
       this.sql.exec(
         `INSERT INTO bookmarks (
-          tweet_id, url, author_name, author_username, author_avatar_url, author_verified,
+          tweet_id, ref, url, author_name, author_username, author_avatar_url, author_verified,
           text, created_at, saved_at, provider, media_json, quote_json, article_json,
           metrics_json, summary_status, summary_started_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-        ...values,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        values[0],
+        this.uniqueRef(),
+        ...values.slice(1),
       );
     }
 
@@ -521,16 +570,29 @@ export class Bookmarks extends DurableObject<Env> {
     };
   }
 
-  get(tweetId: string | null | undefined): Bookmark | null {
+  get(id: string | null | undefined): Bookmark | null {
+    const tweetId = this.resolveId(id);
     if (!tweetId) return null;
     const row = this.sql
-      .exec<BookmarkRow>('SELECT * FROM bookmarks WHERE tweet_id = ?', String(tweetId))
+      .exec<BookmarkRow>('SELECT * FROM bookmarks WHERE tweet_id = ?', tweetId)
       .toArray()[0];
     if (!row) return null;
     const bookmark = rowToBookmark(row);
     this.attachTopics([bookmark]);
     bookmark.versions = this.versions(bookmark.tweetId);
     return bookmark;
+  }
+
+  /** Tweet ids are digits; a short ref is anything else. */
+  resolveId(idOrRef: string | null | undefined): string | null {
+    if (!idOrRef) return null;
+    const key = String(idOrRef).trim();
+    if (!key) return null;
+    if (/^\d{1,25}$/.test(key)) return key;
+    const row = this.sql
+      .exec<{ tweet_id: string }>('SELECT tweet_id FROM bookmarks WHERE lower(ref) = lower(?)', key)
+      .toArray()[0];
+    return row?.tweet_id ?? null;
   }
 
   versions(tweetId: string): SummaryVersion[] {
@@ -552,9 +614,9 @@ export class Bookmarks extends DurableObject<Env> {
       }));
   }
 
-  delete(tweetId: string | null): boolean {
-    if (!tweetId) return false;
-    const id = String(tweetId);
+  delete(idOrRef: string | null): boolean {
+    const id = this.resolveId(idOrRef);
+    if (!id) return false;
     const before = this.sql.exec('SELECT tweet_id FROM bookmarks WHERE tweet_id = ?', id).toArray();
     if (!before.length) return false;
 
@@ -1117,6 +1179,7 @@ export class Bookmarks extends DurableObject<Env> {
 
 function rowToBookmark(row: BookmarkRow): Bookmark {
   return {
+    ref: row.ref || '',
     tweetId: row.tweet_id,
     url: row.url,
     text: row.text,

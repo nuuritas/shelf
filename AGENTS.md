@@ -78,6 +78,11 @@ API: see `docs/PROGRESS.md` §3.
 - Writes are serialized; do not add background promises outside the queue.
 - Row types come from `src/types.ts`; use `sql.exec<RowType>(...)` rather than
   casting results.
+- Every bookmark carries a short `ref` (5 chars, alphabet without `0/o/1/l/i`).
+  It is generated on insert, backfilled for older rows in the constructor, and
+  resolves in `get`/`delete` via `resolveId`: all-digit input is a tweet id,
+  anything else is a ref. Refs always contain a letter so the two cannot
+  collide.
 
 ## AI layer rules
 

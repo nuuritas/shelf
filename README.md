@@ -134,7 +134,10 @@ ln -sf "$PWD/cli/xbv.ts" ~/.local/bin/xbv
 xbv config --password <APP_PASSWORD>     # writes ~/.config/xbv/config.json (mode 0600)
 ```
 
+Every card in the library shows a short id like `#k7f3` next to the date. Click it to copy, then refer to that bookmark anywhere:
+
 ```bash
+xbv show k7f3                            # short id from the card (also accepts tweet id or URL)
 xbv search "claude code agents"          # text, AI summaries, authors, topic names
 xbv show 1985100000000000000             # full markdown: summary, post, quote, links
 xbv topics                               # topics + rolling syntheses
@@ -165,8 +168,8 @@ All API routes require the session cookie or `Authorization: Bearer <APP_PASSWOR
 | --- | --- | --- |
 | `GET` | `/api/bookmarks?q=&topic=&limit=&offset=` | List saved bookmarks; `q` terms are ANDed and match text, author, summary, links, and topic names |
 | `POST` | `/api/bookmarks` | Save `{ "url": "https://x.com/..." }` |
-| `GET` | `/api/bookmarks/:id` | Get one normalized bookmark |
-| `DELETE` | `/api/bookmarks/:id` | Delete a bookmark |
+| `GET` | `/api/bookmarks/:id` | Get one bookmark by short id (e.g. `k7f3`) or tweet id |
+| `DELETE` | `/api/bookmarks/:id` | Delete by short id or tweet id |
 | `POST` | `/api/bookmarks/:id/summarize` | Queue a summary; `{ "mode": "version", "instruction": "..." }` adds a version instead |
 | `GET` | `/api/topics` | Topics with counts and syntheses |
 | `POST` | `/api/reindex` | Rebuild the topic taxonomy from the archive |

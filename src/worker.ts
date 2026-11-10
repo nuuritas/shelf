@@ -127,7 +127,8 @@ const worker: ExportedHandler<Env> = {
       }
     }
 
-    const bookmarkMatch = url.pathname.match(/^\/api\/bookmarks\/(\d{1,25})$/);
+    // Digits are tweet ids; anything alphanumeric is a short bookmark ref.
+    const bookmarkMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9]{1,25})$/);
     if (bookmarkMatch) {
       if (request.method === 'GET') {
         return secure(await apiGuard(() => handleApiGet(bookmarkMatch[1], env)));

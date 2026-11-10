@@ -177,6 +177,8 @@ export interface SummaryVersion {
 }
 
 export interface Bookmark {
+  /** Short, human-friendly handle used to refer to the bookmark (e.g. "k7f3"). */
+  ref: string;
   tweetId: string;
   url: string;
   text: string;
@@ -202,6 +204,7 @@ export interface Bookmark {
 /** A row from the `bookmarks` SQLite table (`SELECT *`). */
 export type BookmarkRow = {
   tweet_id: string;
+  ref: string | null;
   url: string;
   author_name: string | null;
   author_username: string | null;

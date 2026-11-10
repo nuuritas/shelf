@@ -7,7 +7,7 @@
  * nothing has to be synced: the Worker stays the single source of truth.
  *
  * Two ways to use it with AI:
- *   1. `xbv search ...` / `xbv show ...` — pipe markdown into any chat.
+ *   1. `xbv search ...` / `xbv show k7f3 ...` — pipe markdown into any chat.
  *   2. `xbv mcp` — a stdio MCP server so Claude Code/Desktop, Codex, Cursor
  *      etc. can search the archive themselves via tools.
  *
@@ -213,14 +213,15 @@ async function fetchAllBookmarks(params: Record<string, string | number>): Promi
   return collected;
 }
 
-function extractTweetId(value: string): string {
+/** Accepts a short ref ("k7f3"), a tweet id, or an x.com status URL. */
+function bookmarkIdArg(value: string): string {
   const trimmed = value.trim();
-  if (/^\d{1,25}$/.test(trimmed)) return trimmed;
+  if (/^[A-Za-z0-9]{1,25}$/.test(trimmed)) return trimmed;
   const match = trimmed.match(/\/status(?:es)?\/(\d{1,25})/);
   if (match) return match[1];
   const idQuery = trimmed.match(/[?&]id=(\d{1,25})/);
   if (idQuery) return idQuery[1];
-  throw new Error(`Not a tweet id or URL: ${value}`);
+  throw new Error(`Not a bookmark id, tweet id, or URL: ${value}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +255,7 @@ function renderCard(bookmark: Bookmark, index: number): string {
   if (topics) lines.push(`   topics: ${topics}`);
   const summary = (bookmark.summary || bookmark.text || '').replace(/\s+/g, ' ').trim();
   if (summary) lines.push(`   ${truncate(summary, 240)}`);
-  lines.push(`   id: ${bookmark.tweetId}`);
+  lines.push(`   id: ${bookmark.ref || bookmark.tweetId}`);
   return lines.join('\n');
 }
 
@@ -286,7 +287,8 @@ function renderBookmark(bookmark: Bookmark): string {
   const meta = [`Saved ${isoDay(bookmark.savedAt)}`];
   const topics = topicNames(bookmark);
   if (topics) meta.push(`Topics: ${topics}`);
-  meta.push(`Tweet id: ${bookmark.tweetId}`);
+  if (bookmark.ref) meta.push(`id: ${bookmark.ref}`);
+  meta.push(`tweet: ${bookmark.tweetId}`);
   lines.push('', meta.join(' · '));
 
   if (bookmark.summary) {
@@ -389,9 +391,9 @@ async function commandRecent(args: ParsedArgs): Promise<void> {
 
 async function commandShow(args: ParsedArgs): Promise<void> {
   const target = args.positional[0];
-  if (!target) throw new Error('Usage: xbv show <tweet id | x.com URL> [--json]');
+  if (!target) throw new Error('Usage: xbv show <id | tweet id | x.com URL> [--json]');
 
-  const id = extractTweetId(target);
+  const id = bookmarkIdArg(target);
   const result = await api<GetResult>(`api/bookmarks/${id}`);
 
   if (args.flags.json) {
@@ -470,6 +472,7 @@ function frontMatter(bookmark: Bookmark): string {
   const topics = (bookmark.topics || []).map(topic => topic.name);
   const lines = [
     '---',
+    `ref: "${bookmark.ref}"`,
     `id: "${bookmark.tweetId}"`,
     `url: ${bookmark.url}`,
     `author: "${authorLabel(bookmark)}"`,
@@ -602,13 +605,14 @@ const MCP_TOOLS = [
     name: 'get_bookmark',
     description:
       'Fetch one saved bookmark in full: AI summary, original post, quoted post, X Article, ' +
-      'linked-page text, topics, and alternative summary versions. Accepts a tweet id or an x.com URL.',
+      'linked-page text, topics, and alternative summary versions. Accepts the short id shown on ' +
+      'each card (e.g. "k7f3"), a tweet id, or an x.com status URL.',
     inputSchema: {
       type: 'object',
       properties: {
         id: {
           type: 'string',
-          description: 'Tweet id (e.g. 1985100000000000000) or a full x.com status URL.',
+          description: 'Short bookmark id from search results (e.g. "k7f3"), a tweet id, or an x.com status URL.',
         },
       },
       required: ['id'],
@@ -660,7 +664,7 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
     }
 
     case 'get_bookmark': {
-      const id = extractTweetId(String(input.id || ''));
+      const id = bookmarkIdArg(String(input.id || ''));
       const result = await api<GetResult>(`api/bookmarks/${id}`);
       return renderBookmark(result.bookmark);
     }
@@ -804,7 +808,7 @@ const HELP = `xbv ${VERSION} — read the X Bookmark Vault from the terminal or 
 
 Usage:
   xbv search <words> [--limit 10] [--json]   search text, summaries, authors, topics
-  xbv show <id|x.com URL> [--json]           one bookmark in full markdown
+  xbv show <id|x.com URL> [--json]           one bookmark (short id, tweet id, or URL)
   xbv recent [--limit 10] [--json]           newest bookmarks
   xbv topics [--json]                        AI topics + rolling syntheses
   xbv topic <slug> [--limit 50] [--json]     one topic's synthesis + items

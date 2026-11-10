@@ -216,7 +216,14 @@ function renderBookmark(
               ${author.verified ? '<span class="verified" title="Verified">✓</span>' : ''}
               <span class="handle">${escapeHtml(handle)}</span>
             </div>
-            <div class="meta">${escapeHtml(formatDate(bookmark.createdAt))}</div>
+            <div class="meta">
+              ${escapeHtml(formatDate(bookmark.createdAt))}
+              ${
+                bookmark.ref
+                  ? `<button class="ref-chip" type="button" data-copy="${escapeHtml(bookmark.ref)}" title="Copy bookmark id" aria-label="Bookmark id ${escapeHtml(bookmark.ref)}, click to copy">#${escapeHtml(bookmark.ref)}</button>`
+                  : ''
+              }
+            </div>
           </div>
         </div>
         <a class="x-link" href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer" aria-label="Open on X">X ↗</a>
@@ -556,7 +563,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=5">
+  <link rel="stylesheet" href="/style.css?v=6">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -945,6 +952,31 @@ h1, h2, h3, p { margin-top: 0; }
 .handle, .meta {
   color: var(--muted);
   font-size: 12px;
+}
+
+.ref-chip {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.ref-chip:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.ref-chip.is-copied {
+  color: var(--accent-ink);
+  border-color: var(--accent);
 }
 
 .x-link {

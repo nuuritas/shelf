@@ -93,6 +93,12 @@ wall-clock is long but CPU stays low.
   (YAML front matter) plus `bookmarks.jsonl` for local RAG.
 - Search (`q`) spans text, author, AI summary, linked-page text, and topic
   names; whitespace-separated terms are ANDed.
+- Short bookmark ids: every card shows a `#k7f3` chip (click to copy, with a
+  `copied` flash). The id is stored in `bookmarks.ref`, generated on insert and
+  backfilled for older rows. `GET/DELETE /api/bookmarks/:id` and `xbv show`
+  accept a ref, a tweet id, or an x.com URL. Refs are 5 chars from an alphabet
+  without `0/o/1/l/i` and always contain a letter, so they never look like the
+  all-digit tweet ids.
 
 ### API
 
@@ -100,8 +106,8 @@ wall-clock is long but CPU stays low.
 |---|---|---|
 | `GET` | `/api/bookmarks?q=&topic=&limit=&offset=` | list; `q` terms are ANDed and match text, author, summary, links, and topic names |
 | `POST` | `/api/bookmarks` | `{ "url": ... }`; also accepts `SHARE_TOKEN` bearer |
-| `GET` | `/api/bookmarks/:id` | one bookmark |
-| `DELETE` | `/api/bookmarks/:id` | delete |
+| `GET` | `/api/bookmarks/:id` | one bookmark by short ref (`k7f3`) or tweet id |
+| `DELETE` | `/api/bookmarks/:id` | delete by short ref or tweet id |
 | `POST` | `/api/bookmarks/:id/summarize` | `{ "mode": "version", "instruction": "..." }` adds a version |
 | `GET` | `/api/topics` | topics with syntheses and counts |
 | `POST` | `/api/reindex` | re-induce the whole taxonomy |
@@ -130,6 +136,7 @@ wall-clock is long but CPU stays low.
 | Nov 7 | Custom domain | Cleaner URL, APK rebuilt against it |
 | Nov 7–10 | Motion digest experiments (v1–v5) | Monthly/Offprint-style artifact, eventually narrated |
 | Nov 10 | `xbv` CLI + MCP server | Saved posts must be usable inside local AI chats, not only in the browser |
+| Nov 10 | Short `#ref` ids on cards, copy on click | "look at this one" needs a handle shorter than a 19-digit tweet id |
 
 ### Video digest pipeline (experiments, not in the app yet)
 
