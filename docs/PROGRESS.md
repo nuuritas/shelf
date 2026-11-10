@@ -183,6 +183,7 @@ wall-clock is long but CPU stays low.
 | Nov 10 | Calendar + single-day library view | Finding what was saved on a date should not require scrolling the whole feed |
 | Nov 11 | Workers AI as the default summarizer, any OpenAI-compatible endpoint as the upgrade | Deploying needed a third-party key before the first summary; the AI binding was already bound for Whisper |
 | Nov 11 | Piped as the default YouTube caption source, no key | Supadata needs a signup and a 100-credit ceiling; a fresh deploy should read captions immediately |
+| Nov 11 | README replaced by an agent install prompt + `INSTALL.md` | Nobody installs a Cloudflare Worker by hand; an agent needs a checklist it can execute |
 
 ### Video transcripts
 
@@ -297,3 +298,6 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
   pushes to `main` are emergency-only.
 - Never commit `.dev.vars`, the keystore, or `public/BookmarkShare.apk`
   (it embeds `SHARE_TOKEN`).
+- The README stays short and leads with the agent install prompt; install
+  details live in `INSTALL.md`, which must stay executable by an agent (exact
+  commands, per-step acceptance checks).
