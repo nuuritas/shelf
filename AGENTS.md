@@ -227,3 +227,8 @@ API: see `docs/PROGRESS.md` §3.
   `LOGIN_REQUIRED`, so do not try to scrape caption tracks in the Worker. Use
   Supadata, `xbv youtube` from a residential connection, or accept the
   page-description fallback.
+- The Hostinger VPS (`147.93.127.210`) and the Webshare direct/rotating proxies
+  were also tested and get the same 429/`LOGIN_REQUIRED`. Webshare backbone
+  ports 10000–10003 refuse connections, and the account has no residential
+  mode. Do not retry those for YouTube; only a residential IP or a managed API
+  works.
