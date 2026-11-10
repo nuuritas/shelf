@@ -315,6 +315,8 @@ async function handleApiList(url: URL, env: Env): Promise<Response> {
   const params = new URLSearchParams();
   const q = (url.searchParams.get('q') || '').trim();
   if (q) params.set('q', q);
+  const topic = (url.searchParams.get('topic') || '').trim();
+  if (topic) params.set('topic', topic);
   params.set('limit', String(clampInteger(url.searchParams.get('limit'), 50, 1, 100)));
   params.set('offset', String(clampInteger(url.searchParams.get('offset'), 0, 0, 10_000)));
   return jsonResponse(await doJson<ListResult>(env, `/list?${params.toString()}`));

@@ -357,12 +357,27 @@ export class Bookmarks extends DurableObject<Env> {
     }
 
     if (query) {
-      filters.push(`(
-        instr(lower(text), lower(?)) > 0
-        OR instr(lower(COALESCE(author_name, '')), lower(?)) > 0
-        OR instr(lower(COALESCE(author_username, '')), lower(?)) > 0
-      )`);
-      args.push(query, query, query);
+      // Every whitespace-separated term must match somewhere, so "claude code"
+      // behaves like an AND search instead of a single literal substring.
+      const terms = query.split(/\s+/).filter(Boolean).slice(0, 8);
+      for (const term of terms) {
+        filters.push(`(
+          instr(lower(text), lower(?)) > 0
+          OR instr(lower(COALESCE(author_name, '')), lower(?)) > 0
+          OR instr(lower(COALESCE(author_username, '')), lower(?)) > 0
+          OR instr(lower(COALESCE(summary, '')), lower(?)) > 0
+          OR instr(lower(COALESCE(links_json, '')), lower(?)) > 0
+          OR instr(lower(COALESCE(article_json, '')), lower(?)) > 0
+          OR tweet_id IN (
+            SELECT it.tweet_id
+            FROM item_topics it
+            JOIN topics t ON t.slug = it.slug
+            WHERE instr(lower(t.name), lower(?)) > 0
+               OR instr(lower(t.slug), lower(?)) > 0
+          )
+        )`);
+        args.push(term, term, term, term, term, term, term, term);
+      }
     }
 
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';

@@ -125,13 +125,45 @@ Run the unit tests:
 node --test
 ```
 
+## From your own AI tools (CLI + MCP)
+
+The archive is readable from the terminal, so any saved post can be dropped into a chat or indexed locally. `cli/xbv.ts` is a dependency-free Bun script; the vault stays in the Worker, nothing is synced.
+
+```bash
+ln -sf "$PWD/cli/xbv.ts" ~/.local/bin/xbv
+xbv config --password <APP_PASSWORD>     # writes ~/.config/xbv/config.json (mode 0600)
+```
+
+```bash
+xbv search "claude code agents"          # text, AI summaries, authors, topic names
+xbv show 1985100000000000000             # full markdown: summary, post, quote, links
+xbv topics                               # topics + rolling syntheses
+xbv topic ai-agents                      # one topic's synthesis and its items
+xbv recent --limit 20
+xbv export --dir ~/Documents/bookmarks   # one .md per bookmark + bookmarks.jsonl + INDEX.md
+xbv stats
+```
+
+Configuration precedence: `XBV_URL` / `XBV_PASSWORD`, then `~/.config/xbv/config.json`, then `.dev.vars` when run inside the repo.
+
+### MCP server
+
+`xbv mcp` runs a stdio MCP server exposing `search_bookmarks`, `get_bookmark`, `list_topics`, and `get_topic`, so Claude Code/Desktop, Codex, or Cursor can search the vault themselves instead of you pasting text.
+
+```bash
+claude mcp add xbv -- xbv mcp
+codex mcp add xbv -- xbv mcp
+```
+
+Then "what did I save about Postgres indexes?" is answered from the archive. Results are markdown tuned for an LLM: the AI summary first, then the original post, quoted post, article, and linked-page text.
+
 ## API
 
 All API routes require the session cookie or `Authorization: Bearer <APP_PASSWORD>`. The APK uses a separate add-only `SHARE_TOKEN` for `POST /api/bookmarks`.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/bookmarks?q=&limit=` | List saved bookmarks |
+| `GET` | `/api/bookmarks?q=&topic=&limit=&offset=` | List saved bookmarks; `q` terms are ANDed and match text, author, summary, links, and topic names |
 | `POST` | `/api/bookmarks` | Save `{ "url": "https://x.com/..." }` |
 | `GET` | `/api/bookmarks/:id` | Get one normalized bookmark |
 | `DELETE` | `/api/bookmarks/:id` | Delete a bookmark |

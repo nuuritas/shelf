@@ -86,12 +86,19 @@ wall-clock is long but CPU stays low.
 - Collapsed cards (3-line peek, expand on tap) and folded topic syntheses
 - Custom domain `bookmark.nuritas.tr`, workers.dev kept as fallback
 - `/api/stats` reports row counts and real SQLite database size
+- Local access for AI work: `cli/xbv.ts` (search/show/topics/export) and
+  `xbv mcp`, a stdio MCP server exposing `search_bookmarks`, `get_bookmark`,
+  `list_topics`, `get_topic`. Read-only; the Worker stays the source of truth,
+  nothing is mirrored. `xbv export` writes one markdown file per bookmark
+  (YAML front matter) plus `bookmarks.jsonl` for local RAG.
+- Search (`q`) spans text, author, AI summary, linked-page text, and topic
+  names; whitespace-separated terms are ANDed.
 
 ### API
 
 | Method | Route | Notes |
 |---|---|---|
-| `GET` | `/api/bookmarks?q=&limit=` | list, includes topics and versions |
+| `GET` | `/api/bookmarks?q=&topic=&limit=&offset=` | list; `q` terms are ANDed and match text, author, summary, links, and topic names |
 | `POST` | `/api/bookmarks` | `{ "url": ... }`; also accepts `SHARE_TOKEN` bearer |
 | `GET` | `/api/bookmarks/:id` | one bookmark |
 | `DELETE` | `/api/bookmarks/:id` | delete |
@@ -122,6 +129,7 @@ wall-clock is long but CPU stays low.
 | Nov 7 | TS migration (TS 7.0.2 native) | Type safety as state grew |
 | Nov 7 | Custom domain | Cleaner URL, APK rebuilt against it |
 | Nov 7–10 | Motion digest experiments (v1–v5) | Monthly/Offprint-style artifact, eventually narrated |
+| Nov 10 | `xbv` CLI + MCP server | Saved posts must be usable inside local AI chats, not only in the browser |
 
 ### Video digest pipeline (experiments, not in the app yet)
 

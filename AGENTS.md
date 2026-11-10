@@ -26,6 +26,7 @@ src/util.ts          escaping, linkify, cookies, base64, slugs
 src/types.ts         shared domain types
 public/              static assets, PWA manifest/service worker, share APK
 android/             transparent share APK sources + no-Gradle build script
+cli/xbv.ts           Bun CLI + stdio MCP server (search/show/export/mcp)
 test/                node:test unit tests
 docs/PROGRESS.md     long-form project knowledge
 ```
@@ -40,6 +41,8 @@ bunx wrangler dev           # local Worker (needs .dev.vars)
 bunx wrangler deploy        # deploy to bookmark.nuritas.tr + workers.dev
 bunx wrangler tail          # production logs
 ./android/build.sh          # rebuild public/BookmarkShare.apk
+xbv search "claude code"    # CLI → ~/.local/bin/xbv symlink to cli/xbv.ts
+xbv mcp                     # stdio MCP server for Claude/Codex/Cursor
 ```
 
 `.dev.vars` (gitignored) needs `APP_PASSWORD`, `APP_SECRET`, `OPENCODE_API_KEY`,
@@ -113,6 +116,9 @@ API: see `docs/PROGRESS.md` §3.
   It is embedded in `public/BookmarkShare.apk`, which is why the APK is
   gitignored and rebuilt by `android/build.sh` — never commit it.
 - Never commit `.dev.vars`, `android/*.keystore`, `.wrangler/`, or `out/`.
+- The CLI stores the vault password in `~/.config/xbv/config.json` (mode 0600,
+  outside the repo). Rotating `APP_PASSWORD` on the Worker requires
+  `xbv config --password <new>`; the CLI reports a stale password as a 401 hint.
 - All outbound fetches must keep the SSRF guard in `links.ts`; do not fetch
   private hosts.
 
