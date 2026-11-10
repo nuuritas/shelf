@@ -84,6 +84,11 @@ wall-clock is long but CPU stays low.
 - Summary versions: "New version" with an optional instruction; original is
   never overwritten
 - Topic tabs that swap only the library region over `fetch`, preserving scroll
+- Calendar (`/calendar`): a month grid with the number of saves on each day,
+  previous/next month navigation, and a link from every non-empty day to
+  `/?day=YYYY-MM-DD`. The day view reuses the normal cards, archive toggle,
+  language toggle, and search, so it needs no separate rendering path. Counts
+  include archived items and use UTC dates, matching the cards
 - Archive instead of delete: `archived_at` removes a card from the default
   Active view but keeps the row, summary, topics, and searchability. Active and
   Archived are a toggle on the library and on topic pages; re-sharing an
@@ -113,7 +118,7 @@ wall-clock is long but CPU stays low.
 
 | Method | Route | Notes |
 |---|---|---|
-| `GET` | `/api/bookmarks?q=&topic=&view=&limit=&offset=` | list; `view=active|archived|all` (default active); `q` terms are ANDed and match text, author, both summaries, links, and topic names |
+| `GET` | `/api/bookmarks?q=&topic=&day=&view=&limit=&offset=` | list; `day=YYYY-MM-DD` limits to one saved day; `view=active|archived|all` (default active); `q` terms are ANDed and match text, author, both summaries, links, and topic names |
 | `POST` | `/api/bookmarks` | `{ "url": ... }`; also accepts `SHARE_TOKEN` bearer |
 | `GET` | `/api/bookmarks/:id` | one bookmark by short ref (`k7f3`) or tweet id |
 | `DELETE` | `/api/bookmarks/:id` | delete by short ref or tweet id |
@@ -121,6 +126,7 @@ wall-clock is long but CPU stays low.
 | `POST` | `/api/bookmarks/:id/summarize` | `{ "mode": "version", "instruction": "..." }` adds a version; `{ "mode": "translate" }` queues English |
 | `POST` | `/api/translations/en` | queue English for every finished summary that lacks it |
 | `GET` | `/api/topics` | topics with syntheses and counts |
+| `GET` | `/api/calendar?month=YYYY-MM` | save counts per UTC day for one month (defaults to the current month) |
 | `POST` | `/api/reindex` | re-induce the whole taxonomy |
 | `GET` | `/api/stats` | `total`, `archived`, `summarized`, `translated`, `pending`, `topics`, `bytes`, `rows` |
 | `GET` | `/healthz` | no auth |
@@ -149,6 +155,7 @@ wall-clock is long but CPU stays low.
 | Nov 10 | `xbv` CLI + MCP server | Saved posts must be usable inside local AI chats, not only in the browser |
 | Nov 10 | Short `#ref` ids on cards, copy on click | "look at this one" needs a handle shorter than a 19-digit tweet id |
 | Nov 10 | Archive toggle + bilingual summaries | Finished posts should leave the feed without being deleted; the same summaries should be readable in English |
+| Nov 10 | Calendar + single-day library view | Finding what was saved on a date should not require scrolling the whole feed |
 
 ### Video digest pipeline (experiments, not in the app yet)
 

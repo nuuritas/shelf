@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderPage } from '../src/render.ts';
+import { renderCalendar, renderPage } from '../src/render.ts';
 import { escapeHtml, linkifyText } from '../src/util.ts';
 
 test('escapes tweet text and links bare URLs', () => {
@@ -145,4 +145,43 @@ test('offers to write a missing English summary', () => {
   assert.match(html, /Write English summary/);
   assert.match(html, /name="mode" value="translate"/);
   assert.match(html, /1 finished summary has/);
+});
+
+test('renders a monthly calendar with per-day counts and day links', () => {
+  const html = renderCalendar({
+    calendar: {
+      month: '2026-11',
+      days: [
+        { date: '2026-11-02', count: 1 },
+        { date: '2026-11-10', count: 3 },
+      ],
+      total: 4,
+    },
+    lang: 'tr',
+  });
+
+  assert.match(html, /November 2026/);
+  assert.match(html, /class="calendar-grid"/);
+  assert.match(html, /href="\/\?day=2026-11-10"/);
+  assert.match(html, /class="cal-count">3<\/span>/);
+  assert.match(html, /4 saves/);
+  assert.match(html, /This month/);
+});
+
+test('shows only one day and offers a way back to the calendar', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark()],
+    total: 1,
+    query: '',
+    day: '2026-11-10',
+    view: 'active',
+    lang: 'tr',
+    activeTotal: 1,
+    archivedTotal: 0,
+  });
+
+  assert.match(html, /Saved on 10 Nov 2026/);
+  assert.match(html, /name="day" value="2026-11-10"/);
+  assert.match(html, /Clear date/);
+  assert.match(html, /href="\/calendar"/);
 });

@@ -17,6 +17,7 @@ import type {
   BookmarkRow,
   BootstrapItem,
   BootstrapTopic,
+  CalendarResult,
   Env,
   LinkRead,
   ListResult,
@@ -61,6 +62,40 @@ function turkishPrimary(env: Partial<Env>): boolean {
 
 function parseView(value: string | null | undefined): ArchiveView {
   return value === 'archived' || value === 'all' ? value : 'active';
+}
+
+/** `YYYY-MM-DD`, or null for anything that is not a real calendar day. */
+function normalizeDay(value: string | null | undefined): string | null {
+  const day = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const date = new Date(`${day}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10) === day ? day : null;
+}
+
+/** `YYYY-MM`, or null when the value is not a month. */
+function normalizeMonth(value: string | null | undefined): string | null {
+  const month = String(value || '').trim();
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : null;
+}
+
+function monthStart(month: string): string {
+  return `${month}-01T00:00:00.000Z`;
+}
+
+function nextMonthStart(month: string): string {
+  const [year, number] = month.split('-').map(Number);
+  return new Date(Date.UTC(year, number, 1)).toISOString();
+}
+
+function dayStart(day: string): string {
+  return `${day}T00:00:00.000Z`;
+}
+
+function nextDayStart(day: string): string {
+  const date = new Date(dayStart(day));
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString();
 }
 
 /* Take the context and SQL types from the base class: importing SqlStorage from
@@ -308,6 +343,10 @@ export class Bookmarks extends DurableObject<Env> {
         return jsonResponse(this.list(url.searchParams));
       }
 
+      if (request.method === 'GET' && url.pathname === '/calendar') {
+        return jsonResponse(this.calendar(url.searchParams.get('month')));
+      }
+
       if (request.method === 'GET' && url.pathname === '/topics') {
         return jsonResponse({ topics: this.topics() });
       }
@@ -460,6 +499,7 @@ export class Bookmarks extends DurableObject<Env> {
   list(searchParams: URLSearchParams): ListResult {
     const query = (searchParams.get('q') || '').trim();
     const topicSlug = (searchParams.get('topic') || '').trim();
+    const day = normalizeDay(searchParams.get('day'));
     const view = parseView(searchParams.get('view'));
     const limit = clampInteger(searchParams.get('limit'), 50, 1, 100);
     const offset = clampInteger(searchParams.get('offset'), 0, 0, 10_000);
@@ -470,6 +510,11 @@ export class Bookmarks extends DurableObject<Env> {
     if (topicSlug) {
       filters.push('tweet_id IN (SELECT tweet_id FROM item_topics WHERE slug = ?)');
       args.push(topicSlug);
+    }
+
+    if (day) {
+      filters.push('saved_at >= ? AND saved_at < ?');
+      args.push(dayStart(day), nextDayStart(day));
     }
 
     if (query) {
@@ -497,7 +542,7 @@ export class Bookmarks extends DurableObject<Env> {
       }
     }
 
-    // Counts for the Active/Archived switch: same query and topic, both sides.
+    // Counts for the Active/Archived switch: same query, topic, and day, both sides.
     const baseWhere = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const counts = this.sql
       .exec<ArchiveCountsRow>(
@@ -509,8 +554,8 @@ export class Bookmarks extends DurableObject<Env> {
       )
       .toArray()[0];
 
-    // Count translations missing inside the current query/topic, so the banner
-    // does not promise work for cards that are not on screen.
+    // Count translations missing inside the current query/topic/day, so the
+    // banner does not promise work for cards that are not on screen.
     const missingEnglish = this.sql
       .exec<{ count: number }>(
         `SELECT COUNT(*) AS count FROM bookmarks
@@ -548,12 +593,44 @@ export class Bookmarks extends DurableObject<Env> {
       total: Number(countRow?.count ?? 0),
       query,
       topic: topicSlug || null,
+      day,
       view,
       activeTotal: Number(counts?.active ?? 0),
       archivedTotal: Number(counts?.archived ?? 0),
       missingEnglish: Number(missingEnglish?.count ?? 0),
       limit,
       offset,
+    };
+  }
+
+  /** Save counts per day for one month. Counts include archived bookmarks. */
+  calendar(monthParam: string | null): CalendarResult {
+    const month = normalizeMonth(monthParam) || new Date().toISOString().slice(0, 7);
+    const rows = this.sql
+      .exec<{ saved_at: string }>(
+        `SELECT saved_at FROM bookmarks
+         WHERE saved_at >= ? AND saved_at < ?
+         ORDER BY saved_at ASC`,
+        monthStart(month),
+        nextMonthStart(month),
+      )
+      .toArray();
+
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const date = String(row.saved_at || '').slice(0, 10);
+      if (!date.startsWith(`${month}-`)) continue;
+      counts.set(date, (counts.get(date) || 0) + 1);
+    }
+
+    const days = [...counts.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, count]) => ({ date, count }));
+
+    return {
+      month,
+      days,
+      total: days.reduce((sum, day) => sum + day.count, 0),
     };
   }
 

@@ -1,8 +1,9 @@
 import { Bookmarks } from './bookmarks-do.ts';
-import { CSS, renderLogin, renderPage, renderSetup } from './render.ts';
+import { CSS, renderCalendar, renderLogin, renderPage, renderSetup } from './render.ts';
 import type {
   ArchiveResult,
   ArchiveView,
+  CalendarResult,
   DeleteResult,
   Env,
   GetResult,
@@ -104,6 +105,10 @@ const worker: ExportedHandler<Env> = {
       return secure(await handleHome(url, env));
     }
 
+    if (request.method === 'GET' && url.pathname === '/calendar') {
+      return secure(await handleCalendarPage(url, env));
+    }
+
     if (request.method === 'GET' && url.pathname.startsWith('/t/')) {
       const slug = decodeURIComponent(url.pathname.slice(3)).replace(/\/+$/, '');
       return secure(await handleTopicPage(slug, env, url));
@@ -171,6 +176,10 @@ const worker: ExportedHandler<Env> = {
       return secure(await apiGuard(() => handleApiTopics(env)));
     }
 
+    if (request.method === 'GET' && url.pathname === '/api/calendar') {
+      return secure(await apiGuard(() => handleApiCalendar(url, env)));
+    }
+
     if (request.method === 'POST' && url.pathname === '/api/reindex') {
       return secure(await apiGuard(() => handleApiReindex(env)));
     }
@@ -183,11 +192,13 @@ export default worker;
 
 async function handleHome(url: URL, env: Env): Promise<Response> {
   const query = (url.searchParams.get('q') || '').trim();
+  const day = parseDay(url.searchParams.get('day'));
   const view = parseView(url.searchParams.get('view'));
   const lang = parseLang(url.searchParams.get('lang'));
   const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
   const params = new URLSearchParams({ limit: String(limit), view });
   if (query) params.set('q', query);
+  if (day) params.set('day', day);
 
   try {
     const [data, topicData] = await Promise.all([
@@ -199,6 +210,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         bookmarks: data.bookmarks,
         total: data.total,
         query,
+        day,
         topics: topicData.topics,
         view,
         lang,
@@ -217,6 +229,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         bookmarks: [],
         total: 0,
         query,
+        day,
         topics: [],
         view,
         lang,
@@ -275,6 +288,38 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
 
 async function handleApiTopics(env: Env): Promise<Response> {
   return jsonResponse(await doJson<TopicListResult>(env, '/topics'));
+}
+
+async function handleCalendarPage(url: URL, env: Env): Promise<Response> {
+  const month = (url.searchParams.get('month') || '').trim();
+  const lang = parseLang(url.searchParams.get('lang'));
+
+  try {
+    const query = month ? `?month=${encodeURIComponent(month)}` : '';
+    const calendar = await doJson<CalendarResult>(env, `/calendar${query}`);
+    return htmlResponse(
+      renderCalendar({
+        calendar,
+        lang,
+        error: url.searchParams.get('error'),
+      }),
+    );
+  } catch (error) {
+    return htmlResponse(
+      renderCalendar({
+        calendar: { month: new Date().toISOString().slice(0, 7), days: [], total: 0 },
+        lang,
+        error: errorMessage(error),
+      }),
+      502,
+    );
+  }
+}
+
+async function handleApiCalendar(url: URL, env: Env): Promise<Response> {
+  const month = (url.searchParams.get('month') || '').trim();
+  const query = month ? `?month=${encodeURIComponent(month)}` : '';
+  return jsonResponse(await doJson<CalendarResult>(env, `/calendar${query}`));
 }
 
 async function handleApiReindex(env: Env): Promise<Response> {
@@ -393,6 +438,8 @@ async function handleApiList(url: URL, env: Env): Promise<Response> {
   if (q) params.set('q', q);
   const topic = (url.searchParams.get('topic') || '').trim();
   if (topic) params.set('topic', topic);
+  const day = parseDay(url.searchParams.get('day'));
+  if (day) params.set('day', day);
   params.set('view', parseListView(url.searchParams.get('view')));
   params.set('limit', String(clampInteger(url.searchParams.get('limit'), 50, 1, 100)));
   params.set('offset', String(clampInteger(url.searchParams.get('offset'), 0, 0, 10_000)));
@@ -649,6 +696,15 @@ function withNotice(path: string, notice: string): string {
 
 function parseView(value: string | null): 'active' | 'archived' {
   return value === 'archived' ? 'archived' : 'active';
+}
+
+/** `YYYY-MM-DD`, or null for anything that is not a real day. */
+function parseDay(value: string | null): string | null {
+  const day = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const date = new Date(`${day}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10) === day ? day : null;
 }
 
 function parseListView(value: string | null): ArchiveView {

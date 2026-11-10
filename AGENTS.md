@@ -36,7 +36,7 @@ docs/PROGRESS.md     long-form project knowledge
 ```bash
 bun install                 # package manager is bun; npm is not installed
 bun run typecheck           # tsc --noEmit (TS 7.0.2, ~0.1 s)
-node --test                 # 20 tests, runs .ts directly on Node 26
+node --test                 # 22 tests, runs .ts directly on Node 26
 bunx wrangler dev           # local Worker (needs .dev.vars)
 bunx wrangler deploy        # deploy to bookmark.nuritas.tr + workers.dev
 bunx wrangler tail          # production logs
@@ -54,9 +54,11 @@ production has a working secret.
 `fetch` → session check (`isAuthorized`) or `SHARE_TOKEN` for
 `POST /api/bookmarks` → `doJson(env, path)` → DO stub (`library`) → JSON/HTML.
 
-Pages: `/` (library), `/t/:slug` (topic), `/login`, `/share` (PWA fallback).
+Pages: `/` (library), `/t/:slug` (topic), `/calendar`, `/login`, `/share` (PWA fallback).
 The library and topic pages accept `view=active|archived` and `lang=tr|en`;
-forms carry a `returnTo` so a mutation keeps the current view and language.
+the library also accepts `day=YYYY-MM-DD` for a single saved day (linked from
+`/calendar`). Forms carry a `returnTo` so a mutation keeps the current view,
+language, and day.
 API: see `docs/PROGRESS.md` §3.
 
 ## Durable Object rules
@@ -118,9 +120,10 @@ API: see `docs/PROGRESS.md` §3.
   drop the old copy. Forgetting this makes new markup render unstyled.
 - Client JS (`public/app.js`) is progressive enhancement only: card expand,
   synthesis fold, in-place topic swap. No framework, no build.
-- Archive and language are presentation state: `view=archived` and `lang=en` are
-  query parameters, not stored columns. `archived_at` is the only archive state
-  (`NULL` = active). Keep both parameters when adding a link or a form redirect.
+- Archive, language, and day are presentation state: `view=archived`, `lang=en`,
+  and `day=YYYY-MM-DD` are query parameters, not stored columns. `archived_at` is
+  the only archive state (`NULL` = active). Keep them when adding a link or a
+  form redirect. Day grouping and the calendar use UTC, matching `formatDate`.
 - Keep the no-JS fallback working (`<noscript>` overrides in `pageShell`).
 
 ## Security

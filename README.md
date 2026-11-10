@@ -18,6 +18,8 @@ Paste an X link, or share one from Android:
 
 The first summary is never overwritten. From any card you can ask for a new version with an optional direction ("explain the tradeoffs", "give the history"), and the result is stored beside the original as v2, v3, and so on.
 
+The **Calendar** link opens a month grid with the number of saves on each day. Click a day to see only what you saved then, with the normal archive and language controls still available.
+
 When you are done with a post, **Archive** it. It leaves the Active list but stays in the archive with its summary, topics, and search text; switch to Archived to read it again or restore it. Nothing is deleted unless you press Remove.
 
 Summaries live on two boards: **Türkçe** (primary) and **English** (translation). The switch at the top of the library re-renders the same page in either language. New summaries get an English version automatically; for older rows, the English board offers a button to queue the missing translations.
@@ -170,7 +172,7 @@ All API routes require the session cookie or `Authorization: Bearer <APP_PASSWOR
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/bookmarks?q=&topic=&view=&limit=&offset=` | List bookmarks; `view=active|archived|all` (default active); `q` terms are ANDed and match text, author, both summaries, links, and topic names |
+| `GET` | `/api/bookmarks?q=&topic=&day=&view=&limit=&offset=` | List bookmarks; `day=YYYY-MM-DD` limits to one saved day; `view=active|archived|all` (default active); `q` terms are ANDed and match text, author, both summaries, links, and topic names |
 | `POST` | `/api/bookmarks` | Save `{ "url": "https://x.com/..." }` |
 | `GET` | `/api/bookmarks/:id` | Get one bookmark by short id (e.g. `k7f3`) or tweet id |
 | `DELETE` | `/api/bookmarks/:id` | Delete by short id or tweet id |
@@ -178,6 +180,7 @@ All API routes require the session cookie or `Authorization: Bearer <APP_PASSWOR
 | `POST` | `/api/bookmarks/:id/summarize` | Queue a summary; `{ "mode": "version", "instruction": "..." }` adds a version; `{ "mode": "translate" }` queues English |
 | `POST` | `/api/translations/en` | Queue English for every finished summary that lacks it |
 | `GET` | `/api/topics` | Topics with counts and syntheses |
+| `GET` | `/api/calendar?month=YYYY-MM` | Save counts per UTC day for one month |
 | `POST` | `/api/reindex` | Rebuild the topic taxonomy from the archive |
 | `GET` | `/api/stats` | Counts |
 | `GET` | `/healthz` | Health check, no auth |

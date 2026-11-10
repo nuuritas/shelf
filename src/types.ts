@@ -258,14 +258,29 @@ export interface ListResult {
   total: number;
   query: string;
   topic: string | null;
+  /** UTC day filter (`YYYY-MM-DD`) when the library is showing one day. */
+  day: string | null;
   view: ArchiveView;
-  /** Counts under the same query/topic, ignoring the archive filter. */
+  /** Counts under the same query/topic/day, ignoring the archive filter. */
   activeTotal: number;
   archivedTotal: number;
   /** Finished summaries that still have no English version. */
   missingEnglish: number;
   limit: number;
   offset: number;
+}
+
+export interface CalendarDay {
+  /** UTC date, `YYYY-MM-DD` (matches the dates shown on cards). */
+  date: string;
+  count: number;
+}
+
+export interface CalendarResult {
+  /** `YYYY-MM` */
+  month: string;
+  days: CalendarDay[];
+  total: number;
 }
 
 export interface TopicListResult {

@@ -1,6 +1,7 @@
 import type {
   Author,
   Bookmark,
+  CalendarResult,
   LinkRead,
   MediaItem,
   Metrics,
@@ -36,6 +37,7 @@ export interface RenderPageOptions {
   bookmarks: Bookmark[];
   total: number;
   query: string;
+  day?: string | null;
   topics?: TopicSummary[];
   topic?: TopicSummary | null;
   notice?: string | null;
@@ -52,14 +54,16 @@ export interface RenderPageOptions {
 /** Build a library/topic URL without empty or default parameters. */
 function libraryHref(
   path: string,
-  { query = '', view = 'active', lang = 'tr' }: {
+  { query = '', day = null, view = 'active', lang = 'tr' }: {
     query?: string;
+    day?: string | null;
     view?: 'active' | 'archived';
     lang?: 'tr' | 'en';
   } = {},
 ): string {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
+  if (day) params.set('day', day);
   if (view === 'archived') params.set('view', 'archived');
   if (lang === 'en') params.set('lang', 'en');
   const search = params.toString();
@@ -70,6 +74,7 @@ export function renderPage({
   bookmarks,
   total,
   query,
+  day: dayOption = null,
   topics = [],
   topic = null,
   notice,
@@ -84,6 +89,7 @@ export function renderPage({
 }: RenderPageOptions): string {
   const view = viewOption === 'archived' ? 'archived' : 'active';
   const lang = langOption === 'en' ? 'en' : 'tr';
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(dayOption || '')) ? String(dayOption) : null;
   const pending = bookmarks.some(
     bookmark =>
       ['pending', 'working'].includes(bookmark.summaryStatus) ||
@@ -92,13 +98,16 @@ export function renderPage({
   );
   const path = topic ? `/t/${topic.slug}` : '/';
   const currentQuery = topic ? '' : query;
+  const currentDay = topic ? null : day;
   const activeCount = topic ? topic.count : activeTotal;
   const archivedCount = topic ? topic.archivedCount : archivedTotal;
-  const returnTo = libraryHref(path, { query: currentQuery, view, lang });
+  const returnTo = libraryHref(path, { query: currentQuery, day: currentDay, view, lang });
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
   const showTranslateBanner =
     lang === 'en' && bilingual && aiConfigured && missingEnglish > 0;
+  const dayLabel = currentDay ? formatDate(`${currentDay}T00:00:00.000Z`) : '';
+  const calendarHref = lang === 'en' ? '/calendar?lang=en' : '/calendar';
 
   const topicTabs = topics
     .map(entry => {
@@ -115,24 +124,32 @@ export function renderPage({
 
   const eyebrow = topic
     ? `Topic · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
-    : view === 'archived'
-      ? `Archive · ${archivedCount} saved`
-      : `Library · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`;
+    : currentDay
+      ? `Day · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
+      : view === 'archived'
+        ? `Archive · ${archivedCount} saved`
+        : `Library · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`;
 
   const heading = query
-    ? `Results for “${escapeHtml(query)}”`
-    : topic
-      ? escapeHtml(topic.name)
-      : view === 'archived'
-        ? 'Archived bookmarks'
-        : 'Latest saves';
+    ? currentDay
+      ? `Results for “${escapeHtml(query)}” on ${escapeHtml(dayLabel)}`
+      : `Results for “${escapeHtml(query)}”`
+    : currentDay
+      ? `Saved on ${escapeHtml(dayLabel)}`
+      : topic
+        ? escapeHtml(topic.name)
+        : view === 'archived'
+          ? 'Archived bookmarks'
+          : 'Latest saves';
 
   return pageShell({
     title: topic
       ? `${topic.name} · X Bookmark Vault`
-      : view === 'archived'
-        ? 'Archive · X Bookmark Vault'
-        : 'X Bookmark Vault',
+      : currentDay
+        ? `${dayLabel} · X Bookmark Vault`
+        : view === 'archived'
+          ? 'Archive · X Bookmark Vault'
+          : 'X Bookmark Vault',
     bodyClass: 'home',
     head: pending ? '<meta http-equiv="refresh" content="4">' : '',
     body: `
@@ -171,37 +188,48 @@ export function renderPage({
             </div>
             <div class="library-tools">
               <form class="search-form" method="get" action="/">
+                ${currentDay ? `<input type="hidden" name="day" value="${escapeHtml(currentDay)}">` : ''}
                 ${view === 'archived' ? '<input type="hidden" name="view" value="archived">' : ''}
                 ${lang === 'en' ? '<input type="hidden" name="lang" value="en">' : ''}
                 <label class="sr-only" for="q">Search bookmarks</label>
                 <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
                 <button type="submit">Search</button>
-                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { view, lang }))}">Clear</a>` : ''}
+                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, view, lang }))}">Clear</a>` : ''}
               </form>
               <div class="library-switches">
                 <nav class="view-switch" role="group" aria-label="Archive filter">
                   <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, view: 'active', lang }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'active', lang }),
                   )}">Active<span>${activeCount}</span></a>
                   <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, view: 'archived', lang }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'archived', lang }),
                   )}">Archived<span>${archivedCount}</span></a>
                 </nav>
                 ${
                   bilingual
                     ? `<nav class="lang-switch" role="group" aria-label="Summary language">
                         <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, view, lang: 'tr' }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'tr' }),
                         )}">Türkçe</a>
                         <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, view, lang: 'en' }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'en' }),
                         )}">English</a>
                       </nav>`
                     : ''
                 }
+                <a class="calendar-link" href="${escapeHtml(calendarHref)}" aria-label="Open the save calendar">Calendar</a>
               </div>
             </div>
           </div>
+
+          ${
+            currentDay
+              ? `<div class="day-banner">
+                  <span>Showing ${total} ${view === 'archived' ? 'archived' : 'active'} of ${activeCount + archivedCount} ${activeCount + archivedCount === 1 ? 'save' : 'saves'} from <strong>${escapeHtml(dayLabel)}</strong>.</span>
+                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, view, lang }))}">Clear date</a>
+                </div>`
+              : ''
+          }
 
           ${
             topic
@@ -238,7 +266,7 @@ export function renderPage({
 
           <nav class="topic-tabs" aria-label="Topics">
             <a class="topic-tab all ${topic ? '' : 'active'}" href="${escapeHtml(
-              libraryHref('/', { view, lang }),
+              libraryHref('/', { day: currentDay, view, lang }),
             )}">All${topic ? '' : `<span>${view === 'archived' ? archivedCount : activeCount}</span>`}</a>
             ${topicTabs}
           </nav>
@@ -248,7 +276,7 @@ export function renderPage({
               ? `<div class="cards">${bookmarks
                   .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual))
                   .join('')}</div>`
-              : renderEmpty(query, view)
+              : renderEmpty(query, view, currentDay)
           }
 
           ${
@@ -265,6 +293,148 @@ export function renderPage({
         <span>Summaries by OpenCode</span>
         <span class="dot">·</span>
         <a href="/BookmarkShare.apk">Android share app</a>
+      </footer>
+    `,
+  });
+}
+
+export interface RenderCalendarOptions {
+  calendar: CalendarResult;
+  lang?: 'tr' | 'en';
+  error?: string | null;
+}
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function monthLabel(month: string): string {
+  const [year, number] = month.split('-').map(Number);
+  return new Intl.DateTimeFormat('en-GB', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, number - 1, 1)));
+}
+
+function monthShort(month: string): string {
+  const [year, number] = month.split('-').map(Number);
+  return new Intl.DateTimeFormat('en-GB', {
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, number - 1, 1)));
+}
+
+function shiftMonth(month: string, delta: number): string {
+  const [year, number] = month.split('-').map(Number);
+  return new Date(Date.UTC(year, number - 1 + delta, 1)).toISOString().slice(0, 7);
+}
+
+function calendarHref(month: string, lang: 'tr' | 'en'): string {
+  const params = new URLSearchParams();
+  if (month !== new Date().toISOString().slice(0, 7)) params.set('month', month);
+  if (lang === 'en') params.set('lang', 'en');
+  const search = params.toString();
+  return search ? `/calendar?${search}` : '/calendar';
+}
+
+export function renderCalendar({
+  calendar,
+  lang: langOption = 'tr',
+  error,
+}: RenderCalendarOptions): string {
+  const lang = langOption === 'en' ? 'en' : 'tr';
+  const month = calendar.month;
+  const label = monthLabel(month);
+  const [year, number] = month.split('-').map(Number);
+  const firstDay = new Date(Date.UTC(year, number - 1, 1)).getUTCDay();
+  const leading = (firstDay + 6) % 7;
+  const daysInMonth = new Date(Date.UTC(year, number, 0)).getUTCDate();
+  const today = new Date().toISOString().slice(0, 10);
+  const counts = new Map((calendar.days || []).map(day => [day.date, day.count]));
+
+  const blanks = Array.from(
+    { length: leading },
+    () => '<span class="cal-day is-blank" aria-hidden="true"></span>',
+  ).join('');
+
+  const cells = Array.from({ length: daysInMonth }, (_, index) => {
+    const dayNumber = index + 1;
+    const date = `${month}-${String(dayNumber).padStart(2, '0')}`;
+    const count = counts.get(date) || 0;
+    const isToday = date === today;
+    const classes = ['cal-day', count ? 'has-items' : '', isToday ? 'is-today' : '']
+      .filter(Boolean)
+      .join(' ');
+
+    if (!count) {
+      return `<span class="${classes}"><span class="cal-num">${dayNumber}</span></span>`;
+    }
+
+    const dayLabel = new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(`${date}T00:00:00.000Z`));
+
+    return `<a class="${classes}" href="${escapeHtml(
+      libraryHref('/', { day: date, lang }),
+    )}" aria-label="${escapeHtml(dayLabel)}, ${count} ${count === 1 ? 'save' : 'saves'}">
+      <span class="cal-num">${dayNumber}</span>
+      <span class="cal-count">${count}</span>
+    </a>`;
+  }).join('');
+
+  return pageShell({
+    title: `${label} · Calendar · X Bookmark Vault`,
+    bodyClass: 'home calendar-page',
+    head: '',
+    body: `
+      <header class="topbar">
+        <a class="brand" href="${escapeHtml(libraryHref('/', { lang }))}">
+          <span class="brand-mark">X</span>
+          <span>Bookmark Vault</span>
+        </a>
+        <div class="top-actions">
+          <span class="count">${calendar.total} saved this month</span>
+          <form method="post" action="/logout">
+            <button class="link-button" type="submit">Log out</button>
+          </form>
+        </div>
+      </header>
+
+      <main class="shell">
+        <section class="library calendar">
+          <div class="calendar-head">
+            <div>
+              <p class="eyebrow">Calendar · ${calendar.total} ${calendar.total === 1 ? 'save' : 'saves'}</p>
+              <h2>${escapeHtml(label)}</h2>
+            </div>
+            <nav class="calendar-nav" aria-label="Calendar months">
+              <a href="${escapeHtml(calendarHref(shiftMonth(month, -1), lang))}" aria-label="Previous month">‹ ${escapeHtml(monthShort(shiftMonth(month, -1)))}</a>
+              <a href="${escapeHtml(calendarHref(new Date().toISOString().slice(0, 7), lang))}">This month</a>
+              <a href="${escapeHtml(calendarHref(shiftMonth(month, 1), lang))}" aria-label="Next month">${escapeHtml(monthShort(shiftMonth(month, 1)))} ›</a>
+            </nav>
+          </div>
+
+          ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
+
+          <p class="calendar-note">Days use UTC and match the dates on the cards. Counts include archived bookmarks.</p>
+
+          <div class="calendar-grid" role="grid" aria-label="Saves per day, ${escapeHtml(label)}">
+            ${WEEKDAYS.map(day => `<span class="cal-weekday" role="columnheader">${day}</span>`).join('')}
+            ${blanks}
+            ${cells}
+          </div>
+
+          <p class="calendar-hint">Pick a day to see only what you saved then.</p>
+          <a class="small-button" href="${escapeHtml(libraryHref('/', { lang }))}">Back to the library</a>
+        </section>
+      </main>
+
+      <footer class="footer shell">
+        <span>Read via FxTwitter</span>
+        <span class="dot">·</span>
+        <span>Summaries by OpenCode</span>
       </footer>
     `,
   });
@@ -640,14 +810,31 @@ function renderMetrics(metrics: Partial<Metrics> = {}) {
   return items.join('<span class="dot">·</span>');
 }
 
-function renderEmpty(query: string, view: 'active' | 'archived' = 'active'): string {
+function renderEmpty(
+  query: string,
+  view: 'active' | 'archived' = 'active',
+  day: string | null = null,
+): string {
   if (query) {
     return `
       <div class="empty">
         <p class="empty-mark">∅</p>
         <h3>${view === 'archived' ? 'No matches in the archive' : 'No matches'}</h3>
-        <p>Nothing ${view === 'archived' ? 'archived ' : ''}in the library matches “${escapeHtml(query)}”.</p>
-        <a class="small-button" href="${escapeHtml(libraryHref('/', { view }))}">Clear search</a>
+        <p>Nothing ${view === 'archived' ? 'archived ' : ''}in the library matches “${escapeHtml(query)}”${day ? ' on this day' : ''}.</p>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { day, view }))}">Clear search</a>
+      </div>
+    `;
+  }
+
+  if (day) {
+    const label = formatDate(`${day}T00:00:00.000Z`);
+    return `
+      <div class="empty">
+        <p class="empty-mark">·</p>
+        <h3>Nothing saved on ${escapeHtml(label)}</h3>
+        <p>Pick another day from the calendar, or go back to the whole library.</p>
+        <a class="small-button" href="/calendar">Open calendar</a>
+        <a class="small-button" href="/">Back to library</a>
       </div>
     `;
   }
@@ -732,7 +919,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=7">
+  <link rel="stylesheet" href="/style.css?v=8">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1059,6 +1246,158 @@ h1, h2, h3, p { margin-top: 0; }
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
   opacity: 0.65;
+}
+
+.calendar-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.calendar-link:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.day-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.day-banner strong { color: var(--ink); }
+
+.day-banner a {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.calendar-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 8px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.calendar-head h2 {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 38px);
+  letter-spacing: -0.04em;
+}
+
+.calendar-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.calendar-nav a {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.calendar-nav a:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.calendar-note {
+  margin: 0 0 16px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cal-weekday {
+  padding: 4px 0;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.cal-day.has-items {
+  border-color: var(--line);
+  background: var(--surface);
+  transition: border-color 130ms ease, transform 130ms ease;
+}
+
+.cal-day.has-items:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.cal-num {
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-count {
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-day.is-today { border-color: var(--accent); }
+.cal-day.is-today .cal-num { font-weight: 800; }
+
+.calendar-hint {
+  margin: 14px 0 10px;
+  color: var(--faint);
+  font-size: 12px;
 }
 
 .archive-chip {
@@ -2042,5 +2381,12 @@ h1, h2, h3, p { margin-top: 0; }
   .topic-overview { padding: 15px 16px; }
   .topic-overview { padding: 16px 17px; }
   .topic-overview p { font-size: 15px; }
+  .calendar-head { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .calendar-grid { gap: 4px; }
+  .cal-day { min-height: 50px; border-radius: 9px; }
+  .cal-weekday { font-size: 9px; }
+  .cal-num { font-size: 12.5px; }
+  .cal-count { padding: 0 5px; font-size: 9.5px; }
+  .day-banner { align-items: flex-start; flex-direction: column; gap: 6px; }
 }
 `;
