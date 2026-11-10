@@ -23,6 +23,15 @@ export interface Env {
   X_API_BASE?: string;
   REQUEST_TIMEOUT_MS?: string;
   LINK_TIMEOUT_MS?: string;
+  /** Cloudflare Workers AI binding, used for X video transcription. */
+  AI?: WorkersAi;
+  /** Supadata key, used for YouTube captions. Optional: without it only X is transcribed. */
+  SUPADATA_API_KEY?: string;
+}
+
+/** The small part of the Workers AI binding this app uses. */
+export interface WorkersAi {
+  run(model: string, input: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface Author {
@@ -130,6 +139,24 @@ export interface LinkRead {
   error?: string;
 }
 
+export type TranscriptSource = 'x' | 'youtube';
+export type TranscriptStatus = 'done' | 'unavailable' | 'failed';
+
+/** A transcript read from a video attached to a post or linked from it. */
+export interface VideoTranscript {
+  /** The post or page the video lives on. */
+  url: string;
+  source: TranscriptSource;
+  provider: 'workers-ai' | 'supadata' | null;
+  lang: string | null;
+  text: string;
+  durationSec: number | null;
+  bytes: number | null;
+  status: TranscriptStatus;
+  error: string | null;
+  at: string;
+}
+
 export interface ParsedGitHubUrl {
   owner: string;
   repo: string;
@@ -195,6 +222,8 @@ export interface Bookmark {
   quote: Quote | null;
   article: XArticle | null;
   links: LinkRead[];
+  /** Spoken content from videos attached to or linked from the post. */
+  transcripts: VideoTranscript[];
   metrics: Metrics;
   summary: string | null;
   summaryStatus: string;
@@ -230,6 +259,7 @@ export type BookmarkRow = {
   quote_json: string;
   article_json: string;
   links_json: string;
+  transcripts_json: string;
   metrics_json: string;
   summary: string | null;
   summary_status: string;

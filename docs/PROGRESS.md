@@ -51,7 +51,7 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 
 | Table | Purpose |
 |---|---|
-| `bookmarks` | One row per X post: text, author, media JSON, quote JSON, article JSON, links JSON, metrics, `summary`, `summary_en`, `archived_at`, topic/version/translation job state |
+| `bookmarks` | One row per X post: text, author, media JSON, quote JSON, article JSON, links JSON, transcripts JSON, metrics, `summary`, `summary_en`, `archived_at`, topic/version/translation job state |
 | `topics` | AI-induced areas of interest: `slug`, `name`, `description`, `overview` (rolling synthesis), `overview_count` |
 | `item_topics` | Many-to-many filing, with confidence |
 | `summary_versions` | v2+ summaries, each with the instruction that produced it. v1 lives in `bookmarks.summary` |
@@ -79,7 +79,13 @@ wall-clock is long but CPU stays low.
 - Silent Android share (APK, translucent activity, Toast, auto-finish)
 - PWA shell with service worker (share target works on Chrome, not Brave)
 - AI summary: natural Turkish prose, 3–5 paragraphs; reads images as base64,
-  X Article bodies, quoted posts, and up to two external links
+  X Article bodies, quoted posts, up to two external links, and video transcripts
+- Video transcripts: the smallest MP4 of an X video goes to Workers AI
+  `@cf/openai/whisper-large-v3-turbo` (no key, ~214 free audio minutes/day).
+  YouTube links use Supadata native captions when `SUPADATA_API_KEY` is set.
+  Results are stored in `bookmarks.transcripts_json`, fed to the summarizer, and
+  shown in a fold. Two videos per bookmark, 20 MB each; a failure never blocks
+  the summary
 - Topic induction + per-item filing + rolling per-topic synthesis
 - Summary versions: "New version" with an optional instruction; original is
   never overwritten
@@ -157,6 +163,26 @@ wall-clock is long but CPU stays low.
 | Nov 10 | Archive toggle + bilingual summaries | Finished posts should leave the feed without being deleted; the same summaries should be readable in English |
 | Nov 10 | Calendar + single-day library view | Finding what was saved on a date should not require scrolling the whole feed |
 
+### Video transcripts
+
+X videos are read from the lowest-bitrate MP4 variant. Whisper accepts the MP4
+directly, so the Worker does not need ffmpeg or a separate download service.
+A 60-second Turkish clip transcribed in about 5 seconds; a 5.7-minute English
+clip took about 40 seconds and produced 6.4k characters. The model auto-detects
+the language, and the summary prompt treats the transcript as the record of what
+was actually said.
+
+YouTube is different: the watch page returns HTTP 429 to Worker IPs, so caption
+tracks cannot be scraped directly. Supadata's `mode=native` returns existing
+captions for 1 credit (100 free per month). Generated transcripts at 2
+credits/minute are intentionally not used. Without a key or captions, the
+summary uses the post and page text.
+
+Known limits: 20 MB per video (about 8 minutes at 256 kbps), two videos per
+bookmark. Long videos would need an external transcoder. Re-summarizing an
+existing bookmark backfills its transcript because `transcripts_json` starts
+empty for rows saved before this feature.
+
 ### Video digest pipeline (experiments, not in the app yet)
 
 1. Pull `/api/bookmarks`, pick items, write a narration (one continuous story).
@@ -191,7 +217,9 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
   restatement. Candidate fix: merge or suppress single-item syntheses.
 - **Some summaries open with "Özet:"**, the old robotic style. Re-summarizing
   fixes individual rows.
-- **Videos are not transcribed**; only the poster image reaches the AI.
+- **Video transcripts are capped at 20 MB and two per bookmark.** Whisper runs
+  on the MP4 bytes; the Worker cannot extract audio from larger files. YouTube
+  captions require `SUPADATA_API_KEY` and are native-only.
 - **Video pipeline is not committed** — it lived in `/tmp`, which this machine
   cleans. Recreate it under `video/` before relying on it.
 - **TTS is online**: edge-tts sends the script to Microsoft. Local options

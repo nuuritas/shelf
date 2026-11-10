@@ -21,6 +21,7 @@ src/bookmarks-do.ts  Durable Object: schema, queries, alarm queue, AI jobs
 src/ai.ts            OpenCode prompts + requests (summary, translation, topics, synthesis)
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
+src/transcript.ts    video transcripts (Workers AI Whisper for X, Supadata for YouTube)
 src/render.ts        SSR HTML + the entire stylesheet as a template string
 src/util.ts          escaping, linkify, cookies, base64, slugs
 src/types.ts         shared domain types
@@ -37,7 +38,7 @@ docs/PROGRESS.md     long-form project knowledge
 ```bash
 bun install                 # package manager is bun; npm is not installed
 bun run typecheck           # tsc --noEmit (TS 7.0.2, ~0.1 s)
-node --test                 # 22 tests, runs .ts directly on Node 26
+node --test                 # 29 tests, runs .ts directly on Node 26
 bunx wrangler dev           # local Worker (needs .dev.vars)
 bunx wrangler deploy        # deploy to bookmark.nuritas.tr + workers.dev
 bunx wrangler tail          # production logs
@@ -47,8 +48,9 @@ xbv mcp                     # stdio MCP server for Claude/Codex/Cursor
 ```
 
 `.dev.vars` (gitignored) needs `APP_PASSWORD`, `APP_SECRET`, `OPENCODE_API_KEY`,
-`SHARE_TOKEN`, `KEYSTORE_PASS`. The local OpenCode key is currently expired;
-production has a working secret.
+`SHARE_TOKEN`, `KEYSTORE_PASS`. `SUPADATA_API_KEY` is optional and only enables
+YouTube captions. The local OpenCode key is currently expired; production has a
+working secret.
 
 ## GitHub project
 
@@ -141,6 +143,12 @@ API: see `docs/PROGRESS.md` §3.
 - Prompts are product decisions. The summary voice is natural Turkish prose
   (3–5 paragraphs, no headings, no "Özet/Ana noktalar"), not a template. Keep it
   that way unless explicitly asked.
+- Video transcripts are read in `src/transcript.ts` before the summary call.
+  X videos use the smallest MP4 variant from `video.twimg.com` and Workers AI
+  `@cf/openai/whisper-large-v3-turbo` (binding `AI`; 10,000 free neurons/day is
+  about 214 audio minutes). YouTube uses Supadata `mode=native` only when
+  `SUPADATA_API_KEY` is set; never switch it to `auto`, which bills 2 credits
+  per generated minute. A transcript failure must never fail the summary.
 - `SUMMARY_LANGUAGE` sets the main summary language (Turkish in production).
   When the main language is Turkish, a finished summary automatically queues an
   English version in `summary_en` (`translateSummary`, session `xbv-<tweetId>-en`).
@@ -205,5 +213,10 @@ API: see `docs/PROGRESS.md` §3.
   not a rendering bug.
 - English translations are a second AI call; a failure must not change
   `summary_status`. The primary summary stays readable and the card offers retry.
-- Video/TTS work is experimental and not part of the app; see
-  `docs/PROGRESS.md` §5.
+- Video transcripts are part of the app; the separate video digest/TTS pipeline
+  is still experimental. See `docs/PROGRESS.md` §5.
+- Transcript caps: 20 MB and two videos per bookmark. Longer X videos need a
+  transcoder (the Worker cannot run ffmpeg); Supadata's generated mode is the
+  paid fallback, not the default.
+- YouTube returns HTTP 429 to Worker IPs, so do not try to scrape caption
+  tracks directly. Use Supadata or accept the page-description fallback.

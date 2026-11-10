@@ -326,6 +326,17 @@ function renderBookmark(bookmark: Bookmark): string {
   const versions = renderVersions(bookmark.versions || []);
   if (versions) lines.push('', versions);
 
+  for (const transcript of bookmark.transcripts || []) {
+    if (transcript.status !== 'done' || !transcript.text.trim()) continue;
+    const source = transcript.source === 'youtube' ? 'YouTube' : 'X video';
+    lines.push(
+      '',
+      `## Video transcript — ${source} (${transcript.lang || 'unknown language'})`,
+      '',
+      truncate(transcript.text.trim(), 6000),
+    );
+  }
+
   if (bookmark.media?.length) {
     lines.push('', `_Media: ${bookmark.media.length} item(s)._`);
   }
@@ -526,6 +537,13 @@ async function commandExport(args: ParsedArgs): Promise<void> {
         summaryEn: bookmark.summaryEn,
         text: bookmark.text,
         links: (bookmark.links || []).map(link => ({ url: link.finalUrl || link.url, title: link.title })),
+        transcripts: (bookmark.transcripts || [])
+          .filter(transcript => transcript.status === 'done' && transcript.text)
+          .map(transcript => ({
+            source: transcript.source,
+            lang: transcript.lang,
+            text: transcript.text,
+          })),
         file: exportFileName(bookmark),
       }),
     )

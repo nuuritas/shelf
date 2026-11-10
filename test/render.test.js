@@ -68,6 +68,7 @@ function sampleBookmark(overrides = {}) {
     quote: null,
     article: null,
     links: [],
+    transcripts: [],
     metrics: {},
     summary: 'Türkçe özet.',
     summaryStatus: 'done',
@@ -145,6 +146,42 @@ test('offers to write a missing English summary', () => {
   assert.match(html, /Write English summary/);
   assert.match(html, /name="mode" value="translate"/);
   assert.match(html, /1 finished summary has/);
+});
+
+test('renders a video transcript with language, duration, and source', () => {
+  const html = renderPage({
+    bookmarks: [
+      sampleBookmark({
+        transcripts: [
+          {
+            url: 'https://x.com/a/status/123',
+            source: 'x',
+            provider: 'workers-ai',
+            lang: 'tr',
+            text: 'Konuşmanın tam metni burada.',
+            durationSec: 340,
+            bytes: 4218793,
+            status: 'done',
+            error: null,
+            at: '2026-11-10T20:00:00.000Z',
+          },
+        ],
+      }),
+    ],
+    total: 1,
+    query: '',
+    view: 'active',
+    lang: 'tr',
+    activeTotal: 1,
+    archivedTotal: 0,
+  });
+
+  assert.match(html, /<details class="transcripts">/);
+  assert.match(html, /Video transcript/);
+  assert.match(html, /5:40/);
+  assert.match(html, /TR/);
+  assert.match(html, /Whisper/);
+  assert.match(html, /Konuşmanın tam metni burada\./);
 });
 
 test('renders a monthly calendar with per-day counts and day links', () => {

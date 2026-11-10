@@ -116,7 +116,22 @@ async function readLink(url: string, env: Partial<Env>): Promise<LinkRead | null
   const github = parseGitHubUrl(target);
   if (github) return readGitHub(github, target, env);
 
-  return readWebPage(target, env);
+  try {
+    return await readWebPage(target, env);
+  } catch (error) {
+    // Keep the resolved target: a t.co link that points at YouTube still has
+    // to be recognisable as YouTube after the page read fails.
+    return {
+      url,
+      finalUrl: target,
+      kind: 'web',
+      title: hostnameOf(target),
+      siteName: hostnameOf(target),
+      description: '',
+      text: '',
+      error: error instanceof Error ? error.message.slice(0, 240) : 'Could not read this link.',
+    };
+  }
 }
 
 export function parseGitHubUrl(input: string): ParsedGitHubUrl | null {
