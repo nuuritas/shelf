@@ -1,15 +1,29 @@
-# Password for the web app and share target.
+# Copy to `.dev.vars` for local development, or run `bun run setup` to generate
+# one with fresh secrets. Never commit `.dev.vars`.
+
+# Password for the web app and the share target. Required.
 APP_PASSWORD=replace-with-a-long-password
 
-# Optional. Used to sign the session cookie. If omitted, APP_PASSWORD is used.
+# Optional. Signs the session cookie. If omitted, APP_PASSWORD is used.
 # APP_SECRET=replace-with-another-long-secret
 
-# OpenCode Go API key. Leave empty to save bookmarks without AI summaries.
-OPENCODE_API_KEY=
+# API key for the OpenAI-compatible endpoint configured in wrangler.jsonc.
+# Leave empty to save bookmarks without AI summaries.
+AI_API_KEY=
+
+# Supadata key. Optional: enables YouTube captions inside the Worker.
+# SUPADATA_API_KEY=
+
+# Read-only GitHub token. Optional: raises the API rate limit for link reading.
+# GITHUB_TOKEN=
 
 # Required only for rebuilding the Android APK.
 # Use a long random value; the same value must be set as the Worker secret.
 SHARE_TOKEN=
+
+# Full URL the share APK posts to, e.g.
+# https://your-worker.workers.dev/api/bookmarks
+SHARE_ENDPOINT=
 
 # Password for the local APK signing keystore.
 KEYSTORE_PASS=

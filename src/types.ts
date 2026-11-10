@@ -10,6 +10,9 @@
 export interface Env {
   APP_PASSWORD: string;
   APP_SECRET?: string;
+  /** API key for the OpenAI-compatible endpoint in `AI_BASE_URL`. */
+  AI_API_KEY?: string;
+  /** Older name for `AI_API_KEY`; still read so old deployments keep working. */
   OPENCODE_API_KEY?: string;
   SHARE_TOKEN?: string;
   GITHUB_TOKEN?: string;

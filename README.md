@@ -1,212 +1,158 @@
 # X Bookmark Vault
 
-A tiny Cloudflare-native app for saving X posts, their quoted posts, and their images — with an automatic AI summary.
+A tiny, self-hosted reader for your X (Twitter) bookmarks: paste or share a post, and it saves the text, quoted post, article, images, and links, then writes a natural-language explanation of what it says and why it might matter.
 
-No Docker, no Telegram bot, no tunnel, and no X API subscription. The app runs as a Worker with one SQLite-backed Durable Object.
+Runs entirely on Cloudflare — one Worker, one SQLite-backed Durable Object, server-rendered HTML, no build step, no Docker, no X API subscription. It costs nothing on the free plan for personal use.
 
-Architecture, history, and known traps live in [docs/PROGRESS.md](docs/PROGRESS.md). Contributors and coding agents should start with [AGENTS.md](AGENTS.md).
+Live example: <https://bookmark.nuritas.tr>
 
 ## What it does
 
-Paste an X link, or share one from Android:
+- **Save** by pasting a link, using the Android share sheet, or calling the API.
+- **Read the post properly**: text, author, quoted post, full X Articles, images, video URLs, and metrics.
+- **Read the links** in the post: GitHub repos through the API and README, other pages through a readability extractor.
+- **Summarize** with any OpenAI-compatible model. Summaries are prose, not a template.
+- **Use it as an archive**: topics induced from what you actually save, rolling syntheses per topic, full-text search, a calendar, and archive/restore.
+- **Reach it from AI tools**: a Bun CLI and a stdio MCP server, so Claude Code, Codex, or Cursor can search the vault themselves.
 
-1. The Worker reads the post through the public FxTwitter API (or the official X API if you add a bearer token).
-2. It saves the text, author, quote, X Article content, images, video URLs, and metrics.
-3. It reads the first external link(s) in the post: GitHub repos use the GitHub API + README; normal pages use a small readability extractor.
-4. It transcribes videos: X videos through Cloudflare Workers AI Whisper, YouTube links through Supadata captions when configured.
-5. It sends the post, article, link text, transcript, and images to OpenCode Go for a natural-language explanation, then queues an English translation of that explanation.
-6. It renders a private, mobile-friendly library.
+## Deploy your own
 
-The first summary is never overwritten. From any card you can ask for a new version with an optional direction ("explain the tradeoffs", "give the history"), and the result is stored beside the original as v2, v3, and so on.
+You need a Cloudflare account and [Bun](https://bun.sh). Nothing else is required — the app runs on the free plan.
 
-The **Calendar** link opens a month grid with the number of saves on each day. Click a day to see only what you saved then, with the normal archive and language controls still available.
-
-When you are done with a post, **Archive** it. It leaves the Active list but stays in the archive with its summary, topics, and search text; switch to Archived to read it again or restore it. Nothing is deleted unless you press Remove.
-
-Summaries live on two boards: **Türkçe** (primary) and **English** (translation). The switch at the top of the library re-renders the same page in either language. New summaries get an English version automatically; for older rows, the English board offers a button to queue the missing translations.
-
-Video transcripts open in a fold under the summary; they are in the language of the video, not translated. If no OpenCode key is configured, saving still works; the card simply says the summary is not configured.
-
-## Knowledge layer
-
-The vault is not a flat list. After a few saves it becomes a small, self-organizing archive:
-
-- **Topics.** The AI induces 5-9 durable areas of interest from what you actually saved (not formats like "articles" or "videos"), and every new save is filed into 1-3 of them. Tabs at the top of the library are these topics.
-- **Rolling syntheses.** Each topic page carries a 3-4 paragraph synthesis written from *all* the items in it, not from a single post. As new items arrive it is rewritten: recurring concerns, how later items sharpen or contradict earlier ones, and what is still open.
-- **New topic creation.** If nothing existing is a reasonable home, the filing step may create one new topic — never a one-off or a format.
-
-The engine runs in the background inside the same Durable Object. Each alarm pass does one unit of work, in order: summarize a new save, write a requested version or English translation, file the item into topics, then rewrite the one topic whose synthesis is stale. Nothing else is needed to keep the archive coherent.
-
-`POST /api/reindex` re-induces the whole taxonomy from the archive (useful after a prompt change or a large import). It replaces existing topics and assignments, then the alarm rewrites every synthesis.
-
-## Source
-
-Private repository: <https://github.com/nuuritas/x-bookmark-vault>.
-
-`.dev.vars`, the signing keystore, Wrangler state, and `public/BookmarkShare.apk` are gitignored: the APK embeds the add-only share token, so it is rebuilt with `android/build.sh` rather than committed.
-
-## Deploy
-
-Requirements: Node 20+ and a logged-in Wrangler.
+### Option A: one command
 
 ```bash
-wrangler whoami
-wrangler deploy
+git clone https://github.com/nuuritas/x-bookmark-vault.git
+cd x-bookmark-vault
+bun install
+bun run setup
 ```
 
-Set the app password:
+`bun run setup` generates a `.dev.vars` with fresh random secrets, uploads them to your Worker, and deploys. It prints the `https://<your-worker>.workers.dev` URL when it finishes. Open it and log in with the `APP_PASSWORD` from `.dev.vars`.
+
+Re-running it is safe: it keeps values that already exist.
+
+If Wrangler is not logged in yet, run `bunx wrangler login` first.
+
+### Option B: manual
 
 ```bash
-wrangler secret put APP_PASSWORD
+bun install
+cp .dev.vars.example .dev.vars     # edit APP_PASSWORD
+bunx wrangler secret put APP_PASSWORD
+bunx wrangler deploy
 ```
 
-Set the OpenCode key (optional, enables summaries):
+Then set the optional secrets you want with `secret put`, or in the dashboard under **Settings → Variables and Secrets**.
+
+### Optional: your own domain
+
+A `workers.dev` URL works fine. For a custom domain, add it to `wrangler.jsonc`:
+
+```jsonc
+"routes": [{ "pattern": "bookmarks.example.com", "custom_domain": true }]
+```
+
+The domain must be on the same Cloudflare account. To keep your domain out of git, copy `wrangler.personal.example.jsonc` to `wrangler.personal.jsonc` (gitignored), edit it, and deploy with `bun run deploy:personal`.
+
+## Configuration
+
+Everything is optional except the password.
+
+| Name | Kind | Default | Purpose |
+| --- | --- | --- | --- |
+| `APP_PASSWORD` | secret | — | **Required.** The single password for the web app and API. |
+| `APP_SECRET` | secret | `APP_PASSWORD` | Signs the session cookie. Set it so rotating the password does not invalidate sessions awkwardly. |
+| `AI_API_KEY` | secret | — | Key for the OpenAI-compatible endpoint. Without it, saving works and summaries are skipped. |
+| `AI_BASE_URL` | var | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint. |
+| `AI_MODEL` | var | `gpt-4.1-mini` | Model name at that endpoint. Vision support is needed for image-aware summaries. |
+| `SUMMARY_LANGUAGE` | var | `en` | `en` or `tr`. With `tr`, an English translation is also stored per bookmark. |
+| `SUPADATA_API_KEY` | secret | — | Enables YouTube captions inside the Worker. |
+| `GITHUB_TOKEN` | secret | — | Read-only token; raises GitHub API limits when reading repo links. |
+| `X_BEARER_TOKEN` + `X_PROVIDER=official` | secret + var | — | Use the official X API instead of the public FxTwitter reader. |
+| `SHARE_TOKEN` | secret | — | Add-only token embedded in the Android share APK. |
+
+`AI_BASE_URL` and `AI_MODEL` live in `wrangler.jsonc`; edit them or override with Wrangler vars. Any endpoint that speaks `POST /chat/completions` works — OpenAI, OpenRouter, a local gateway, or OpenCode Go:
+
+```jsonc
+"vars": {
+  "AI_BASE_URL": "https://openrouter.ai/api/v1",
+  "AI_MODEL": "google/gemini-2.5-flash",
+  "SUMMARY_LANGUAGE": "en"
+}
+```
+
+## Optional pieces
+
+### Android share APK
+
+A share-sheet target that saves the current post in the background and shows a toast. There is no iOS equivalent.
+
+Building it needs the Android SDK build tools (`aapt2`, `d8`, `apksigner`), not Android Studio. Add three values to `.dev.vars`, then build:
 
 ```bash
-wrangler secret put OPENCODE_API_KEY
+SHARE_TOKEN=<long random value>                       # same value as the Worker secret
+SHARE_ENDPOINT=https://<your-worker>.workers.dev/api/bookmarks
+KEYSTORE_PASS=<password for the local signing key>
 ```
-
-Set the APK share token (only needed if you use the Android APK):
 
 ```bash
-wrangler secret put SHARE_TOKEN
+./android/build.sh        # writes public/BookmarkShare.apk
 ```
 
-For higher GitHub API limits, optionally set a read-only GitHub token:
+A keystore is generated on first build and gitignored. The APK embeds `SHARE_TOKEN`, so build it locally and never commit it.
+
+The web app is also a PWA with a share target, but browsers differ: Chrome installs it as a share target, Brave installs a shortcut that does not appear in the share sheet. The APK is the reliable path.
+
+### CLI and MCP server
+
+`cli/xbv.ts` is dependency-free and talks to the same JSON API:
 
 ```bash
-wrangler secret put GITHUB_TOKEN
+ln -sf "$PWD/cli/xbv.ts" ~/.local/bin/xbv
+xbv config --url https://<your-worker>.workers.dev --password '<APP_PASSWORD>'
+xbv search "postgres indexes"
+xbv show k7f3                    # short id printed on every card
+xbv export --dir ~/Documents/bookmarks
+xbv mcp                          # stdio MCP server for Claude/Codex/Cursor
 ```
 
-The default AI settings are in `wrangler.jsonc`:
+### YouTube transcripts
 
-- Base URL: `https://opencode.ai/inference/go/openai/v1` (OpenCode Go)
-- Model: `deepseek-v4.1-flash` (text + image input)
+YouTube refuses caption requests from Cloudflare's IP range, so YouTube is the only part that cannot run in the Worker.
 
-To use a different OpenAI-compatible endpoint or model, change `AI_BASE_URL` / `AI_MODEL` in `wrangler.jsonc`, or override them with Wrangler vars.
+- Free path: `xbv youtube` runs a local extractor on your residential connection, posts the transcript back, and re-queues the summary. Manual or scheduled; nothing else in the app depends on it.
+- Managed path: set `SUPADATA_API_KEY` and the Worker fetches native captions itself.
 
-## Android: silent share APK (recommended)
-
-Download and install:
-
-```
-https://bookmark.nuritas.tr/BookmarkShare.apk
-```
-
-Then in X: **Share → Bookmarks**. The APK has no visible UI: it posts the link in the background, shows a short “Saved to Bookmarks” toast, and closes. The library itself stays in the PWA/web app.
-
-Android will ask you to allow installs from the browser the first time.
-
-### Rebuilding the APK
-
-The APK embeds an add-only `SHARE_TOKEN`. The token can add bookmarks but cannot read or delete them.
-
-```bash
-# SHARE_TOKEN and KEYSTORE_PASS are read from .dev.vars
-./android/build.sh
-```
-
-Set the matching Worker secret:
-
-```bash
-wrangler secret put SHARE_TOKEN
-```
-
-### PWA option
-
-The web app is also installable. Brave currently installs it as a shortcut, not a WebAPK, so it does **not** appear in Android’s share sheet. Install from Chrome if you want the PWA share target. The APK is the reliable option.
+Either way, a missing transcript never blocks saving or summarizing.
 
 ## Local development
 
 ```bash
-cp .dev.vars.example .dev.vars
-# edit .dev.vars
-wrangler dev
-```
-
-Then open `http://localhost:8787`.
-
-Run the unit tests:
-
-```bash
+cp .dev.vars.example .dev.vars   # set APP_PASSWORD
+bunx wrangler dev                # http://localhost:8787
+bun run typecheck
 node --test
 ```
 
-## From your own AI tools (CLI + MCP)
+## How it works
 
-The archive is readable from the terminal, so any saved post can be dropped into a chat or indexed locally. `cli/xbv.ts` is a dependency-free Bun script; the vault stays in the Worker, nothing is synced.
+One Durable Object named `library` holds the SQLite database. `fetch` in the Worker authenticates and routes; background work runs through the DO alarm queue, one unit per pass: summary → new version → English translation → topic bootstrap → filing → stale synthesis. Nothing else needs to run — no cron, no queue, no separate worker.
 
-```bash
-ln -sf "$PWD/cli/xbv.ts" ~/.local/bin/xbv
-xbv config --password <APP_PASSWORD>     # writes ~/.config/xbv/config.json (mode 0600)
-```
+Longer notes on architecture, API routes, measured usage, and known traps are in [docs/PROGRESS.md](docs/PROGRESS.md). If you are an AI agent working in this repo, read [AGENTS.md](AGENTS.md).
 
-Every card in the library shows a short id like `#k7f3` next to the date. Click it to copy, then refer to that bookmark anywhere:
+## Know before you deploy
 
-```bash
-xbv show k7f3                            # short id from the card (also accepts tweet id or URL)
-xbv search "claude code agents"          # text, AI summaries, authors, topic names
-xbv show 1985100000000000000             # full markdown: summary, post, quote, links
-xbv topics                               # topics + rolling syntheses
-xbv topic ai-agents                      # one topic's synthesis and its items
-xbv recent --limit 20
-xbv export --dir ~/Documents/bookmarks   # one .md per bookmark + bookmarks.jsonl + INDEX.md
-xbv stats
-xbv youtube --limit 20                   # fetch missing YouTube transcripts on this Mac
-```
+- **Single user.** One password, one library. There are no accounts and no login rate limiting — put Cloudflare Access in front if you want more than a password.
+- **`POST /api/reindex` is destructive**: it replaces the topic taxonomy and assignments, then rewrites syntheses.
+- **Free-tier CPU** is 10 ms per request. Normal pages are far under it, but very large libraries can approach the cap.
+- **Data stays in your account**: the Durable Object, plus whatever your AI provider receives (post text, links, image bytes).
+- **FxTwitter is unofficial**: no SLA, and X can break or rate-limit it. `X_BEARER_TOKEN` + `X_PROVIDER=official` is the paid alternative.
 
-YouTube blocks caption requests from Cloudflare's IP range, so YouTube is the one part that does not run in the Worker. `xbv youtube` runs `get-youtube-transcript` on your own connection, stores the transcript through the API, and re-queues the summary. The first run downloads the helper; after that it is cached. Run it manually or schedule it with `launchd`/`cron`:
+## Contributing
 
-```bash
-# ~/Library/LaunchAgents/tr.nuritas.xbv-youtube.plist, or a crontab line:
-0 * * * * cd /path/to/bookmark && /opt/homebrew/bin/bun cli/xbv.ts youtube --limit 10
-```
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-This is free and unlimited. The alternative is a Supadata key, which the Worker uses directly.
+## License
 
-Configuration precedence: `XBV_URL` / `XBV_PASSWORD`, then `~/.config/xbv/config.json`, then `.dev.vars` when run inside the repo.
-
-### MCP server
-
-`xbv mcp` runs a stdio MCP server exposing `search_bookmarks`, `get_bookmark`, `list_topics`, and `get_topic`, so Claude Code/Desktop, Codex, or Cursor can search the vault themselves instead of you pasting text.
-
-```bash
-claude mcp add xbv -- xbv mcp
-codex mcp add xbv -- xbv mcp
-```
-
-Then "what did I save about Postgres indexes?" is answered from the archive. Results are markdown tuned for an LLM: the AI summary first, then the original post, quoted post, article, and linked-page text.
-
-## API
-
-All API routes require the session cookie or `Authorization: Bearer <APP_PASSWORD>`. The APK uses a separate add-only `SHARE_TOKEN` for `POST /api/bookmarks`.
-
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/bookmarks?q=&topic=&day=&view=&limit=&offset=` | List bookmarks; `day=YYYY-MM-DD` limits to one saved day; `view=active|archived|all` (default active); `q` terms are ANDed and match text, author, both summaries, links, and topic names |
-| `POST` | `/api/bookmarks` | Save `{ "url": "https://x.com/..." }` |
-| `GET` | `/api/bookmarks/:id` | Get one bookmark by short id (e.g. `k7f3`) or tweet id |
-| `DELETE` | `/api/bookmarks/:id` | Delete by short id or tweet id |
-| `POST` | `/api/bookmarks/:id/archive` | `{ "archived": true }` archives; `false` restores |
-| `POST` | `/api/bookmarks/:id/summarize` | Queue a summary; `{ "mode": "version", "instruction": "..." }` adds a version; `{ "mode": "translate" }` queues English |
-| `POST` | `/api/bookmarks/:id/transcripts` | Store a finished transcript (`{ "transcripts": [...] }`) and re-queue the summary; used by `xbv youtube` |
-| `POST` | `/api/translations/en` | Queue English for every finished summary that lacks it |
-| `GET` | `/api/topics` | Topics with counts and syntheses |
-| `GET` | `/api/calendar?month=YYYY-MM` | Save counts per UTC day for one month |
-| `POST` | `/api/reindex` | Rebuild the topic taxonomy from the archive |
-| `GET` | `/api/stats` | Counts |
-| `GET` | `/healthz` | Health check, no auth |
-
-A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, `summaryEn`, `summaryStatus`, `archivedAt`, `topics`, `transcripts`, and `versions` (v2 and later, each with the instruction that produced it). Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs. `transcripts` holds the spoken text, language, duration, provider, and status for up to two videos per bookmark.
-
-## Notes and limits
-
-- FxTwitter is a public, unofficial reader. It works without a key, but has no SLA and can be rate-limited or broken by X changes. For a paid, official path, set `X_BEARER_TOKEN` and `X_PROVIDER=official` in Wrangler.
-- Protected, deleted, age-restricted, or login-gated posts may not be readable.
-- X native Articles (`x.com/i/article/...`) are read in full and included in the summary.
-- External links are fetched, but JavaScript-heavy or paywalled sites may not expose readable text. GitHub repositories use the API and README.
-- Images are downloaded and sent to the AI model as base64. X videos are transcribed from the smallest MP4 variant with Workers AI Whisper (20 MB cap, roughly 8 minutes at the lowest bitrate). YouTube links use native captions through Supadata when `SUPADATA_API_KEY` is set, or through `xbv youtube` from a residential connection. YouTube blocks direct caption scraping from Worker IPs, and Workers cannot run ffmpeg for longer videos.
-- Summaries are written as natural context-focused explanations, not a fixed sections template.
-- Summaries are generated in Turkish by default (`SUMMARY_LANGUAGE=tr`). Set it to `en` for an English primary. With Turkish primary, an English translation is stored separately.
-- Topic syntheses and summary versions stay in the primary language (Turkish); the English board translates bookmark summaries only.
-- This is a single-user app: one password, one shared library.
+MIT — see [LICENSE](LICENSE).

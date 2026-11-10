@@ -3,9 +3,6 @@
   "name": "x-bookmark-vault",
   "main": "src/worker.ts",
   "workers_dev": true,
-  "routes": [
-    { "pattern": "bookmark.nuritas.tr", "custom_domain": true }
-  ],
   "compatibility_date": "2026-10-26",
   "assets": {
     "directory": "./public"
@@ -25,9 +22,11 @@
       "new_sqlite_classes": ["Bookmarks"]
     }
   ],
+  // Defaults for a fresh deploy. Override with `wrangler secret put` (keys) or
+  // by editing the vars below (endpoint, model, summary language).
   "vars": {
-    "AI_BASE_URL": "https://opencode.ai/inference/go/openai/v1",
-    "AI_MODEL": "deepseek-v4.1-flash",
-    "SUMMARY_LANGUAGE": "tr"
+    "AI_BASE_URL": "https://api.openai.com/v1",
+    "AI_MODEL": "gpt-4.1-mini",
+    "SUMMARY_LANGUAGE": "en"
   }
 }

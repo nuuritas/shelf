@@ -229,12 +229,11 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - **Video transcripts are capped at 20 MB and two per bookmark.** Whisper runs
   on the MP4 bytes; the Worker cannot extract audio from larger files. YouTube
   captions require `SUPADATA_API_KEY` and are native-only.
-- **YouTube proxy/VPS checks (2026-11-11)**: the Hostinger VPS
-  (`147.93.127.210`), Webshare direct proxies (Leaseweb, Hype Enterprises,
-  HostPapa), and the rotating endpoint all return 429 or `LOGIN_REQUIRED`.
-  Webshare backbone ports 10000–10003 refuse connections, and the account has
-  no residential mode. Only the Mac's residential IP works, via the hourly
-  `xbv youtube` cron.
+- **YouTube proxy/VPS checks (2026-11-11)**: a VPS and several commercial
+  proxy providers (direct and rotating) all return 429 or `LOGIN_REQUIRED`;
+  some backbone ports refuse connections outright, and residential egress was
+  not available from those providers. Only a residential connection works,
+  which is what the hourly `xbv youtube` run uses.
 - **Video pipeline is not committed** — it lived in `/tmp`, which this machine
   cleans. Recreate it under `video/` before relying on it.
 - **TTS is online**: edge-tts sends the script to Microsoft. Local options

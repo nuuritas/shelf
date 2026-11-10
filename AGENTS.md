@@ -11,14 +11,16 @@ SQLite-backed Durable Object (`src/bookmarks-do.ts`). Server-rendered HTML, no
 client framework, no build step. TypeScript 7.0.2 (native compiler), bundled by
 Wrangler.
 
-Live: <https://bookmark.nuritas.tr>. Repo: private GitHub, `main` is deployed.
+Live example: <https://bookmark.nuritas.tr>. The repository is public; `main`
+deploys the maintainer's instance. Anyone else deploys their own copy with
+`bun run setup` and keeps their domain in a gitignored `wrangler.personal.jsonc`.
 
 ## Layout
 
 ```
 src/worker.ts        routing, auth, redirects, HTML responses
 src/bookmarks-do.ts  Durable Object: schema, queries, alarm queue, AI jobs
-src/ai.ts            OpenCode prompts + requests (summary, translation, topics, synthesis)
+src/ai.ts            AI prompts + requests (summary, translation, topics, synthesis)
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
 src/transcript.ts    video transcripts (Workers AI Whisper for X, Supadata for YouTube)
@@ -28,7 +30,7 @@ src/types.ts         shared domain types
 public/              static assets, PWA manifest/service worker, share APK
 android/             transparent share APK sources + no-Gradle build script
 cli/xbv.ts           Bun CLI + stdio MCP server (search/show/export/mcp)
-.github/workflows/   project push log (All work board)
+.github/workflows/   CI + maintainer push log
 test/                node:test unit tests
 docs/PROGRESS.md     long-form project knowledge
 ```
@@ -39,8 +41,10 @@ docs/PROGRESS.md     long-form project knowledge
 bun install                 # package manager is bun; npm is not installed
 bun run typecheck           # tsc --noEmit (TS 7.0.2, ~0.1 s)
 node --test                 # 30 tests, runs .ts directly on Node 26
+bun run setup               # fresh deploy: write .dev.vars, push secrets, deploy
 bunx wrangler dev           # local Worker (needs .dev.vars)
-bunx wrangler deploy        # deploy to bookmark.nuritas.tr + workers.dev
+bun run deploy:personal     # deploy the maintainer instance (wrangler.personal.jsonc)
+bunx wrangler deploy        # deploy with the public wrangler.jsonc
 bunx wrangler tail          # production logs
 ./android/build.sh          # rebuild public/BookmarkShare.apk
 xbv search "claude code"    # CLI → ~/.local/bin/xbv symlink to cli/xbv.ts
@@ -48,15 +52,18 @@ xbv mcp                     # stdio MCP server for Claude/Codex/Cursor
 xbv youtube [--limit 20]    # fetch missing YouTube transcripts from this Mac
 ```
 
-`.dev.vars` (gitignored) needs `APP_PASSWORD`, `APP_SECRET`, `OPENCODE_API_KEY`,
-`SHARE_TOKEN`, `KEYSTORE_PASS`. `SUPADATA_API_KEY` is optional and only enables
-YouTube captions. The local OpenCode key is currently expired; production has a
-working secret.
+`.dev.vars` (gitignored) needs `APP_PASSWORD`, `APP_SECRET`, `AI_API_KEY`,
+`SHARE_TOKEN`, `KEYSTORE_PASS`, and `SHARE_ENDPOINT` for APK builds.
+`SUPADATA_API_KEY` is optional and only enables YouTube captions. `AI_API_KEY`
+is the OpenAI-compatible key; `OPENCODE_API_KEY` still works as an alias. The
+local OpenCode key is currently expired; production has a working secret.
 
-## GitHub project
+## Maintainer project board (forks can ignore this)
 
-The repository is linked to the user project **All work**
-(<https://github.com/users/nuuritas/projects/1>). GitHub Projects has no commit
+The maintainer's repository is linked to the user project **All work**
+(<https://github.com/users/nuuritas/projects/1>); forks do not need it and can
+delete `.github/workflows/project-push-log.yml`, which skips itself when the
+`PUSH_LOG_ISSUE` variable is absent. GitHub Projects has no commit
 item type, so `.github/workflows/project-push-log.yml` keeps one issue
 (`XB · push log`) updated on every push to `main`: it prepends the pushed commits
 to the issue body and sets the title to the newest commit. That issue is the
@@ -69,9 +76,10 @@ The push log is a **feed**, not the task record. Normal work uses one issue per
 change and a real PR; see **Delivery workflow** below. The push log still records
 the merge commits that arrive on `main`.
 
-## Delivery workflow
+## Maintainer delivery workflow
 
-Every change, including docs and chores, follows the same loop:
+Public contributors follow `CONTRIBUTING.md` (fork → branch → PR). The
+maintainer's own changes, including docs and chores, follow this loop:
 
 1. Open an issue in `nuuritas/x-bookmark-vault` with the goal and an acceptance
    check.
@@ -87,9 +95,9 @@ Every change, including docs and chores, follows the same loop:
 7. Delete the branch.
 
 Direct pushes to `main` are reserved for emergencies: they update the `XB · push
-log` card but do not create a task card. The current private repository plan does
-not offer branch protection or rulesets, so this loop is enforced by convention;
-do not take the shortcut.
+log` card but do not create a task card. The repository plan does not offer
+branch protection or rulesets, so this loop is enforced by convention; do not
+take the shortcut.
 
 ## Request flow
 
@@ -133,9 +141,11 @@ API: see `docs/PROGRESS.md` §3.
 
 ## AI layer rules
 
-- All calls go to OpenCode Go (`AI_BASE_URL`) with model `AI_MODEL`
-  (`deepseek-v4.1-flash`) and **must** send `x-opencode-session`. Use a stable
-  per-job value (`xbv-<tweetId>`, `xbv-<tweetId>-v<n>`, `xbv-topic-<slug>`).
+- All calls go to the OpenAI-compatible endpoint in `AI_BASE_URL` with model
+  `AI_MODEL`, authorised by `AI_API_KEY` (`OPENCODE_API_KEY` is a legacy alias).
+  Every request also sends `x-opencode-session` with a stable per-job value
+  (`xbv-<tweetId>`, `xbv-<tweetId>-v<n>`, `xbv-topic-<slug>`). OpenCode Go
+  requires that header; other endpoints ignore it, so keep sending it.
 - Budget `max_tokens`/`max_completion_tokens` at 4096 for prose; smaller models
   otherwise spend the budget on reasoning and return empty text.
 - Structured calls (`bootstrapTopics`, `classifyPost`) parse JSON leniently:
@@ -197,7 +207,7 @@ API: see `docs/PROGRESS.md` §3.
 1. `bun run typecheck` — must be clean.
 2. `node --test` — must pass.
 3. If CSS/markup changed: bump `?v=` and check the page with a session cookie.
-4. If Worker code changed: `bunx wrangler deploy --dry-run` on the branch, then
+4. If Worker code changed: `bun run deploy:personal -- --dry-run` on the branch, then
    deploy from `main` after the merge.
 5. If AI behaviour changed: run one real save/reindex in production and inspect
    the resulting text, not just the HTTP status.
@@ -212,8 +222,10 @@ API: see `docs/PROGRESS.md` §3.
   `out/` (gitignored) or the repo, not `/tmp`.
 - Brave installs the PWA as a shortcut, so its share target never appears;
   the APK is the supported share path.
-- `wrangler.jsonc` keeps `workers_dev: true` next to the custom domain. Removing
-  it makes the workers.dev URL return 404.
+- Keep `workers_dev: true`. Removing it makes the workers.dev URL return 404.
+- A custom domain lives in `wrangler.personal.jsonc`, not the tracked
+  `wrangler.jsonc`. Deploying with the wrong config detaches the custom domain;
+  use `bun run deploy:personal` for the maintainer instance.
 - Summary rows can contain "Özet:" prefixes from older prompts; that is data,
   not a rendering bug.
 - English translations are a second AI call; a failure must not change
@@ -227,8 +239,7 @@ API: see `docs/PROGRESS.md` §3.
   `LOGIN_REQUIRED`, so do not try to scrape caption tracks in the Worker. Use
   Supadata, `xbv youtube` from a residential connection, or accept the
   page-description fallback.
-- The Hostinger VPS (`147.93.127.210`) and the Webshare direct/rotating proxies
-  were also tested and get the same 429/`LOGIN_REQUIRED`. Webshare backbone
-  ports 10000–10003 refuse connections, and the account has no residential
-  mode. Do not retry those for YouTube; only a residential IP or a managed API
+- A VPS and several commercial proxy providers were also tested and get the
+  same 429/`LOGIN_REQUIRED`; backbone ports sometimes refuse connections. Do not
+  retry datacenter egress for YouTube; only a residential IP or a managed API
   works.

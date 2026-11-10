@@ -19,8 +19,8 @@ import java.util.regex.Pattern;
  * URL to the Cloudflare Worker, shows a toast, and finishes. No app UI.
  */
 public class ShareActivity extends Activity {
-    private static final String ENDPOINT =
-            "https://bookmark.nuritas.tr/api/bookmarks";
+    // Both values are injected by android/build.sh; never commit real ones.
+    private static final String ENDPOINT = "__SHARE_ENDPOINT__";
     private static final String TOKEN = "__SHARE_TOKEN__";
 
     @Override

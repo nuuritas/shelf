@@ -7,20 +7,25 @@ SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 BUILD="$ANDROID_DIR/build"
 KEYSTORE="$ANDROID_DIR/bookmark.keystore"
 
-if [[ -n "${SHARE_TOKEN:-}" ]]; then
-  TOKEN="$SHARE_TOKEN"
-elif [[ -f "$ROOT/.dev.vars" ]]; then
-  TOKEN="$(grep '^SHARE_TOKEN=' "$ROOT/.dev.vars" | cut -d= -f2- || true)"
-else
-  TOKEN=""
-fi
+# Read a value from the environment first, then .dev.vars.
+read_setting() {
+  local name="$1" value="${!1:-}"
+  if [[ -z "$value" && -f "$ROOT/.dev.vars" ]]; then
+    value="$(grep "^${name}=" "$ROOT/.dev.vars" | cut -d= -f2- || true)"
+  fi
+  printf '%s' "$value"
+}
 
-if [[ -n "${KEYSTORE_PASS:-}" ]]; then
-  PASS="$KEYSTORE_PASS"
-elif [[ -f "$ROOT/.dev.vars" ]]; then
-  PASS="$(grep '^KEYSTORE_PASS=' "$ROOT/.dev.vars" | cut -d= -f2- || true)"
-else
-  PASS=""
+TOKEN="$(read_setting SHARE_TOKEN)"
+ENDPOINT="$(read_setting SHARE_ENDPOINT)"
+
+PASS="$(read_setting KEYSTORE_PASS)"
+
+if [[ -z "$ENDPOINT" ]]; then
+  echo "SHARE_ENDPOINT is required: the full URL the APK should post to," >&2
+  echo "for example https://your-worker.workers.dev/api/bookmarks" >&2
+  echo "Set it in the environment or in .dev.vars." >&2
+  exit 1
 fi
 
 if [[ -z "$TOKEN" || -z "$PASS" ]]; then
@@ -40,7 +45,8 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD/classes" "$BUILD/dex" "$BUILD/res"
 
 # The token is injected into a temporary source file, never the tracked source.
-sed "s|__SHARE_TOKEN__|$TOKEN|g" \
+sed -e "s|__SHARE_TOKEN__|$TOKEN|g" \
+  -e "s|__SHARE_ENDPOINT__|$ENDPOINT|g" \
   "$ANDROID_DIR/src/com/bookmarkvault/share/ShareActivity.java" \
   > "$BUILD/ShareActivity.java"
 

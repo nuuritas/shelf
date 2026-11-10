@@ -2,11 +2,18 @@
   "name": "x-bookmark-vault",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "A tiny Cloudflare-native X bookmark reader with automatic AI summaries.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nuuritas/x-bookmark-vault.git"
+  },
   "scripts": {
+    "setup": "bun scripts/setup.ts",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:personal": "wrangler deploy --config wrangler.personal.jsonc",
     "test": "node --test",
     "typecheck": "tsc --noEmit"
   },

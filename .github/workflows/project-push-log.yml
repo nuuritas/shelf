@@ -22,6 +22,9 @@ concurrency:
 
 jobs:
   log:
+    # Forks do not have this variable, so the job is skipped instead of failing
+    # on every push to their own main.
+    if: ${{ vars.PUSH_LOG_ISSUE != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v9
@@ -31,7 +34,7 @@ jobs:
           script: |
             const issueNumber = Number(process.env.PUSH_LOG_ISSUE || '');
             if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-              core.setFailed('Set the PUSH_LOG_ISSUE repository variable to the push log issue number.');
+              core.info('PUSH_LOG_ISSUE is not set, so there is nothing to log.');
               return;
             }
 

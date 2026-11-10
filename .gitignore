@@ -8,3 +8,7 @@ android/build/
 android/*.keystore
 public/BookmarkShare.apk
 out/
+
+# Local deployment config: keeps your worker name, domain, and model settings
+# out of the public repository. Copy wrangler.personal.example.jsonc to start.
+wrangler.personal.jsonc

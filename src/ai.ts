@@ -20,8 +20,20 @@ import { collectImages } from './x.ts';
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
+/** Any OpenAI-compatible endpoint works; these are only the last-resort defaults. */
+const DEFAULT_AI_BASE = 'https://api.openai.com/v1';
+const DEFAULT_AI_MODEL = 'gpt-4.1-mini';
+
+/**
+ * The API key for the OpenAI-compatible endpoint. `OPENCODE_API_KEY` is an
+ * older alias, still read so existing deployments keep working after upgrade.
+ */
+export function aiApiKey(env: Partial<Env>): string {
+  return String(env.AI_API_KEY || env.OPENCODE_API_KEY || '').trim();
+}
+
 export function isAiConfigured(env: Partial<Env>): boolean {
-  return Boolean(env.OPENCODE_API_KEY);
+  return Boolean(aiApiKey(env));
 }
 
 export interface SummaryOptions {
@@ -35,8 +47,8 @@ export async function summarizePost(
   env: Partial<Env>,
   options: SummaryOptions = {},
 ): Promise<SummaryResult> {
-  if (!env.OPENCODE_API_KEY) {
-    throw new Error('OPENCODE_API_KEY is not configured.');
+  if (!isAiConfigured(env)) {
+    throw new Error('AI_API_KEY is not configured.');
   }
 
   const images = collectImages(post, MAX_IMAGES);
@@ -58,9 +70,9 @@ export async function summarizePost(
     }
   }
 
-  const model = String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, '');
-  const base = (env.AI_BASE_URL || 'https://opencode.ai/inference/go/openai/v1').replace(/\/+$/, '');
-  const language = String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() === 'en' ? 'English' : 'Turkish';
+  const model = String(env.AI_MODEL || DEFAULT_AI_MODEL).replace(/^opencode-go\//, '');
+  const base = (env.AI_BASE_URL || DEFAULT_AI_BASE).replace(/\/+$/, '');
+  const language = String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
 
   const body: ChatRequest = {
     model,
@@ -105,7 +117,7 @@ export async function summarizePost(
     const response = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.OPENCODE_API_KEY}`,
+        Authorization: `Bearer ${aiApiKey(env)}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'User-Agent': 'XBookmarkVault/1.0',
@@ -164,8 +176,8 @@ export async function translateSummary(
   env: Partial<Env>,
   options: { session?: string } = {},
 ): Promise<SummaryResult> {
-  if (!env.OPENCODE_API_KEY) {
-    throw new Error('OPENCODE_API_KEY is not configured.');
+  if (!isAiConfigured(env)) {
+    throw new Error('AI_API_KEY is not configured.');
   }
 
   const text = await requestChat(env, {
@@ -188,7 +200,7 @@ export async function translateSummary(
 
   return {
     text,
-    model: String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, ''),
+    model: String(env.AI_MODEL || DEFAULT_AI_MODEL).replace(/^opencode-go\//, ''),
     imagesUsed: 0,
   };
 }
@@ -530,12 +542,12 @@ async function requestChat(
   env: Partial<Env>,
   { session, system, user, maxTokens = 2000, temperature = 0.2 }: RequestChatOptions,
 ): Promise<string> {
-  if (!env.OPENCODE_API_KEY) {
-    throw new Error('OPENCODE_API_KEY is not configured.');
+  if (!isAiConfigured(env)) {
+    throw new Error('AI_API_KEY is not configured.');
   }
 
-  const model = String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, '');
-  const base = (env.AI_BASE_URL || 'https://opencode.ai/inference/go/openai/v1').replace(/\/+$/, '');
+  const model = String(env.AI_MODEL || DEFAULT_AI_MODEL).replace(/^opencode-go\//, '');
+  const base = (env.AI_BASE_URL || DEFAULT_AI_BASE).replace(/\/+$/, '');
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
@@ -544,7 +556,7 @@ async function requestChat(
     const response = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.OPENCODE_API_KEY}`,
+        Authorization: `Bearer ${aiApiKey(env)}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'User-Agent': 'XBookmarkVault/1.0',
@@ -626,5 +638,5 @@ function parseJsonReply(raw: unknown): unknown {
 }
 
 function summaryLanguage(env: Partial<Env>): string {
-  return String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() === 'en' ? 'English' : 'Turkish';
+  return String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
 }

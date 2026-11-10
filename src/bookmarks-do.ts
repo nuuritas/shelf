@@ -60,7 +60,7 @@ function randomRef(): string {
 
 /** The default summaries are Turkish unless the deployment switched to English. */
 function turkishPrimary(env: Partial<Env>): boolean {
-  return String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() !== 'en';
+  return String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() !== 'en';
 }
 
 function parseView(value: string | null | undefined): ArchiveView {
@@ -882,7 +882,7 @@ export class Bookmarks extends DurableObject<Env> {
 
   async translateAll(): Promise<TranslateAllResult> {
     if (!isAiConfigured(this.env)) {
-      throw new Error('OPENCODE_API_KEY is not configured.');
+      throw new Error('AI_API_KEY is not configured.');
     }
     if (!turkishPrimary(this.env)) return { queued: 0 };
 
@@ -920,7 +920,7 @@ export class Bookmarks extends DurableObject<Env> {
     }
     const id = bookmark.tweetId;
     if (!isAiConfigured(this.env)) {
-      throw new Error('OPENCODE_API_KEY is not configured.');
+      throw new Error('AI_API_KEY is not configured.');
     }
 
     if (options.mode === 'version') {
@@ -1230,7 +1230,7 @@ export class Bookmarks extends DurableObject<Env> {
 
   async reindex(): Promise<ReindexResult> {
     if (!isAiConfigured(this.env)) {
-      throw new Error('OPENCODE_API_KEY is not configured.');
+      throw new Error('AI_API_KEY is not configured.');
     }
 
     const rows = this.sql

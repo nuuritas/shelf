@@ -1,3 +1,4 @@
+import { isAiConfigured } from './ai.ts';
 import { Bookmarks } from './bookmarks-do.ts';
 import { CSS, renderCalendar, renderLogin, renderPage, renderSetup } from './render.ts';
 import type {
@@ -226,10 +227,10 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         activeTotal: data.activeTotal,
         archivedTotal: data.archivedTotal,
         missingEnglish: data.missingEnglish,
-        bilingual: isBilingual(env) && Boolean(env.OPENCODE_API_KEY),
+        bilingual: isBilingual(env) && isAiConfigured(env),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
-        aiConfigured: Boolean(env.OPENCODE_API_KEY),
+        aiConfigured: isAiConfigured(env),
       }),
     );
   } catch (error) {
@@ -244,10 +245,10 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         lang,
         activeTotal: 0,
         archivedTotal: 0,
-        bilingual: isBilingual(env) && Boolean(env.OPENCODE_API_KEY),
+        bilingual: isBilingual(env) && isAiConfigured(env),
         notice: null,
         error: errorMessage(error),
-        aiConfigured: Boolean(env.OPENCODE_API_KEY),
+        aiConfigured: isAiConfigured(env),
       }),
       502,
     );
@@ -284,10 +285,10 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
         topic: data.topic,
         view,
         lang,
-        bilingual: isBilingual(env) && Boolean(env.OPENCODE_API_KEY),
+        bilingual: isBilingual(env) && isAiConfigured(env),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
-        aiConfigured: Boolean(env.OPENCODE_API_KEY),
+        aiConfigured: isAiConfigured(env),
       }),
     );
   } catch (error) {
@@ -748,7 +749,7 @@ function parseLang(value: string | null): 'tr' | 'en' {
 
 /** The archive has a Turkish primary summary, so the English board is useful. */
 function isBilingual(env: Env): boolean {
-  return String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() !== 'en';
+  return String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() !== 'en';
 }
 
 function secure(response: Response): Response {
