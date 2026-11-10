@@ -164,6 +164,11 @@ API: see `docs/PROGRESS.md` §3.
   `/client/v4/accounts/<id>/ai/v1`. Do not claim they work on the free plan.
 - Budget `max_tokens`/`max_completion_tokens` at 4096 for prose; smaller models
   otherwise spend the budget on reasoning and return empty text.
+- Every AI request goes through `postJson` in `src/ai.ts`: 180 s timeout, and
+  429/5xx/network errors are retried twice (1 s, 3 s, or `Retry-After` up to
+  15 s). A timeout is not retried. A summary that still fails goes back to
+  `pending` once after a minute (`summary_retry_at`, `summary_attempts`) before
+  the row is marked `failed`; a manual re-summarize resets the counter.
 - Structured calls (`bootstrapTopics`, `classifyPost`) parse JSON leniently:
   strip code fences, take the outermost `{...}`. Treat the result as untrusted
   and validate slugs/ids against the database before writing.

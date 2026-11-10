@@ -290,6 +290,10 @@ export type BookmarkRow = {
   summary_status: string;
   summary_error: string | null;
   summary_started_at: number | null;
+  /** Automatic retries already spent; reset by a manual re-summarize. */
+  summary_attempts?: number | null;
+  /** Earliest time the alarm may pick this pending summary up again. */
+  summary_retry_at?: number | null;
   summarized_at: string | null;
   summary_en: string | null;
   summary_en_status: string | null;

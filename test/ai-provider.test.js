@@ -200,8 +200,41 @@ test('anthropic errors surface the upstream message', async t => {
       maxTokens: 10,
       temperature: 0,
     }),
-    /Anthropic error: invalid x-api-key/,
+    /Anthropic error \(HTTP 401\): invalid x-api-key/,
   );
+});
+
+test('a 429 is retried once and the second answer wins', async t => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) {
+      return new Response(JSON.stringify({ error: { message: 'overloaded' } }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'retry-after': '0' },
+      });
+    }
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: 'fine' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+
+  const env = { AI_API_KEY: 'k' };
+  const config = aiConfig({ AI_PROVIDER: 'claude', AI_API_KEY: 'k' });
+  const text = await requestAnthropic(env, config, {
+    system: 's',
+    user: 'u',
+    images: [],
+    maxTokens: 10,
+    temperature: 0,
+  });
+  assert.equal(text, 'fine');
+  assert.equal(calls, 2);
 });
 
 test('a named provider without a key says which secret is missing', async () => {

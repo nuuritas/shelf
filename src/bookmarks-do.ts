@@ -42,6 +42,11 @@ import type {
 
 const STALE_SUMMARY_MS = 10 * 60 * 1000;
 
+/* A gateway blip should cost seconds, not the card. One automatic retry after a
+   minute covers a momentary 429/5xx; after that the reader decides. */
+const SUMMARY_RETRY_DELAY_MS = 60 * 1000;
+const MAX_SUMMARY_RETRIES = 1;
+
 /* Short bookmark handles. The alphabet drops 0/o/1/l/i so a ref can be read
    aloud or typed without ambiguity. Refs always contain a letter: a digit-only
    ref would be indistinguishable from a tweet id (which is all digits). */
@@ -302,6 +307,8 @@ export class Bookmarks extends DurableObject<Env> {
       'ALTER TABLE bookmarks ADD COLUMN summary_en_error TEXT',
       'ALTER TABLE bookmarks ADD COLUMN summary_en_started_at INTEGER',
       'ALTER TABLE bookmarks ADD COLUMN summary_en_at TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN summary_attempts INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE bookmarks ADD COLUMN summary_retry_at INTEGER',
     ]) {
       try {
         this.sql.exec(statement);
@@ -479,7 +486,8 @@ export class Bookmarks extends DurableObject<Env> {
           url = ?, author_name = ?, author_username = ?, author_avatar_url = ?,
           author_verified = ?, text = ?, created_at = ?, saved_at = ?, provider = ?,
           media_json = ?, quote_json = ?, article_json = ?, metrics_json = ?,
-          summary_status = ?, summary_error = NULL, archived_at = NULL${englishReset}
+          summary_status = ?, summary_error = NULL, summary_attempts = 0,
+          summary_retry_at = NULL, archived_at = NULL${englishReset}
         WHERE tweet_id = ?`,
         ...values.slice(1),
         post.tweetId,
@@ -952,6 +960,7 @@ export class Bookmarks extends DurableObject<Env> {
       this.sql.exec(
         `UPDATE bookmarks
          SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
+             summary_attempts = 0, summary_retry_at = NULL,
              topics_status = 'pending', topics_at = NULL${englishReset}
          WHERE tweet_id = ?`,
         id,
@@ -1009,6 +1018,7 @@ export class Bookmarks extends DurableObject<Env> {
       this.sql.exec(
         `UPDATE bookmarks
          SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
+             summary_attempts = 0, summary_retry_at = NULL,
              topics_status = 'pending', topics_at = NULL${englishReset}
          WHERE tweet_id = ?`,
         id,
@@ -1063,7 +1073,7 @@ export class Bookmarks extends DurableObject<Env> {
     const staleBefore = Date.now() - STALE_SUMMARY_MS;
     this.sql.exec(
       `UPDATE bookmarks
-       SET summary_status = 'pending', summary_started_at = NULL
+       SET summary_status = 'pending', summary_started_at = NULL, summary_retry_at = NULL
        WHERE summary_status = 'working' AND summary_started_at < ?`,
       staleBefore,
     );
@@ -1086,8 +1096,10 @@ export class Bookmarks extends DurableObject<Env> {
       .exec<BookmarkRow>(
         `SELECT * FROM bookmarks
          WHERE summary_status = 'pending'
+           AND (summary_retry_at IS NULL OR summary_retry_at <= ?)
          ORDER BY saved_at ASC
          LIMIT 1`,
+        Date.now(),
       )
       .toArray()[0];
 
@@ -1198,6 +1210,7 @@ export class Bookmarks extends DurableObject<Env> {
   }
 
   async scheduleNext(): Promise<void> {
+    const now = Date.now();
     const hasTopics = Number(
       this.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
     );
@@ -1205,7 +1218,9 @@ export class Bookmarks extends DurableObject<Env> {
     const pending = this.sql
       .exec<PendingCountsRow>(
         `SELECT
-           (SELECT COUNT(*) FROM bookmarks WHERE summary_status = 'pending') AS summaries,
+           (SELECT COUNT(*) FROM bookmarks
+             WHERE summary_status = 'pending'
+               AND (summary_retry_at IS NULL OR summary_retry_at <= ?)) AS summaries,
            (SELECT COUNT(*) FROM bookmarks
              WHERE summary_status = 'done' AND topics_status = 'pending') AS filings,
            (SELECT COUNT(*) FROM bookmarks WHERE version_status = 'pending') AS versions,
@@ -1213,6 +1228,7 @@ export class Bookmarks extends DurableObject<Env> {
            (SELECT COUNT(*) FROM topics t WHERE t.overview IS NULL OR t.overview_count != (
              SELECT COUNT(*) FROM item_topics it WHERE it.slug = t.slug
            )) AS overviews`,
+        now,
       )
       .toArray()[0];
 
@@ -1224,7 +1240,22 @@ export class Bookmarks extends DurableObject<Env> {
       Number(pending?.overviews ?? 0);
 
     if (remaining > 0) {
-      await this.ctx.storage.setAlarm(Date.now() + 600);
+      await this.ctx.storage.setAlarm(now + 600);
+      return;
+    }
+
+    // A summary waiting on its retry delay is the only work left: wake then,
+    // instead of spinning the alarm every 600 ms until the delay passes.
+    const nextRetry = this.sql
+      .exec<{ at: number | null }>(
+        `SELECT MIN(summary_retry_at) AS at FROM bookmarks
+         WHERE summary_status = 'pending' AND summary_retry_at > ?`,
+        now,
+      )
+      .toArray()[0]?.at;
+
+    if (nextRetry) {
+      await this.ctx.storage.setAlarm(Number(nextRetry));
     }
   }
 
@@ -1570,7 +1601,8 @@ export class Bookmarks extends DurableObject<Env> {
 
     this.sql.exec(
       `UPDATE bookmarks
-       SET summary_status = 'working', summary_error = NULL, summary_started_at = ?
+       SET summary_status = 'working', summary_error = NULL, summary_started_at = ?,
+           summary_retry_at = NULL
        WHERE tweet_id = ?`,
       Date.now(),
       tweetId,
@@ -1612,22 +1644,42 @@ export class Bookmarks extends DurableObject<Env> {
       this.sql.exec(
         `UPDATE bookmarks
          SET summary = ?, summary_status = 'done', summary_error = NULL,
-             summary_started_at = NULL, summarized_at = ?,
-             topics_status = 'pending', topics_at = NULL${english}
+             summary_started_at = NULL, summary_attempts = 0, summary_retry_at = NULL,
+             summarized_at = ?, topics_status = 'pending', topics_at = NULL${english}
          WHERE tweet_id = ?`,
         result.text,
         new Date().toISOString(),
         tweetId,
       );
     } catch (error) {
-      console.error('Summary failed', tweetId, error);
-      this.sql.exec(
-        `UPDATE bookmarks
-         SET summary_status = 'failed', summary_error = ?, summary_started_at = NULL
-         WHERE tweet_id = ?`,
-        error instanceof Error ? error.message.slice(0, 500) : 'Unknown summary error.',
-        tweetId,
-      );
+      const message =
+        error instanceof Error ? error.message.slice(0, 500) : 'Unknown summary error.';
+      const attempts = Number(row.summary_attempts ?? 0);
+
+      if (attempts < MAX_SUMMARY_RETRIES) {
+        console.warn('Summary failed; retrying in a minute', tweetId, error);
+        this.sql.exec(
+          `UPDATE bookmarks
+           SET summary_status = 'pending', summary_attempts = ?, summary_retry_at = ?,
+               summary_error = ?, summary_started_at = NULL
+           WHERE tweet_id = ?`,
+          attempts + 1,
+          Date.now() + SUMMARY_RETRY_DELAY_MS,
+          message,
+          tweetId,
+        );
+      } else {
+        console.error('Summary failed', tweetId, error);
+        this.sql.exec(
+          `UPDATE bookmarks
+           SET summary_status = 'failed', summary_attempts = ?, summary_retry_at = NULL,
+               summary_error = ?, summary_started_at = NULL
+           WHERE tweet_id = ?`,
+          attempts + 1,
+          message,
+          tweetId,
+        );
+      }
     }
   }
 }
