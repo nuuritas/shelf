@@ -178,6 +178,8 @@ YouTube refuses caption requests from Cloudflare's IP range, so YouTube is the o
 
    Brevyd and TranscriptHook need `TRANSCRIPT_API_HEADER=x-api-key` (or `X-API-Key`); TranscriptAPI and YouTubeTranscript.dev take a bearer token, which is the default.
 
+   When the custom service answers `429` (monthly quota spent) and `SUPADATA_API_KEY` is also set, the request falls through to Supadata, so two free tiers stack instead of failing.
+
 2. **Supadata.** Set `SUPADATA_API_KEY` and the Worker fetches native captions itself (100 free credits per month).
 
 3. **Your own machine.** `xbv youtube` runs a local extractor on a residential connection, posts the transcript back through the API, and re-queues the summary.

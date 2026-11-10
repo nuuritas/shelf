@@ -361,3 +361,32 @@ test('segment arrays from transcript services are joined', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('a spent custom quota falls back to Supadata', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async url => {
+    calls.push(String(url));
+    if (String(url).includes('captions.example.com')) {
+      return new Response('{"error":"limit_exceeded"}', { status: 429 });
+    }
+    return new Response(JSON.stringify({ content: 'supadata captions', lang: 'en' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const transcripts = await readTranscripts(youtubeBookmark(), {
+      TRANSCRIPT_API_URL: 'https://captions.example.com/{videoId}',
+      SUPADATA_API_KEY: 'supadata-key',
+    });
+
+    assert.equal(calls.length, 2);
+    assert.match(calls[1], /supadata\.ai/);
+    assert.equal(transcripts[0].provider, 'supadata');
+    assert.equal(transcripts[0].text, 'supadata captions');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

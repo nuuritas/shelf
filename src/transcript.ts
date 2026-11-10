@@ -346,6 +346,15 @@ async function transcribeCustomProvider(
     return unavailable(target, 'The transcript service has no captions for this video.');
   }
   if (!response.ok) {
+    // A spent monthly quota is expected, not a bug: hand over to Supadata when
+    // it is configured, so two free tiers stack.
+    if (response.status === 429 && env.SUPADATA_API_KEY) return null;
+    if (response.status === 429) {
+      return unavailable(
+        target,
+        'The transcript service is out of quota for this month. Add a second provider or use xbv youtube.',
+      );
+    }
     throw new Error(`Transcript service returned HTTP ${response.status}.`);
   }
 
