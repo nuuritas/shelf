@@ -154,6 +154,64 @@ function requireKey(env: Partial<Env>, config: AiConfig): string {
   return key;
 }
 
+/**
+ * One attempt may take 60–90 s on a cold prompt, so the old 90 s ceiling was
+ * already marginal. Retries have their own budget: only answers that arrive
+ * quickly (429/5xx) are retried, never the ones that exhausted this timer.
+ */
+const AI_TIMEOUT_MS = 180_000;
+const RETRY_DELAYS_MS = [1_000, 3_000];
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** `Retry-After` wins when the gateway sends it; otherwise 1 s, then 3 s. */
+function retryDelayMs(response: Response | null, attempt: number): number {
+  const header = response?.headers.get('retry-after');
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1_000, 15_000);
+    const date = Date.parse(header);
+    if (!Number.isNaN(date)) return Math.min(Math.max(date - Date.now(), 0), 15_000);
+  }
+  return RETRY_DELAYS_MS[attempt] + Math.floor(Math.random() * 250);
+}
+
+/**
+ * POST and read the body, retrying the answers that mean "come back later":
+ * 429/5xx and network errors. A timeout is not retried, because the caller
+ * already waited the full budget and another attempt only doubles the silence.
+ */
+async function postJson(
+  url: string,
+  init: RequestInit,
+  timeoutMs = AI_TIMEOUT_MS,
+): Promise<{ response: Response; raw: string }> {
+  for (let attempt = 0; ; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      const raw = await response.text();
+      if (!RETRYABLE_STATUS.has(response.status) || attempt >= RETRY_DELAYS_MS.length) {
+        return { response, raw };
+      }
+      const delay = retryDelayMs(response, attempt);
+      console.warn(`AI endpoint answered ${response.status}; retrying in ${delay} ms.`);
+      await wait(delay);
+    } catch (error) {
+      if (isAbortError(error) || attempt >= RETRY_DELAYS_MS.length) throw error;
+      const delay = retryDelayMs(null, attempt);
+      console.warn(`AI request failed (${errorMessage(error)}); retrying in ${delay} ms.`);
+      await wait(delay);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export interface SummaryOptions {
   instruction?: string;
   previousSummary?: string;
@@ -255,64 +313,55 @@ export async function summarizePost(
   }
 
   const key = requireKey(env, config);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90_000);
-
-  try {
-    const response = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'User-Agent': 'XBookmarkVault/1.0',
-        'x-opencode-session': options.session || `xbv-${post.tweetId}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    const raw = await response.text();
-    let payload: ChatCompletionResponse | null = null;
-    try {
-      payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
-    } catch {
-      throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
-    }
-
-    if (!response.ok) {
-      const upstreamMessage =
-        payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-      throw new Error(`AI endpoint error: ${truncate(upstreamMessage, 300)}`);
-    }
-
-    const content = payload?.choices?.[0]?.message?.content;
-    const text =
-      typeof content === 'string'
-        ? content
-        : Array.isArray(content)
-          ? content
-              .filter(part => part?.type === 'text')
-              .map(part => part.text)
-              .join('\n')
-          : '';
-
-    if (!text.trim()) {
-      const finishReason = payload?.choices?.[0]?.finish_reason;
-      throw new Error(
-        `AI returned an empty summary${finishReason ? ` (finish: ${finishReason})` : ''}.`,
-      );
-    }
-
-    return { text: text.trim(), model: config.model, imagesUsed: attached.length };
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw new Error('AI summary timed out after 90 seconds.');
-    }
+  const { response, raw } = await postJson(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'XBookmarkVault/1.0',
+      'x-opencode-session': options.session || `xbv-${post.tweetId}`,
+    },
+    body: JSON.stringify(body),
+  }).catch(error => {
+    if (isAbortError(error)) throw new Error('AI summary timed out after 180 seconds.');
     throw error;
-  } finally {
-    clearTimeout(timer);
+  });
+
+  let payload: ChatCompletionResponse | null = null;
+  try {
+    payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
+  } catch {
+    throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
   }
+
+  if (!response.ok) {
+    const upstreamMessage =
+      payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+    throw new Error(
+      `AI endpoint error (HTTP ${response.status}): ${truncate(upstreamMessage, 300)}`,
+    );
+  }
+
+  const content = payload?.choices?.[0]?.message?.content;
+  const text =
+    typeof content === 'string'
+      ? content
+      : Array.isArray(content)
+        ? content
+            .filter(part => part?.type === 'text')
+            .map(part => part.text)
+            .join('\n')
+        : '';
+
+  if (!text.trim()) {
+    const finishReason = payload?.choices?.[0]?.finish_reason;
+    throw new Error(
+      `AI returned an empty summary${finishReason ? ` (finish: ${finishReason})` : ''}.`,
+    );
+  }
+
+  return { text: text.trim(), model: config.model, imagesUsed: attached.length };
 }
 
 interface AttachedImage {
@@ -361,61 +410,52 @@ export async function requestAnthropic(
     });
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120_000);
-
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'x-api-key': key,
-        'anthropic-version': ANTHROPIC_VERSION,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'User-Agent': 'XBookmarkVault/1.0',
-      },
-      body: JSON.stringify({
-        model: config.model,
-        max_tokens: options.maxTokens,
-        temperature: options.temperature,
-        system: options.system,
-        messages: [{ role: 'user', content }],
-      }),
-      signal: controller.signal,
-    });
-
-    const raw = await response.text();
-    let payload: AnthropicResponse | null = null;
-    try {
-      payload = raw ? (JSON.parse(raw) as AnthropicResponse) : null;
-    } catch {
-      throw new Error(`Anthropic returned non-JSON (HTTP ${response.status}).`);
-    }
-
-    if (!response.ok) {
-      const message = payload?.error?.message || `HTTP ${response.status}`;
-      throw new Error(`Anthropic error: ${truncate(message, 300)}`);
-    }
-
-    const text = Array.isArray(payload?.content)
-      ? payload.content
-          .filter(part => part?.type === 'text')
-          .map(part => part.text || '')
-          .join('\n')
-      : '';
-
-    if (!text.trim()) {
-      throw new Error(
-        `Anthropic returned an empty response${payload?.stop_reason ? ` (${payload.stop_reason})` : ''}.`,
-      );
-    }
-    return text.trim();
-  } catch (error) {
-    if (isAbortError(error)) throw new Error('Anthropic request timed out after 120 seconds.');
+  const { response, raw } = await postJson(endpoint, {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': ANTHROPIC_VERSION,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'XBookmarkVault/1.0',
+    },
+    body: JSON.stringify({
+      model: config.model,
+      max_tokens: options.maxTokens,
+      temperature: options.temperature,
+      system: options.system,
+      messages: [{ role: 'user', content }],
+    }),
+  }).catch(error => {
+    if (isAbortError(error)) throw new Error('Anthropic request timed out after 180 seconds.');
     throw error;
-  } finally {
-    clearTimeout(timer);
+  });
+
+  let payload: AnthropicResponse | null = null;
+  try {
+    payload = raw ? (JSON.parse(raw) as AnthropicResponse) : null;
+  } catch {
+    throw new Error(`Anthropic returned non-JSON (HTTP ${response.status}).`);
   }
+
+  if (!response.ok) {
+    const message = payload?.error?.message || `HTTP ${response.status}`;
+    throw new Error(`Anthropic error (HTTP ${response.status}): ${truncate(message, 300)}`);
+  }
+
+  const text = Array.isArray(payload?.content)
+    ? payload.content
+        .filter(part => part?.type === 'text')
+        .map(part => part.text || '')
+        .join('\n')
+    : '';
+
+  if (!text.trim()) {
+    throw new Error(
+      `Anthropic returned an empty response${payload?.stop_reason ? ` (${payload.stop_reason})` : ''}.`,
+    );
+  }
+  return text.trim();
 }
 
 /**
@@ -867,73 +907,64 @@ async function requestChat(
   const key = requireKey(env, config);
   const base = config.baseUrl;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90_000);
-
-  try {
-    const response = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'User-Agent': 'XBookmarkVault/1.0',
-        'x-opencode-session': session,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        max_tokens: maxTokens,
-        max_completion_tokens: maxTokens,
-        reasoning_effort: 'low',
-        temperature,
-        stream: false,
-      }),
-      signal: controller.signal,
-    });
-
-    const raw = await response.text();
-    let payload: ChatCompletionResponse | null = null;
-    try {
-      payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
-    } catch {
-      throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
-    }
-
-    if (!response.ok) {
-      const upstreamMessage =
-        payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-      throw new Error(`AI endpoint error: ${truncate(upstreamMessage, 300)}`);
-    }
-
-    const content = payload?.choices?.[0]?.message?.content;
-    const text =
-      typeof content === 'string'
-        ? content
-        : Array.isArray(content)
-          ? content
-              .filter(part => part?.type === 'text')
-              .map(part => part.text)
-              .join('\n')
-          : '';
-
-    if (!text.trim()) {
-      const finishReason = payload?.choices?.[0]?.finish_reason;
-      throw new Error(`AI returned an empty response${finishReason ? ` (finish: ${finishReason})` : ''}.`);
-    }
-
-    return text.trim();
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw new Error('AI request timed out after 90 seconds.');
-    }
+  const { response, raw } = await postJson(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'XBookmarkVault/1.0',
+      'x-opencode-session': session,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
+      reasoning_effort: 'low',
+      temperature,
+      stream: false,
+    }),
+  }).catch(error => {
+    if (isAbortError(error)) throw new Error('AI request timed out after 180 seconds.');
     throw error;
-  } finally {
-    clearTimeout(timer);
+  });
+
+  let payload: ChatCompletionResponse | null = null;
+  try {
+    payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
+  } catch {
+    throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
   }
+
+  if (!response.ok) {
+    const upstreamMessage =
+      payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+    throw new Error(
+      `AI endpoint error (HTTP ${response.status}): ${truncate(upstreamMessage, 300)}`,
+    );
+  }
+
+  const content = payload?.choices?.[0]?.message?.content;
+  const text =
+    typeof content === 'string'
+      ? content
+      : Array.isArray(content)
+        ? content
+            .filter(part => part?.type === 'text')
+            .map(part => part.text)
+            .join('\n')
+        : '';
+
+  if (!text.trim()) {
+    const finishReason = payload?.choices?.[0]?.finish_reason;
+    throw new Error(`AI returned an empty response${finishReason ? ` (finish: ${finishReason})` : ''}.`);
+  }
+
+  return text.trim();
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
