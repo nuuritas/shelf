@@ -13,8 +13,9 @@ Paste an X link, or share one from Android:
 1. The Worker reads the post through the public FxTwitter API (or the official X API if you add a bearer token).
 2. It saves the text, author, quote, X Article content, images, video URLs, and metrics.
 3. It reads the first external link(s) in the post: GitHub repos use the GitHub API + README; normal pages use a small readability extractor.
-4. It sends the post, article, link text, and images to OpenCode Go for a natural-language explanation, then queues an English translation of that explanation.
-5. It renders a private, mobile-friendly library.
+4. It transcribes videos: X videos through Cloudflare Workers AI Whisper, YouTube links through Supadata captions when configured.
+5. It sends the post, article, link text, transcript, and images to OpenCode Go for a natural-language explanation, then queues an English translation of that explanation.
+6. It renders a private, mobile-friendly library.
 
 The first summary is never overwritten. From any card you can ask for a new version with an optional direction ("explain the tradeoffs", "give the history"), and the result is stored beside the original as v2, v3, and so on.
 
@@ -24,7 +25,7 @@ When you are done with a post, **Archive** it. It leaves the Active list but sta
 
 Summaries live on two boards: **Türkçe** (primary) and **English** (translation). The switch at the top of the library re-renders the same page in either language. New summaries get an English version automatically; for older rows, the English board offers a button to queue the missing translations.
 
-If no OpenCode key is configured, saving still works; the card simply says the summary is not configured.
+Video transcripts open in a fold under the summary; they are in the language of the video, not translated. If no OpenCode key is configured, saving still works; the card simply says the summary is not configured.
 
 ## Knowledge layer
 
@@ -185,7 +186,7 @@ All API routes require the session cookie or `Authorization: Bearer <APP_PASSWOR
 | `GET` | `/api/stats` | Counts |
 | `GET` | `/healthz` | Health check, no auth |
 
-A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, `summaryEn`, `summaryStatus`, `archivedAt`, `topics`, and `versions` (v2 and later, each with the instruction that produced it). Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs.
+A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `summary`, `summaryEn`, `summaryStatus`, `archivedAt`, `topics`, `transcripts`, and `versions` (v2 and later, each with the instruction that produced it). Images are returned as direct URLs; AI summaries receive the image bytes as base64 data URLs. `transcripts` holds the spoken text, language, duration, provider, and status for up to two videos per bookmark.
 
 ## Notes and limits
 
@@ -193,7 +194,7 @@ A bookmark contains `text`, `author`, `media`, `quote`, `article`, `metrics`, `s
 - Protected, deleted, age-restricted, or login-gated posts may not be readable.
 - X native Articles (`x.com/i/article/...`) are read in full and included in the summary.
 - External links are fetched, but JavaScript-heavy or paywalled sites may not expose readable text. GitHub repositories use the API and README.
-- Images are downloaded and sent to the AI model as base64. Videos are saved as URLs/posters, but are not transcribed in this first version.
+- Images are downloaded and sent to the AI model as base64. X videos are transcribed from the smallest MP4 variant with Workers AI Whisper (20 MB cap, roughly 8 minutes at the lowest bitrate). YouTube links use native captions through Supadata; without a key, or without captions, the summary falls back to the post and page text. YouTube blocks direct caption scraping from Worker IPs, and Workers cannot run ffmpeg for longer videos.
 - Summaries are written as natural context-focused explanations, not a fixed sections template.
 - Summaries are generated in Turkish by default (`SUMMARY_LANGUAGE=tr`). Set it to `en` for an English primary. With Turkish primary, an English translation is stored separately.
 - Topic syntheses and summary versions stay in the primary language (Turkish); the English board translates bookmark summaries only.

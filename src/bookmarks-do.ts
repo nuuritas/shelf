@@ -8,6 +8,7 @@ import {
   writeTopicOverview,
 } from './ai.ts';
 import { readExternalLinks } from './links.ts';
+import { readTranscripts } from './transcript.ts';
 import { clampInteger, jsonResponse } from './util.ts';
 import { readPost } from './x.ts';
 import type {
@@ -34,6 +35,7 @@ import type {
   TopicRow,
   TopicSummary,
   TranslateAllResult,
+  VideoTranscript,
   XArticle,
 } from './types.ts';
 
@@ -199,6 +201,7 @@ export class Bookmarks extends DurableObject<Env> {
         quote_json TEXT NOT NULL DEFAULT 'null',
         article_json TEXT NOT NULL DEFAULT 'null',
         links_json TEXT NOT NULL DEFAULT '[]',
+        transcripts_json TEXT NOT NULL DEFAULT '[]',
         metrics_json TEXT NOT NULL DEFAULT '{}',
         summary TEXT,
         summary_status TEXT NOT NULL DEFAULT 'pending',
@@ -275,6 +278,12 @@ export class Bookmarks extends DurableObject<Env> {
 
     try {
       this.sql.exec("ALTER TABLE bookmarks ADD COLUMN links_json TEXT NOT NULL DEFAULT '[]'");
+    } catch {
+      // Fresh databases already have the column.
+    }
+
+    try {
+      this.sql.exec("ALTER TABLE bookmarks ADD COLUMN transcripts_json TEXT NOT NULL DEFAULT '[]'");
     } catch {
       // Fresh databases already have the column.
     }
@@ -1514,6 +1523,19 @@ export class Bookmarks extends DurableObject<Env> {
         console.error('Link reading failed', tweetId, error);
       }
 
+      if (!bookmark.transcripts.length) {
+        try {
+          bookmark.transcripts = await readTranscripts(bookmark, this.env);
+          this.sql.exec(
+            'UPDATE bookmarks SET transcripts_json = ? WHERE tweet_id = ?',
+            JSON.stringify(bookmark.transcripts),
+            tweetId,
+          );
+        } catch (error) {
+          console.error('Transcript reading failed', tweetId, error);
+        }
+      }
+
       const result = await summarizePost(bookmark, this.env);
       const english =
         turkishPrimary(this.env)
@@ -1562,6 +1584,7 @@ function rowToBookmark(row: BookmarkRow): Bookmark {
     quote: parseJson<Quote | null>(row.quote_json, null),
     article: parseJson<XArticle | null>(row.article_json, null),
     links: parseJson<LinkRead[]>(row.links_json, []),
+    transcripts: parseJson<VideoTranscript[]>(row.transcripts_json, []),
     // `{}` is the historical fallback for a missing metrics column; keep it
     // (renderMetrics treats missing fields as "no count").
     metrics: parseJson<Metrics>(row.metrics_json, {} as Metrics),

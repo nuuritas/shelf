@@ -244,6 +244,24 @@ function buildPrompt(
     }
   }
 
+  const transcripts = (post.transcripts ?? []).filter(
+    transcript => transcript.status === 'done' && transcript.text,
+  );
+  if (transcripts.length) {
+    lines.push('', 'VIDEO TRANSCRIPTS (what was actually said):');
+    for (const transcript of transcripts) {
+      const minutes = transcript.durationSec
+        ? `${Math.max(1, Math.round(transcript.durationSec / 60))} min`
+        : 'length unknown';
+      lines.push(
+        `--- ${transcript.source === 'youtube' ? 'YouTube' : 'X'} video · ${
+          transcript.lang || 'unknown language'
+        } · ${minutes} ---`,
+        transcript.text.slice(0, 24_000),
+      );
+    }
+  }
+
   if (options.previous) {
     lines.push('', 'THE EXPLANATION THE READER ALREADY HAS:', String(options.previous).slice(0, 6000));
   }
@@ -263,7 +281,7 @@ function buildPrompt(
     'IMAGES:',
     imageNotes.length ? imageNotes.join('\n') : 'No images attached.',
     '',
-    'Now explain this to the user in natural prose. Focus on: what this is, the context, what it actually says or does, the concrete details that matter, and what the user should take away. Do not just repeat the post text. Do not use a rigid summary template.',
+    'Now explain this to the user in natural prose. Focus on: what this is, the context, what it actually says or does, the concrete details that matter, and what the user should take away. When a video transcript is present, treat it as the record of what was said and use the post text for the author’s framing. Do not just repeat the post text. Do not use a rigid summary template.',
   );
 
   return lines.join('\n');

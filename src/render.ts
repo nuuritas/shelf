@@ -8,6 +8,7 @@ import type {
   Quote,
   SummaryVersion,
   TopicSummary,
+  VideoTranscript,
   XArticle,
 } from './types.ts';
 import {
@@ -669,6 +670,45 @@ function renderVersion(entry: SummaryVersion): string {
   `;
 }
 
+function renderTranscripts(transcripts: VideoTranscript[] | undefined): string {
+  const done = (transcripts ?? []).filter(
+    transcript => transcript.status === 'done' && transcript.text.trim(),
+  );
+  if (!done.length) return '';
+
+  return `
+    <details class="transcripts">
+      <summary>Video transcript${done.length > 1 ? `s (${done.length})` : ''}</summary>
+      ${done
+        .map(
+          transcript => `
+            <div class="transcript">
+              <div class="transcript-meta">
+                ${transcript.source === 'youtube' ? 'YouTube' : 'X video'}
+                <span class="dot">·</span>
+                ${formatDuration(transcript.durationSec)}
+                <span class="dot">·</span>
+                ${escapeHtml((transcript.lang || 'unknown').toUpperCase())}
+                <span class="dot">·</span>
+                ${transcript.provider === 'supadata' ? 'Supadata' : 'Whisper'}
+              </div>
+              <div class="transcript-text">${linkifyText(transcript.text)}</div>
+            </div>
+          `,
+        )
+        .join('')}
+    </details>
+  `;
+}
+
+function formatDuration(seconds: number | null): string {
+  if (!seconds || seconds < 1) return 'length unknown';
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${String(rest).padStart(2, '0')}`;
+}
+
 function renderSummary(
   bookmark: Bookmark,
   aiConfigured: boolean,
@@ -737,6 +777,8 @@ function renderSummary(
             ? `<p class="version-note error">${escapeHtml(truncate(bookmark.versionError, 240))}</p>`
             : ''
         }
+
+        ${renderTranscripts(bookmark.transcripts)}
 
         <details class="regen">
           <summary>New version</summary>
@@ -919,7 +961,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=8">
+  <link rel="stylesheet" href="/style.css?v=9">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1855,6 +1897,42 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 .summary-text a { color: var(--accent-ink); }
+
+.transcripts {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.transcripts summary {
+  color: var(--accent-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.transcripts summary::-webkit-details-marker { display: none; }
+
+.transcript { margin-top: 12px; }
+
+.transcript-meta {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.transcript-text {
+  margin-top: 5px;
+  max-height: 420px;
+  overflow: auto;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 
 .summary-note {
   margin: 0;
