@@ -2,9 +2,12 @@
 /**
  * xbv — read the X Bookmark Vault from a terminal or an AI client.
  *
- * The vault lives in a Cloudflare Worker (`https://bookmark.nuritas.tr`). This
- * CLI talks to its JSON API with the same `APP_PASSWORD` the web login uses, so
- * nothing has to be synced: the Worker stays the single source of truth.
+ * The vault lives in a Cloudflare Worker you deploy yourself. This CLI talks to
+ * its JSON API with the same `APP_PASSWORD` the web login uses, so nothing has
+ * to be synced: the Worker stays the single source of truth.
+
+ * Point it at your instance once:
+ *   xbv config --url https://your-worker.workers.dev --password '<app password>'
  *
  * Two ways to use it with AI:
  *   1. `xbv search ...` / `xbv show k7f3 ...` — pipe markdown into any chat.
@@ -35,7 +38,8 @@ import type {
 } from '../src/types.ts';
 
 const VERSION = '0.1.0';
-const DEFAULT_URL = 'https://bookmark.nuritas.tr';
+/** Last-resort default: a local `wrangler dev` server. */
+const DEFAULT_URL = 'http://127.0.0.1:8787';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -691,7 +695,12 @@ function commandConfig(args: ParsedArgs): void {
   const path = configPath();
 
   if (typeof args.flags.password === 'string') {
-    const url = (typeof args.flags.url === 'string' ? args.flags.url : DEFAULT_URL).replace(/\/+$/, '');
+    const existing = readConfigFile();
+    const flagUrl = typeof args.flags.url === 'string' ? args.flags.url : '';
+    const url = (flagUrl || existing?.url || '').replace(/\/+$/, '');
+    if (!url) {
+      throw new Error('Pass --url <https://your-worker.workers.dev> the first time you save a password.');
+    }
     const password = args.flags.password;
     if (!password.trim()) throw new Error('--password must not be empty');
     mkdirSync(dirname(path), { recursive: true });
@@ -965,7 +974,7 @@ Usage:
   xbv topic <slug> [--limit 50] [--json]     one topic's synthesis + items
   xbv export [--dir ./dir]                   markdown + jsonl for local RAG
   xbv stats [--json]                         archive counts
-  xbv youtube [--limit 20] [--dry-run]       fetch missing YouTube transcripts on this Mac
+  xbv youtube [--limit 20] [--dry-run]       fetch missing YouTube transcripts locally
   xbv config [--password <pw>] [--url <u>]   show or write credentials
   xbv mcp                                    stdio MCP server for AI clients
 
@@ -973,6 +982,8 @@ Configuration:
   XBV_URL + XBV_PASSWORD      environment (wins)
   ~/.config/xbv/config.json   { "url": "...", "password": "..." }
   .dev.vars                   fallback when run inside the repo
+
+  First run:  xbv config --url https://<worker>.workers.dev --password <pw>
 
 MCP examples:
   claude mcp add xbv -- xbv mcp

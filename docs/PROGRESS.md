@@ -1,8 +1,10 @@
 # Project knowledge — X Bookmark Vault
 
 Last updated: 2026-11-10
-Repository: <https://github.com/nuuritas/x-bookmark-vault> (private)
-Live: <https://bookmark.nuritas.tr> (fallback: <https://x-bookmark-vault.nuuritas.workers.dev>)
+Repository: <https://github.com/nuuritas/x-bookmark-vault>
+
+This document describes the maintainer's deployment. Domain names, provider
+choices, and measured quotas refer to that instance; your deployment will differ.
 
 This file is the long-form memory of the project: what exists, why it works
 this way, what was tried, and what is still open. `AGENTS.md` is the short
@@ -16,7 +18,8 @@ Over time the archive organizes itself into topics and writes its own rolling
 syntheses, so it behaves less like a list of bookmarks and more like a small
 knowledge base.
 
-Non-goals so far: multi-user accounts, public sharing, a native iOS app.
+Non-goals: multi-user accounts and public sharing. A native iOS share extension
+is not built yet, but is planned (see §7).
 
 ## 2. Architecture
 
@@ -36,7 +39,10 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
                                       │
                                       ├─ FxTwitter / official X API (read post)
                                       ├─ GitHub API + readability (read links)
-                                      └─ OpenCode Go (summaries, topics, versions)
+                                      ├─ Workers AI binding (summaries, topics,
+                                      │  versions; no API key, text only)
+                                      └─ OpenAI-compatible endpoint (key; same
+                                         jobs, plus up to four images)
 ```
 
 - **Worker** is stateless: auth, routing, server-rendered HTML.
@@ -46,6 +52,15 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 - **SSR was chosen deliberately**: one rendering path, no client framework,
   works without JS, auth checked before any HTML is produced. Client JS only
   enhances (expand cards, fold synthesis, swap topic content in place).
+- **AI providers are presets over three wire paths**: `AI_PROVIDER` selects
+  `opencode`, `claude` (Anthropic Messages), `openai`, `cloudflare`, or
+  `custom`; `AI_BASE_URL` and `AI_MODEL` override the preset. With no provider
+  named, a key means OpenAI-compatible HTTP and no key means the `AI` binding,
+  which runs `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The public
+  `wrangler.jsonc` names no provider, so a fresh clone uses Workers AI. That
+  path is text-only (images go only over HTTP, up to four) and shares the 10,000
+  free neurons/day with Whisper transcription. Subscriptions are not API access:
+  Claude Max and ChatGPT Plus tokens from their CLIs cannot be used here.
 
 ### Data model
 
@@ -106,7 +121,7 @@ wall-clock is long but CPU stays low.
   switch re-renders the same page; missing translations show a per-card button,
   and one banner button queues every missing one
 - Collapsed cards (3-line peek, expand on tap) and folded topic syntheses
-- Custom domain `bookmark.nuritas.tr`, workers.dev kept as fallback
+- Custom domain, with the workers.dev URL kept as a fallback
 - `/api/stats` reports row counts and real SQLite database size
 - Local access for AI work: `cli/xbv.ts` (search/show/topics/export) and
   `xbv mcp`, a stdio MCP server exposing `search_bookmarks`, `get_bookmark`,
@@ -164,6 +179,7 @@ wall-clock is long but CPU stays low.
 | Nov 10 | Short `#ref` ids on cards, copy on click | "look at this one" needs a handle shorter than a 19-digit tweet id |
 | Nov 10 | Archive toggle + bilingual summaries | Finished posts should leave the feed without being deleted; the same summaries should be readable in English |
 | Nov 10 | Calendar + single-day library view | Finding what was saved on a date should not require scrolling the whole feed |
+| Nov 11 | Workers AI as the default summarizer, any OpenAI-compatible endpoint as the upgrade | Deploying needed a third-party key before the first summary; the AI binding was already bound for Whisper |
 
 ### Video transcripts
 
@@ -181,6 +197,9 @@ empty without a signature. Supadata's `mode=native` returns existing captions
 for 1 credit (100 free per month); generated transcripts at 2 credits/minute
 are intentionally not used.
 
+A `TRANSCRIPT_API_URL` template is tried first, so any third-party or
+self-hosted caption source can be plugged in without touching the Worker: JSON
+(`text`, `transcript`, `content`), WebVTT, SRT, and plain text are all accepted.
 For a zero-cost path, `xbv youtube` runs `get-youtube-transcript` on this Mac's
 residential IP, then posts the result to `/api/bookmarks/:id/transcripts`. The
 DO stores it and re-queues the summary. It is manual or scheduled, not part of
@@ -221,7 +240,8 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
   (GBs of RAM). Derive them from the base class instead
   (`ConstructorParameters<typeof DurableObject<Env>>`).
 - **Local OpenCode key is expired**; the production secret still works. Local
-  `wrangler dev` summaries will fail until `.dev.vars` gets a fresh key.
+  `wrangler dev` summaries fail while that expired key is set, because a set key
+  selects the HTTP path; unset it and the `AI` binding takes over.
 - **Topic singletons**: some topics hold one item, so their "synthesis" is a
   restatement. Candidate fix: merge or suppress single-item syntheses.
 - **Some summaries open with "Özet:"**, the old robotic style. Re-summarizing
@@ -229,12 +249,11 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - **Video transcripts are capped at 20 MB and two per bookmark.** Whisper runs
   on the MP4 bytes; the Worker cannot extract audio from larger files. YouTube
   captions require `SUPADATA_API_KEY` and are native-only.
-- **YouTube proxy/VPS checks (2026-11-11)**: the Hostinger VPS
-  (`147.93.127.210`), Webshare direct proxies (Leaseweb, Hype Enterprises,
-  HostPapa), and the rotating endpoint all return 429 or `LOGIN_REQUIRED`.
-  Webshare backbone ports 10000–10003 refuse connections, and the account has
-  no residential mode. Only the Mac's residential IP works, via the hourly
-  `xbv youtube` cron.
+- **YouTube proxy/VPS checks (2026-11-11)**: a VPS and several commercial
+  proxy providers (direct and rotating) all return 429 or `LOGIN_REQUIRED`;
+  some backbone ports refuse connections outright, and residential egress was
+  not available from those providers. Only a residential connection works,
+  which is what the hourly `xbv youtube` run uses.
 - **Video pipeline is not committed** — it lived in `/tmp`, which this machine
   cleans. Recreate it under `video/` before relying on it.
 - **TTS is online**: edge-tts sends the script to Microsoft. Local options
@@ -254,6 +273,9 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - Topic syntheses are still Turkish-only; the English board translates bookmark
   summaries, not the rolling topic syntheses.
 - Summary versions remain Turkish-only; only the primary summary is translated.
+- iOS share extension. iPhone users can install the PWA but cannot share into it;
+  only the Android APK exists today. Plan is a small share extension that posts
+  to the same `POST /api/bookmarks` endpoint with `SHARE_TOKEN`.
 
 ## 8. Repo conventions
 

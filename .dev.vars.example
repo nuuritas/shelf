@@ -1,15 +1,45 @@
-# Password for the web app and share target.
+# Copy to `.dev.vars` for local development, or run `bun run setup` to generate
+# one with fresh secrets. Never commit `.dev.vars`.
+
+# Password for the web app and the share target. Required.
 APP_PASSWORD=replace-with-a-long-password
 
-# Optional. Used to sign the session cookie. If omitted, APP_PASSWORD is used.
+# Optional. Signs the session cookie. If omitted, APP_PASSWORD is used.
 # APP_SECRET=replace-with-another-long-secret
 
-# OpenCode Go API key. Leave empty to save bookmarks without AI summaries.
-OPENCODE_API_KEY=
+# Optional. Which provider writes summaries: cloudflare (default, no key),
+# opencode, claude, openai, or custom. Normally set it in wrangler.jsonc.
+# AI_PROVIDER=cloudflare
+
+# Key for the chosen provider. Not used by cloudflare, which uses the AI binding.
+# Claude and ChatGPT *subscriptions* are not API keys and cannot be used here.
+AI_API_KEY=
+
+# Supadata key. Optional: enables YouTube captions inside the Worker.
+# SUPADATA_API_KEY=
+
+# Optional: any transcript service, tried before Supadata. Use {videoId} and/or
+# {url} as placeholders. JSON {text}, WebVTT, SRT, or plain text are accepted.
+# TRANSCRIPT_API_URL=https://example.com/transcript?url={url}
+# TRANSCRIPT_API_KEY=
+# Header for that token. Default is Authorization: Bearer. Use x-api-key for
+# Brevyd/Supadata-style services.
+# TRANSCRIPT_API_HEADER=
+
+# Keyless YouTube captions through a public Piped instance. Volunteer-run, so
+# treat it as a best-effort fallback.
+# PIPED_API_URL=https://api.piped.private.coffee
+
+# Read-only GitHub token. Optional: raises the API rate limit for link reading.
+# GITHUB_TOKEN=
 
 # Required only for rebuilding the Android APK.
 # Use a long random value; the same value must be set as the Worker secret.
 SHARE_TOKEN=
+
+# Full URL the share APK posts to, e.g.
+# https://your-worker.workers.dev/api/bookmarks
+SHARE_ENDPOINT=
 
 # Password for the local APK signing keystore.
 KEYSTORE_PASS=

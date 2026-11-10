@@ -3,9 +3,6 @@
   "name": "x-bookmark-vault",
   "main": "src/worker.ts",
   "workers_dev": true,
-  "routes": [
-    { "pattern": "bookmark.nuritas.tr", "custom_domain": true }
-  ],
   "compatibility_date": "2026-10-26",
   "assets": {
     "directory": "./public"
@@ -25,9 +22,12 @@
       "new_sqlite_classes": ["Bookmarks"]
     }
   ],
+  // Summaries run on the Workers AI binding above, which needs no API key.
+  // To use another provider, add "AI_PROVIDER" here (opencode, claude, openai,
+  // or custom) and set AI_API_KEY as a secret. A custom endpoint also needs:
+  //   "AI_BASE_URL": "https://api.example.com/v1",
+  //   "AI_MODEL": "some-model",
   "vars": {
-    "AI_BASE_URL": "https://opencode.ai/inference/go/openai/v1",
-    "AI_MODEL": "deepseek-v4.1-flash",
-    "SUMMARY_LANGUAGE": "tr"
+    "SUMMARY_LANGUAGE": "en"
   }
 }

@@ -4,7 +4,6 @@ import type {
   BootstrapTopic,
   ChatCompletionResponse,
   ChatImagePart,
-  ChatMessage,
   ChatRequest,
   ChatTextPart,
   ClassifiedTopic,
@@ -20,17 +19,197 @@ import { collectImages } from './x.ts';
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
-/* The gateway answers 429/5xx while a model is briefly busy. Waiting a few
-   seconds is worth far more than a dead card, so those answers and fetch
-   network failures are retried. An abort means the attempt already used its
-   whole timeout budget, so it is reported instead of retried. */
-const AI_TIMEOUT_MS = 180_000;
-const AI_RETRY_DELAYS_MS = [1_000, 3_000];
-const AI_RETRY_AFTER_MAX_MS = 15_000;
-const AI_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+/** Any OpenAI-compatible endpoint works; these are only the last-resort defaults. */
+const DEFAULT_AI_BASE = 'https://api.openai.com/v1';
+const DEFAULT_AI_MODEL = 'gpt-4.1-mini';
+
+/**
+ * Default model for the Workers AI binding. No key, no signup: the free daily
+ * allocation covers a personal archive.
+ */
+const DEFAULT_WORKERS_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+
+/** Anthropic's Messages API, which is not OpenAI-compatible. */
+const ANTHROPIC_VERSION = '2023-06-01';
+
+export type AiTransport = 'http' | 'anthropic' | 'workers' | 'none';
+
+export interface AiConfig {
+  transport: AiTransport;
+  /** Preset name, or `custom` when nothing was named. */
+  provider: string;
+  baseUrl: string;
+  model: string;
+}
+
+interface ProviderPreset {
+  transport: Exclude<AiTransport, 'none'>;
+  baseUrl: string;
+  model: string;
+}
+
+/**
+ * Named providers, so a deployment needs `AI_PROVIDER` plus a key instead of
+ * remembering a base URL, a model id, and a wire format.
+ */
+const PROVIDERS: Record<string, ProviderPreset> = {
+  opencode: {
+    transport: 'http',
+    baseUrl: 'https://opencode.ai/inference/go/openai/v1',
+    model: 'deepseek-v4.1-flash',
+  },
+  claude: {
+    transport: 'anthropic',
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-sonnet-4-5',
+  },
+  openai: {
+    transport: 'http',
+    baseUrl: 'https://api.openai.com/v1',
+    model: DEFAULT_AI_MODEL,
+  },
+  cloudflare: {
+    transport: 'workers',
+    baseUrl: '',
+    model: DEFAULT_WORKERS_MODEL,
+  },
+};
+
+/**
+ * The API key for the endpoint. `OPENCODE_API_KEY` is an older alias, still
+ * read so existing deployments keep working after upgrade.
+ */
+export function aiApiKey(env: Partial<Env>): string {
+  return String(env.AI_API_KEY || env.OPENCODE_API_KEY || '').trim();
+}
+
+/**
+ * Resolve the transport, endpoint, and model for this deployment. An unknown
+ * provider resolves to `none` instead of throwing, because this runs during
+ * rendering: a typo must not 500 every page.
+ */
+export function aiConfig(env: Partial<Env>): AiConfig {
+  const named = String(env.AI_PROVIDER || '').trim().toLowerCase();
+  const preset = PROVIDERS[named];
+  const baseOverride = String(env.AI_BASE_URL || '').trim().replace(/\/+$/, '');
+  const modelOverride = String(env.AI_MODEL || '').trim();
+
+  if (preset) {
+    const model =
+      preset.transport === 'workers'
+        ? (modelOverride.startsWith('@cf/') ? modelOverride : preset.model)
+        : modelOverride || preset.model;
+    return {
+      transport: preset.transport,
+      provider: named,
+      baseUrl: baseOverride || preset.baseUrl,
+      model,
+    };
+  }
+
+  if (named && named !== 'custom') {
+    return { transport: 'none', provider: named, baseUrl: '', model: '' };
+  }
+
+  // Nothing named: keep the selection from before presets existed.
+  if (aiApiKey(env)) {
+    return {
+      transport: 'http',
+      provider: 'custom',
+      baseUrl: baseOverride || DEFAULT_AI_BASE,
+      model: modelOverride || DEFAULT_AI_MODEL,
+    };
+  }
+  if (env.AI) {
+    return {
+      transport: 'workers',
+      provider: 'cloudflare',
+      baseUrl: '',
+      model: modelOverride.startsWith('@cf/') ? modelOverride : DEFAULT_WORKERS_MODEL,
+    };
+  }
+  return { transport: 'none', provider: 'none', baseUrl: '', model: '' };
+}
+
+/** The transport only. Kept for callers that do not need the endpoint. */
+export function aiProvider(env: Partial<Env>): AiTransport {
+  return aiConfig(env).transport;
+}
 
 export function isAiConfigured(env: Partial<Env>): boolean {
-  return Boolean(env.OPENCODE_API_KEY);
+  const config = aiConfig(env);
+  if (config.transport === 'workers') return Boolean(env.AI);
+  if (config.transport === 'none') return false;
+  return Boolean(aiApiKey(env));
+}
+
+/** Point at the provider's endpoint, with an error that names the provider. */
+function requireKey(env: Partial<Env>, config: AiConfig): string {
+  const key = aiApiKey(env);
+  if (!key) {
+    throw new Error(
+      `AI_PROVIDER=${config.provider} needs AI_API_KEY. Set it with \`wrangler secret put AI_API_KEY\`.`,
+    );
+  }
+  return key;
+}
+
+/**
+ * One attempt may take 60–90 s on a cold prompt, so the old 90 s ceiling was
+ * already marginal. Retries have their own budget: only answers that arrive
+ * quickly (429/5xx) are retried, never the ones that exhausted this timer.
+ */
+const AI_TIMEOUT_MS = 180_000;
+const RETRY_DELAYS_MS = [1_000, 3_000];
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** `Retry-After` wins when the gateway sends it; otherwise 1 s, then 3 s. */
+function retryDelayMs(response: Response | null, attempt: number): number {
+  const header = response?.headers.get('retry-after');
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1_000, 15_000);
+    const date = Date.parse(header);
+    if (!Number.isNaN(date)) return Math.min(Math.max(date - Date.now(), 0), 15_000);
+  }
+  return RETRY_DELAYS_MS[attempt] + Math.floor(Math.random() * 250);
+}
+
+/**
+ * POST and read the body, retrying the answers that mean "come back later":
+ * 429/5xx and network errors. A timeout is not retried, because the caller
+ * already waited the full budget and another attempt only doubles the silence.
+ */
+async function postJson(
+  url: string,
+  init: RequestInit,
+  timeoutMs = AI_TIMEOUT_MS,
+): Promise<{ response: Response; raw: string }> {
+  for (let attempt = 0; ; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      const raw = await response.text();
+      if (!RETRYABLE_STATUS.has(response.status) || attempt >= RETRY_DELAYS_MS.length) {
+        return { response, raw };
+      }
+      const delay = retryDelayMs(response, attempt);
+      console.warn(`AI endpoint answered ${response.status}; retrying in ${delay} ms.`);
+      await wait(delay);
+    } catch (error) {
+      if (isAbortError(error) || attempt >= RETRY_DELAYS_MS.length) throw error;
+      const delay = retryDelayMs(null, attempt);
+      console.warn(`AI request failed (${errorMessage(error)}); retrying in ${delay} ms.`);
+      await wait(delay);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
 
 export interface SummaryOptions {
@@ -44,38 +223,52 @@ export async function summarizePost(
   env: Partial<Env>,
   options: SummaryOptions = {},
 ): Promise<SummaryResult> {
-  if (!env.OPENCODE_API_KEY) {
-    throw new Error('OPENCODE_API_KEY is not configured.');
+  const config = aiConfig(env);
+  if (config.transport === 'none') {
+    throw new Error(
+      config.provider === 'none'
+        ? 'No AI configured: set AI_PROVIDER, AI_API_KEY, or bind Workers AI as AI.'
+        : `Unknown AI_PROVIDER="${config.provider}". Use opencode, claude, openai, cloudflare, or custom.`,
+    );
   }
 
   const images = collectImages(post, MAX_IMAGES);
-  const imageParts: ChatImagePart[] = [];
+  const attached: AttachedImage[] = [];
   const imageNotes: string[] = [];
 
-  for (const [index, image] of images.entries()) {
-    try {
-      const dataUrl = await imageAsDataUrl(image.url, env);
-      imageParts.push({
-        type: 'image_url',
-        image_url: { url: dataUrl, detail: 'high' },
-      });
-      imageNotes.push(`Image ${index + 1} (${image.label}): attached.`);
-    } catch (error) {
+  if (config.transport === 'workers') {
+    // The binding path is text-only: it has no portable image message format.
+    if (images.length) {
       imageNotes.push(
-        `Image ${index + 1} (${image.label}): could not be loaded (${errorMessage(error)}).`,
+        `Image ${images.length === 1 ? '1 was' : `${images.length} were`} not attached: the Workers AI path reads text only.`,
       );
+    }
+  } else {
+    for (const [index, image] of images.entries()) {
+      try {
+        const dataUrl = await imageAsDataUrl(image.url, env);
+        const parsed = parseDataUrl(dataUrl);
+        if (!parsed) throw new Error('unexpected image encoding');
+        attached.push(parsed);
+        imageNotes.push(`Image ${index + 1} (${image.label}): attached.`);
+      } catch (error) {
+        imageNotes.push(
+          `Image ${index + 1} (${image.label}): could not be loaded (${errorMessage(error)}).`,
+        );
+      }
     }
   }
 
-  const model = String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, '');
-  const language = String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() === 'en' ? 'English' : 'Turkish';
+  const httpImageParts: ChatImagePart[] =
+    config.transport === 'http'
+      ? attached.map(image => ({
+          type: 'image_url' as const,
+          image_url: { url: `data:${image.mediaType};base64,${image.data}`, detail: 'high' as const },
+        }))
+      : [];
+  const language = String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
 
-  const body: ChatRequest = {
-    model,
-    messages: [
-      {
-        role: 'system',
-        content:
+  const systemPrompt =
           (options.instruction
             ? `You are writing a new version of an existing explanation because the reader asked for a different angle. The existing summary is context, not a template: do not repeat it or pad it. Answer the reader's request directly and concretely, and keep the same natural, non-robotic voice. Write in ${language}. `
             : '') +
@@ -83,22 +276,19 @@ export async function summarizePost(
           'Start with one or two sentences: what this is and the situation or context. Then explain the central idea or argument in natural paragraphs, using concrete details and examples from the supplied content. Briefly explain jargon instead of repeating it. ' +
           'If it is a GitHub repository, explain what the project actually does, who it is for, how it works, and its notable features or maturity. If it is an article, explain its thesis, the context it responds to, and its implications. If the post itself is just a comment on a link, connect the comment to the linked content. ' +
           'Do not use headings such as "Özet", "Ana noktalar", or "Görsellerin katkısı". Do not produce a rigid bullet list or a section-by-section recap. Write 3-5 paragraphs, roughly 250-450 words, and end with one natural takeaway sentence. ' +
-          'Use only the supplied content. If some content could not be read or is incomplete, say so naturally. Do not invent facts. Return plain text, not Markdown.',
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: buildPrompt(post, imageNotes, {
-              instruction: options.instruction,
-              previous: options.previousSummary,
-            }),
-          },
-          ...imageParts,
-        ],
-      },
-    ] satisfies ChatMessage[],
+          'Use only the supplied content. If some content could not be read or is incomplete, say so naturally. Do not invent facts. Return plain text, not Markdown.';
+
+  const userText = buildPrompt(post, imageNotes, {
+    instruction: options.instruction,
+    previous: options.previousSummary,
+  });
+
+  const body: ChatRequest = {
+    model: config.model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: [{ type: 'text', text: userText }, ...httpImageParts] },
+    ],
     max_tokens: 4096,
     max_completion_tokens: 4096,
     reasoning_effort: 'low',
@@ -106,60 +296,223 @@ export async function summarizePost(
     stream: false,
   };
 
-  try {
-    const response = await fetchChat(env, 'summary', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.OPENCODE_API_KEY}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'User-Agent': 'XBookmarkVault/1.0',
-        'x-opencode-session': options.session || `xbv-${post.tweetId}`,
-      },
-      body: JSON.stringify(body),
+  if (config.transport === 'workers') {
+    const text = await runWorkersAi(env, config.model, systemPrompt, userText, 4096, 0.2);
+    return { text, model: config.model, imagesUsed: 0 };
+  }
+
+  if (config.transport === 'anthropic') {
+    const text = await requestAnthropic(env, config, {
+      system: systemPrompt,
+      user: userText,
+      images: attached,
+      maxTokens: 4096,
+      temperature: 0.2,
     });
+    return { text, model: config.model, imagesUsed: attached.length };
+  }
 
-    const raw = await response.text();
-    let payload: ChatCompletionResponse | null = null;
-    try {
-      payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
-    } catch {
-      throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
-    }
+  const key = requireKey(env, config);
+  const { response, raw } = await postJson(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'XBookmarkVault/1.0',
+      'x-opencode-session': options.session || `xbv-${post.tweetId}`,
+    },
+    body: JSON.stringify(body),
+  }).catch(error => {
+    if (isAbortError(error)) throw new Error('AI summary timed out after 180 seconds.');
+    throw error;
+  });
 
-    if (!response.ok) {
-      const upstreamMessage =
-        payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-      throw new Error(
-        `AI endpoint error (HTTP ${response.status}): ${truncate(upstreamMessage, 300)}`,
-      );
-    }
+  let payload: ChatCompletionResponse | null = null;
+  try {
+    payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
+  } catch {
+    throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
+  }
 
-    const content = payload?.choices?.[0]?.message?.content;
-    const text =
-      typeof content === 'string'
+  if (!response.ok) {
+    const upstreamMessage =
+      payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+    throw new Error(
+      `AI endpoint error (HTTP ${response.status}): ${truncate(upstreamMessage, 300)}`,
+    );
+  }
+
+  const content = payload?.choices?.[0]?.message?.content;
+  const text =
+    typeof content === 'string'
+      ? content
+      : Array.isArray(content)
         ? content
-        : Array.isArray(content)
-          ? content
-              .filter(part => part?.type === 'text')
-              .map(part => part.text)
-              .join('\n')
-          : '';
+            .filter(part => part?.type === 'text')
+            .map(part => part.text)
+            .join('\n')
+        : '';
 
-    if (!text.trim()) {
-      const finishReason = payload?.choices?.[0]?.finish_reason;
-      throw new Error(
-        `AI returned an empty summary${finishReason ? ` (finish: ${finishReason})` : ''}.`,
-      );
-    }
+  if (!text.trim()) {
+    const finishReason = payload?.choices?.[0]?.finish_reason;
+    throw new Error(
+      `AI returned an empty summary${finishReason ? ` (finish: ${finishReason})` : ''}.`,
+    );
+  }
 
-    return { text: text.trim(), model, imagesUsed: imageParts.length };
+  return { text: text.trim(), model: config.model, imagesUsed: attached.length };
+}
+
+interface AttachedImage {
+  mediaType: string;
+  data: string;
+}
+
+function parseDataUrl(url: string): AttachedImage | null {
+  const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
+  if (!match) return null;
+  return { mediaType: match[1], data: match[2] };
+}
+
+interface AnthropicResponse {
+  content?: Array<{ type?: string; text?: string }>;
+  stop_reason?: string;
+  error?: { message?: string };
+}
+
+/**
+ * Anthropic's Messages API is not OpenAI-compatible: the system prompt is a
+ * top-level field, `max_tokens` is required, images are base64 blocks, and the
+ * reply is a content array. The rest of the app does not care.
+ */
+export async function requestAnthropic(
+  env: Partial<Env>,
+  config: AiConfig,
+  options: {
+    system: string;
+    user: string;
+    images: AttachedImage[];
+    maxTokens: number;
+    temperature: number;
+  },
+): Promise<string> {
+  const key = requireKey(env, config);
+  const endpoint = config.baseUrl.endsWith('/v1')
+    ? `${config.baseUrl}/messages`
+    : `${config.baseUrl}/v1/messages`;
+
+  const content: Array<Record<string, unknown>> = [{ type: 'text', text: options.user }];
+  for (const image of options.images) {
+    content.push({
+      type: 'image',
+      source: { type: 'base64', media_type: image.mediaType, data: image.data },
+    });
+  }
+
+  const { response, raw } = await postJson(endpoint, {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': ANTHROPIC_VERSION,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'XBookmarkVault/1.0',
+    },
+    body: JSON.stringify({
+      model: config.model,
+      max_tokens: options.maxTokens,
+      temperature: options.temperature,
+      system: options.system,
+      messages: [{ role: 'user', content }],
+    }),
+  }).catch(error => {
+    if (isAbortError(error)) throw new Error('Anthropic request timed out after 180 seconds.');
+    throw error;
+  });
+
+  let payload: AnthropicResponse | null = null;
+  try {
+    payload = raw ? (JSON.parse(raw) as AnthropicResponse) : null;
+  } catch {
+    throw new Error(`Anthropic returned non-JSON (HTTP ${response.status}).`);
+  }
+
+  if (!response.ok) {
+    const message = payload?.error?.message || `HTTP ${response.status}`;
+    throw new Error(`Anthropic error (HTTP ${response.status}): ${truncate(message, 300)}`);
+  }
+
+  const text = Array.isArray(payload?.content)
+    ? payload.content
+        .filter(part => part?.type === 'text')
+        .map(part => part.text || '')
+        .join('\n')
+    : '';
+
+  if (!text.trim()) {
+    throw new Error(
+      `Anthropic returned an empty response${payload?.stop_reason ? ` (${payload.stop_reason})` : ''}.`,
+    );
+  }
+  return text.trim();
+}
+
+/**
+ * Run one chat completion on the Workers AI binding. The binding is already
+ * used for Whisper, so this needs no extra credential: a fresh deployment gets
+ * summaries from the free daily allocation.
+ */
+export async function runWorkersAi(
+  env: Partial<Env>,
+  model: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string> {
+  const ai = env.AI;
+  if (!ai) throw new Error('The Workers AI binding (AI) is not configured.');
+
+  let result: unknown;
+  try {
+    result = await ai.run(model, {
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      max_tokens: maxTokens,
+      temperature,
+    });
   } catch (error) {
-    if (isAbortError(error)) {
-      throw new Error('AI summary timed out after 180 seconds.');
+    const message = errorMessage(error);
+    if (/neuron|quota|rate.?limit|429|capacity|busy|overload/i.test(message)) {
+      throw new Error(
+        `Workers AI could not serve this request (${truncate(message, 200)}). ` +
+          'The free allocation is 10,000 neurons per day and resets at 00:00 UTC.',
+      );
     }
     throw error;
   }
+
+  const text = extractAiText(result);
+  if (!text) throw new Error('Workers AI returned an empty response.');
+  return text;
+}
+
+/** Workers AI models answer as `{ response }` or in the OpenAI `choices` shape. */
+export function extractAiText(result: unknown): string {
+  if (typeof result === 'string') return result.trim();
+  if (!result || typeof result !== 'object') return '';
+  const record = result as Record<string, unknown>;
+
+  if (typeof record.response === 'string') return record.response.trim();
+  const choices = record.choices as Array<{ message?: { content?: unknown } }> | undefined;
+  const content = choices?.[0]?.message?.content;
+  if (typeof content === 'string') return content.trim();
+  const nested = record.result as Record<string, unknown> | undefined;
+  if (nested && typeof nested.response === 'string') return nested.response.trim();
+  return '';
 }
 
 /** Translate a finished primary summary into English, preserving its shape. */
@@ -168,8 +521,8 @@ export async function translateSummary(
   env: Partial<Env>,
   options: { session?: string } = {},
 ): Promise<SummaryResult> {
-  if (!env.OPENCODE_API_KEY) {
-    throw new Error('OPENCODE_API_KEY is not configured.');
+  if (!isAiConfigured(env)) {
+    throw new Error('AI_API_KEY is not configured.');
   }
 
   const text = await requestChat(env, {
@@ -192,7 +545,7 @@ export async function translateSummary(
 
   return {
     text,
-    model: String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, ''),
+    model: String(env.AI_MODEL || DEFAULT_AI_MODEL).replace(/^opencode-go\//, ''),
     imagesUsed: 0,
   };
 }
@@ -534,143 +887,84 @@ async function requestChat(
   env: Partial<Env>,
   { session, system, user, maxTokens = 2000, temperature = 0.2 }: RequestChatOptions,
 ): Promise<string> {
-  if (!env.OPENCODE_API_KEY) {
-    throw new Error('OPENCODE_API_KEY is not configured.');
+  const config = aiConfig(env);
+  if (config.transport === 'none') {
+    throw new Error(
+      config.provider === 'none'
+        ? 'No AI configured: set AI_PROVIDER, AI_API_KEY, or bind Workers AI as AI.'
+        : `Unknown AI_PROVIDER="${config.provider}". Use opencode, claude, openai, cloudflare, or custom.`,
+    );
   }
 
-  const model = String(env.AI_MODEL || 'deepseek-v4.1-flash').replace(/^opencode-go\//, '');
+  if (config.transport === 'workers') {
+    return runWorkersAi(env, config.model, system, user, maxTokens, temperature);
+  }
 
-  try {
-    const response = await fetchChat(env, 'request', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.OPENCODE_API_KEY}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'User-Agent': 'XBookmarkVault/1.0',
-        'x-opencode-session': session,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        max_tokens: maxTokens,
-        max_completion_tokens: maxTokens,
-        reasoning_effort: 'low',
-        temperature,
-        stream: false,
-      }),
-    });
+  if (config.transport === 'anthropic') {
+    return requestAnthropic(env, config, { system, user, images: [], maxTokens, temperature });
+  }
 
-    const raw = await response.text();
-    let payload: ChatCompletionResponse | null = null;
-    try {
-      payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
-    } catch {
-      throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
-    }
+  const key = requireKey(env, config);
+  const base = config.baseUrl;
 
-    if (!response.ok) {
-      const upstreamMessage =
-        payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-      throw new Error(
-        `AI endpoint error (HTTP ${response.status}): ${truncate(upstreamMessage, 300)}`,
-      );
-    }
-
-    const content = payload?.choices?.[0]?.message?.content;
-    const text =
-      typeof content === 'string'
-        ? content
-        : Array.isArray(content)
-          ? content
-              .filter(part => part?.type === 'text')
-              .map(part => part.text)
-              .join('\n')
-          : '';
-
-    if (!text.trim()) {
-      const finishReason = payload?.choices?.[0]?.finish_reason;
-      throw new Error(`AI returned an empty response${finishReason ? ` (finish: ${finishReason})` : ''}.`);
-    }
-
-    return text.trim();
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw new Error('AI request timed out after 180 seconds.');
-    }
+  const { response, raw } = await postJson(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'XBookmarkVault/1.0',
+      'x-opencode-session': session,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
+      reasoning_effort: 'low',
+      temperature,
+      stream: false,
+    }),
+  }).catch(error => {
+    if (isAbortError(error)) throw new Error('AI request timed out after 180 seconds.');
     throw error;
-  }
-}
+  });
 
-/**
- * The chat endpoint with the shared per-attempt timeout and retry policy.
- * Returns the response for the caller to read; only transient answers and
- * connection failures are retried before that.
- */
-async function fetchChat(
-  env: Partial<Env>,
-  label: string,
-  init: Omit<RequestInit, 'signal'>,
-): Promise<Response> {
-  const base = (env.AI_BASE_URL || 'https://opencode.ai/inference/go/openai/v1').replace(/\/+$/, '');
-  const endpoint = `${base}/chat/completions`;
-
-  for (let attempt = 0; ; attempt += 1) {
-    const canRetry = attempt < AI_RETRY_DELAYS_MS.length;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
-    let retryDelay: number | null = null;
-
-    try {
-      const response = await fetch(endpoint, { ...init, signal: controller.signal });
-      if (canRetry && AI_RETRY_STATUSES.has(response.status)) {
-        retryDelay = retryDelayMs(attempt, response.headers.get('retry-after'));
-      }
-      if (retryDelay === null) return response;
-    } catch (error) {
-      if (isAbortError(error)) {
-        throw new Error(`AI ${label} timed out after ${AI_TIMEOUT_MS / 1000} seconds.`);
-      }
-      // fetch() reports connection failures as TypeError; those are transient.
-      if (!canRetry || !(error instanceof TypeError)) throw error;
-      retryDelay = retryDelayMs(attempt, null);
-    } finally {
-      clearTimeout(timer);
-    }
-
-    await sleep(retryDelay ?? 0);
-  }
-}
-
-/** `Retry-After` is delta-seconds or an HTTP date; cap either at 15 seconds. */
-function retryAfterMs(header: string | null): number | null {
-  const value = String(header || '').trim();
-  if (!value) return null;
-
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(Math.round(seconds * 1000), AI_RETRY_AFTER_MAX_MS);
+  let payload: ChatCompletionResponse | null = null;
+  try {
+    payload = raw ? (JSON.parse(raw) as ChatCompletionResponse) : null;
+  } catch {
+    throw new Error(`AI endpoint returned non-JSON (HTTP ${response.status}).`);
   }
 
-  const at = Date.parse(value);
-  if (Number.isNaN(at)) return null;
-  return Math.min(Math.max(at - Date.now(), 0), AI_RETRY_AFTER_MAX_MS);
-}
+  if (!response.ok) {
+    const upstreamMessage =
+      payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+    throw new Error(
+      `AI endpoint error (HTTP ${response.status}): ${truncate(upstreamMessage, 300)}`,
+    );
+  }
 
-/** 1 s, then 3 s, each with a little jitter so retries do not line up. */
-function retryDelayMs(attempt: number, retryAfter: string | null): number {
-  const hinted = retryAfterMs(retryAfter);
-  if (hinted !== null) return hinted;
+  const content = payload?.choices?.[0]?.message?.content;
+  const text =
+    typeof content === 'string'
+      ? content
+      : Array.isArray(content)
+        ? content
+            .filter(part => part?.type === 'text')
+            .map(part => part.text)
+            .join('\n')
+        : '';
 
-  const base = AI_RETRY_DELAYS_MS[Math.min(attempt, AI_RETRY_DELAYS_MS.length - 1)];
-  return base + Math.round(base * 0.25 * Math.random());
-}
+  if (!text.trim()) {
+    const finishReason = payload?.choices?.[0]?.finish_reason;
+    throw new Error(`AI returned an empty response${finishReason ? ` (finish: ${finishReason})` : ''}.`);
+  }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return text.trim();
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -693,5 +987,5 @@ function parseJsonReply(raw: unknown): unknown {
 }
 
 function summaryLanguage(env: Partial<Env>): string {
-  return String(env.SUMMARY_LANGUAGE || 'tr').toLowerCase() === 'en' ? 'English' : 'Turkish';
+  return String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
 }

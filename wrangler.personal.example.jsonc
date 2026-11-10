@@ -1,0 +1,45 @@
+// Copy this file to `wrangler.personal.jsonc` to deploy your own instance to a
+// custom domain. The personal file is gitignored, so your domain stays out of
+// the public repository.
+//
+//   cp wrangler.personal.example.jsonc wrangler.personal.jsonc
+//   # edit "routes" and "name", then:
+//   bun run deploy:personal
+//
+// Anything you leave out is inherited from nothing — this is a complete config,
+// because Wrangler does not merge two config files.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "x-bookmark-vault",
+  "main": "src/worker.ts",
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "bookmarks.example.com", "custom_domain": true }
+  ],
+  "compatibility_date": "2026-10-26",
+  "assets": {
+    "directory": "./public"
+  },
+  "ai": { "binding": "AI" },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BOOKMARKS",
+        "class_name": "Bookmarks"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Bookmarks"]
+    }
+  ],
+  // Delete these three lines to use the free Workers AI binding instead of an
+  // external endpoint (then AI_API_KEY is not needed either).
+  "vars": {
+    "AI_BASE_URL": "https://api.openai.com/v1",
+    "AI_MODEL": "gpt-4.1-mini",
+    "SUMMARY_LANGUAGE": "en"
+  }
+}

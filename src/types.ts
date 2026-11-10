@@ -10,6 +10,11 @@
 export interface Env {
   APP_PASSWORD: string;
   APP_SECRET?: string;
+  /** Named provider preset: opencode, claude, openai, cloudflare, or custom. */
+  AI_PROVIDER?: string;
+  /** API key for the OpenAI-compatible endpoint in `AI_BASE_URL`. */
+  AI_API_KEY?: string;
+  /** Older name for `AI_API_KEY`; still read so old deployments keep working. */
   OPENCODE_API_KEY?: string;
   SHARE_TOKEN?: string;
   GITHUB_TOKEN?: string;
@@ -27,6 +32,26 @@ export interface Env {
   AI?: WorkersAi;
   /** Supadata key, used for YouTube captions. Optional: without it only X is transcribed. */
   SUPADATA_API_KEY?: string;
+  /**
+   * Any transcript service, used before Supadata. A URL template with
+   * `{videoId}` and/or `{url}`, for example
+   * `https://example.com/transcript?url={url}`.
+   */
+  TRANSCRIPT_API_URL?: string;
+  /** Token for `TRANSCRIPT_API_URL`, if the service needs one. */
+  TRANSCRIPT_API_KEY?: string;
+  /**
+   * Header that carries `TRANSCRIPT_API_KEY`. Defaults to
+   * `Authorization: Bearer <key>`; set `x-api-key` or `X-API-Key` for services
+   * that use a raw key header.
+   */
+  TRANSCRIPT_API_HEADER?: string;
+  /**
+   * Base URL of a Piped API instance, for example
+   * `https://api.piped.private.coffee`. Keyless best-effort YouTube captions;
+   * instances are volunteer-run, so treat this as a free fallback.
+   */
+  PIPED_API_URL?: string;
 }
 
 /** The small part of the Workers AI binding this app uses. */
@@ -147,7 +172,7 @@ export interface VideoTranscript {
   /** The post or page the video lives on. */
   url: string;
   source: TranscriptSource;
-  provider: 'workers-ai' | 'supadata' | 'local' | null;
+  provider: 'workers-ai' | 'supadata' | 'custom' | 'piped' | 'local' | null;
   lang: string | null;
   text: string;
   durationSec: number | null;
@@ -265,6 +290,10 @@ export type BookmarkRow = {
   summary_status: string;
   summary_error: string | null;
   summary_started_at: number | null;
+  /** Automatic retries already spent; reset by a manual re-summarize. */
+  summary_attempts?: number | null;
+  /** Earliest time the alarm may pick this pending summary up again. */
+  summary_retry_at?: number | null;
   summarized_at: string | null;
   summary_en: string | null;
   summary_en_status: string | null;
