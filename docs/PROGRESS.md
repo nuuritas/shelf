@@ -215,7 +215,8 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 ## 8. Repo conventions
 
 - TypeScript strict, `.ts` import specifiers, no build step; Wrangler bundles.
-- One feature per commit, imperative subject, tests and `bun run typecheck`
-  before pushing.
+- One feature per issue and PR, imperative commit subject, tests and
+  `bun run typecheck` before pushing. The PR body starts with `Closes #N`; direct
+  pushes to `main` are emergency-only.
 - Never commit `.dev.vars`, the keystore, or `public/BookmarkShare.apk`
   (it embeds `SHARE_TOKEN`).

@@ -62,6 +62,32 @@ repository's card on the board (Workstream `XB`, Status `In Progress`).
 The issue number is stored in the `PUSH_LOG_ISSUE` Actions repository variable.
 If the log issue is recreated, update the variable; no workflow edit is needed.
 
+The push log is a **feed**, not the task record. Normal work uses one issue per
+change and a real PR; see **Delivery workflow** below. The push log still records
+the merge commits that arrive on `main`.
+
+## Delivery workflow
+
+Every change, including docs and chores, follows the same loop:
+
+1. Open an issue in `nuuritas/x-bookmark-vault` with the goal and an acceptance
+   check.
+2. Add the issue to **All work** (project 1), set Workstream `XB`, and move it to
+   `Todo`/`In Progress` when work starts. The project's Auto-add workflow is not
+   enabled for this repository, so add the item explicitly.
+3. Branch from an up-to-date `main`: `git switch -c <type>/<slug>`.
+4. Implement and verify on the branch.
+5. Push the branch and open a PR against `main`. The body starts with
+   `Closes #<issue>` and follows `.github/pull_request_template.md`.
+6. Merge the PR (squash is fine). The linked issue closes and the project's
+   built-in workflows move the card to Done. Deploy after the merge, not before.
+7. Delete the branch.
+
+Direct pushes to `main` are reserved for emergencies: they update the `XB · push
+log` card but do not create a task card. The current private repository plan does
+not offer branch protection or rulesets, so this loop is enforced by convention;
+do not take the shortcut.
+
 ## Request flow
 
 `fetch` → session check (`isAuthorized`) or `SHARE_TOKEN` for
@@ -158,10 +184,12 @@ API: see `docs/PROGRESS.md` §3.
 1. `bun run typecheck` — must be clean.
 2. `node --test` — must pass.
 3. If CSS/markup changed: bump `?v=` and check the page with a session cookie.
-4. If Worker code changed: `bunx wrangler deploy --dry-run` then deploy.
+4. If Worker code changed: `bunx wrangler deploy --dry-run` on the branch, then
+   deploy from `main` after the merge.
 5. If AI behaviour changed: run one real save/reindex in production and inspect
    the resulting text, not just the HTTP status.
-6. Commit one feature at a time, imperative subject, then push `main`.
+6. Deliver through the issue → branch → PR → merge loop above. One feature per
+   issue and PR, imperative commit subject. Do not push to `main` directly.
 
 ## Traps seen in this repo
 
