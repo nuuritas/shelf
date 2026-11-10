@@ -97,9 +97,11 @@ wall-clock is long but CPU stays low.
   X Article bodies, quoted posts, up to two external links, and video transcripts
 - Video transcripts: the smallest MP4 of an X video goes to Workers AI
   `@cf/openai/whisper-large-v3-turbo` (no key, ~214 free audio minutes/day).
-  YouTube links use Supadata native captions when `SUPADATA_API_KEY` is set, or
-  `xbv youtube` from the Mac's residential IP when there is no key (it runs
-  `get-youtube-transcript` and posts through `/api/bookmarks/:id/transcripts`).
+  YouTube links read captions from public Piped instances with no key at all
+  (two are tried by default), fall back to Supadata native captions when
+  `SUPADATA_API_KEY` is set, and can also be filled by `xbv youtube` from the
+  Mac's residential IP (it runs `get-youtube-transcript` and posts through
+  `/api/bookmarks/:id/transcripts`).
   Results are stored in `bookmarks.transcripts_json`, fed to the summarizer, and
   shown in a fold. Two videos per bookmark, 20 MB each; a failure never blocks
   the summary
@@ -180,6 +182,7 @@ wall-clock is long but CPU stays low.
 | Nov 10 | Archive toggle + bilingual summaries | Finished posts should leave the feed without being deleted; the same summaries should be readable in English |
 | Nov 10 | Calendar + single-day library view | Finding what was saved on a date should not require scrolling the whole feed |
 | Nov 11 | Workers AI as the default summarizer, any OpenAI-compatible endpoint as the upgrade | Deploying needed a third-party key before the first summary; the AI binding was already bound for Whisper |
+| Nov 11 | Piped as the default YouTube caption source, no key | Supadata needs a signup and a 100-credit ceiling; a fresh deploy should read captions immediately |
 
 ### Video transcripts
 
@@ -196,6 +199,15 @@ Innertube client (Android, iOS, TV, mobile web, desktop web, embedded) returns
 empty without a signature. Supadata's `mode=native` returns existing captions
 for 1 credit (100 free per month); generated transcripts at 2 credits/minute
 are intentionally not used.
+
+The keyless path arrived later: a public Piped instance returns the stream's
+subtitle tracks, and `src/transcript.ts` fetches the chosen track as WebVTT
+(`fmt=ttml` → `fmt=vtt`) and strips the cue markup. Piped publishes no quota and
+sends no rate-limit headers; it is a volunteer-run server, so the code treats it
+as best-effort and walks a short ladder of instances. Two defaults
+(`api.piped.private.coffee`, `pipedapi.ducks.party`) worked on 2026-11-11;
+several others tested were down. `PIPED_API_URL` overrides the ladder, and
+`off` disables the path.
 
 A `TRANSCRIPT_API_URL` template is tried first, so any third-party or
 self-hosted caption source can be plugged in without touching the Worker: JSON

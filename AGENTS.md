@@ -24,7 +24,7 @@ src/bookmarks-do.ts  Durable Object: schema, queries, alarm queue, AI jobs
 src/ai.ts            AI prompts + requests (summary, translation, topics, synthesis)
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
-src/transcript.ts    video transcripts (Workers AI Whisper for X, Supadata for YouTube)
+src/transcript.ts    video transcripts (Whisper for X, Piped by default for YouTube)
 src/render.ts        SSR HTML + the entire stylesheet as a template string
 src/util.ts          escaping, linkify, cookies, base64, slugs
 src/types.ts         shared domain types
@@ -181,9 +181,14 @@ API: see `docs/PROGRESS.md` §3.
   about 214 audio minutes). YouTube uses Supadata `mode=native` only when
   `SUPADATA_API_KEY` is set; never switch it to `auto`, which bills 2 credits
   per generated minute. A transcript failure must never fail the summary.
-- `PIPED_API_URL` is the keyless fallback: `GET /streams/{id}` then the
-  subtitle URL with `fmt=vtt`. Instances are volunteer-run and flaky, so every
-  failure becomes an `unavailable` transcript, never an exception.
+- Piped is the **default** YouTube caption source and needs no key: with no
+  `PIPED_API_URL`, `DEFAULT_PIPED_INSTANCES` in `src/transcript.ts` is used.
+  Set it to a comma/space separated ladder to override, or `off` to disable the
+  path. Each instance returns `GET /streams/{id}` and its subtitle URL is read
+  with `fmt=vtt`. Instances are volunteer-run and flaky, so the ladder moves on
+  to the next base and every failure becomes an `unavailable` transcript, never
+  an exception. Order: `TRANSCRIPT_API_URL`, Piped, then Supadata
+  (`mode=native`) as the fallback when `SUPADATA_API_KEY` is set.
 - `TRANSCRIPT_API_URL` (a template with `{videoId}`/`{url}`) is tried before
   Supadata and accepts JSON, VTT, SRT, or plain text; `parseTranscriptBody` is
   the only parser. Keep it forgiving: it is the integration point for any
@@ -265,8 +270,8 @@ API: see `docs/PROGRESS.md` §3.
   paid fallback, not the default.
 - YouTube returns HTTP 429 to Worker IPs and every Innertube client returns
   `LOGIN_REQUIRED`, so do not try to scrape caption tracks in the Worker. Use
-  `TRANSCRIPT_API_URL`, Supadata, `xbv youtube` from a residential connection,
-  or accept the page-description fallback.
+  the Piped default, `TRANSCRIPT_API_URL`, Supadata, `xbv youtube` from a
+  residential connection, or accept the page-description fallback.
 - A VPS and several commercial proxy providers were also tested and get the
   same 429/`LOGIN_REQUIRED`; backbone ports sometimes refuse connections. Do not
   retry datacenter egress for YouTube; only a residential IP or a managed API

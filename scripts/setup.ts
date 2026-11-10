@@ -294,6 +294,12 @@ function printNextSteps(provider: ProviderChoice, keyMissing: boolean, customInc
     '     (needs SHARE_TOKEN, SHARE_ENDPOINT, and KEYSTORE_PASS in .dev.vars).',
   );
 
+  lines.push(
+    '',
+    'YouTube captions already work through a public Piped instance, with no key.',
+    'Add SUPADATA_API_KEY later if you want a stronger fallback.',
+  );
+
   console.log(lines.join('\n'));
 }
 
