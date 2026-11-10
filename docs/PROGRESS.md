@@ -38,7 +38,7 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
                                       ├─ GitHub API + readability (read links)
                                       ├─ Workers AI binding (summaries, topics,
                                       │  versions; no API key, text only)
-                                      └─ OpenAI-compatible endpoint (key; the same
+                                      └─ OpenAI-compatible endpoint (key; same
                                          jobs, plus up to four images)
 ```
 
