@@ -27,6 +27,7 @@ src/types.ts         shared domain types
 public/              static assets, PWA manifest/service worker, share APK
 android/             transparent share APK sources + no-Gradle build script
 cli/xbv.ts           Bun CLI + stdio MCP server (search/show/export/mcp)
+.github/workflows/   project push log (All work board)
 test/                node:test unit tests
 docs/PROGRESS.md     long-form project knowledge
 ```
@@ -48,6 +49,18 @@ xbv mcp                     # stdio MCP server for Claude/Codex/Cursor
 `.dev.vars` (gitignored) needs `APP_PASSWORD`, `APP_SECRET`, `OPENCODE_API_KEY`,
 `SHARE_TOKEN`, `KEYSTORE_PASS`. The local OpenCode key is currently expired;
 production has a working secret.
+
+## GitHub project
+
+The repository is linked to the user project **All work**
+(<https://github.com/users/nuuritas/projects/1>). GitHub Projects has no commit
+item type, so `.github/workflows/project-push-log.yml` keeps one issue
+(`XB · push log`) updated on every push to `main`: it prepends the pushed commits
+to the issue body and sets the title to the newest commit. That issue is the
+repository's card on the board (Workstream `XB`, Status `In Progress`).
+
+The issue number is stored in the `PUSH_LOG_ISSUE` Actions repository variable.
+If the log issue is recreated, update the variable; no workflow edit is needed.
 
 ## Request flow
 
