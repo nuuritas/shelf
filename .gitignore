@@ -7,3 +7,4 @@ node_modules/
 android/build/
 android/*.keystore
 public/BookmarkShare.apk
+out/

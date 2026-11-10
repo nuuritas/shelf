@@ -4,6 +4,8 @@ A tiny Cloudflare-native app for saving X posts, their quoted posts, and their i
 
 No Docker, no Telegram bot, no tunnel, and no X API subscription. The app runs as a Worker with one SQLite-backed Durable Object.
 
+Architecture, history, and known traps live in [docs/PROGRESS.md](docs/PROGRESS.md). Contributors and coding agents should start with [AGENTS.md](AGENTS.md).
+
 ## What it does
 
 Paste an X link, or share one from Android:
