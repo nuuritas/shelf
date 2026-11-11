@@ -11,7 +11,7 @@
     <application
         android:allowBackup="false"
         android:icon="@drawable/icon"
-        android:label="Bookmarks"
+        android:label="Shelf"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false">
 

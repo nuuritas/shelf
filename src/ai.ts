@@ -319,8 +319,8 @@ export async function summarizePost(
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      'User-Agent': 'XBookmarkVault/1.0',
-      'x-opencode-session': options.session || `xbv-${post.tweetId}`,
+      'User-Agent': 'Shelf/1.0',
+      'x-opencode-session': options.session || `shelf-${post.tweetId}`,
     },
     body: JSON.stringify(body),
   }).catch(error => {
@@ -417,7 +417,7 @@ export async function requestAnthropic(
       'anthropic-version': ANTHROPIC_VERSION,
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      'User-Agent': 'XBookmarkVault/1.0',
+      'User-Agent': 'Shelf/1.0',
     },
     body: JSON.stringify({
       model: config.model,
@@ -526,7 +526,7 @@ export async function translateSummary(
   }
 
   const text = await requestChat(env, {
-    session: options.session || 'xbv-translate-en',
+    session: options.session || 'shelf-translate-en',
     system:
       'You translate explanations for one reader\'s private reading archive. ' +
       'Translate the supplied text into natural, idiomatic English. Keep the meaning, the paragraph order, and every concrete detail. ' +
@@ -653,7 +653,7 @@ async function imageAsDataUrl(url: string, env: Partial<Env>): Promise<string> {
       headers: {
         Accept: 'image/png,image/jpeg,image/webp,image/gif,image/*;q=0.8',
         Referer: 'https://x.com/',
-        'User-Agent': 'XBookmarkVault/1.0',
+        'User-Agent': 'Shelf/1.0',
       },
       signal: controller.signal,
     });
@@ -729,7 +729,7 @@ export async function bootstrapTopics(
   ].join('\n');
 
   const raw = await requestChat(env, {
-    session: 'xbv-topics-bootstrap',
+    session: 'shelf-topics-bootstrap',
     system,
     user,
     maxTokens: 3000,
@@ -799,7 +799,7 @@ export async function classifyPost(
     .join('\n');
 
   const raw = await requestChat(env, {
-    session: `xbv-file-${post.tweetId}`,
+    session: `shelf-file-${post.tweetId}`,
     system,
     user,
     maxTokens: 1200,
@@ -865,7 +865,7 @@ export async function writeTopicOverview(
     .join('\n');
 
   const raw = await requestChat(env, {
-    session: `xbv-topic-${topic.slug}`,
+    session: `shelf-topic-${topic.slug}`,
     system,
     user,
     maxTokens: 2500,
@@ -913,7 +913,7 @@ async function requestChat(
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      'User-Agent': 'XBookmarkVault/1.0',
+      'User-Agent': 'Shelf/1.0',
       'x-opencode-session': session,
     },
     body: JSON.stringify({

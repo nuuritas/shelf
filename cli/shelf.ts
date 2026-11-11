@@ -1,24 +1,24 @@
 #!/usr/bin/env bun
 /**
- * xbv — read the X Bookmark Vault from a terminal or an AI client.
+ * shelf — read the Shelf archive from a terminal or an AI client.
  *
  * The vault lives in a Cloudflare Worker you deploy yourself. This CLI talks to
  * its JSON API with the same `APP_PASSWORD` the web login uses, so nothing has
  * to be synced: the Worker stays the single source of truth.
 
  * Point it at your instance once:
- *   xbv config --url https://your-worker.workers.dev --password '<app password>'
+ *   shelf config --url https://your-worker.workers.dev --password '<app password>'
  *
  * Two ways to use it with AI:
- *   1. `xbv search ...` / `xbv show k7f3 ...` — pipe markdown into any chat.
- *   2. `xbv mcp` — a stdio MCP server so Claude Code/Desktop, Codex, Cursor
+ *   1. `shelf search ...` / `shelf show k7f3 ...` — pipe markdown into any chat.
+ *   2. `shelf mcp` — a stdio MCP server so Claude Code/Desktop, Codex, Cursor
  *      etc. can search the archive themselves via tools.
  *
  * Run with bun (no dependencies, no build step):
- *   xbv search "claude code"
- *   xbv show 1985100000000000000
- *   xbv export --dir ~/Documents/bookmarks
- *   xbv mcp
+ *   shelf search "claude code"
+ *   shelf show 1985100000000000000
+ *   shelf export --dir ~/Documents/bookmarks
+ *   shelf mcp
  */
 
 import { execFile } from 'node:child_process';
@@ -48,7 +48,7 @@ const DEFAULT_URL = 'http://127.0.0.1:8787';
 interface Config {
   url: string;
   password: string;
-  /** Where the password came from, for `xbv config`. */
+  /** Where the password came from, for `shelf config`. */
   source: string;
 }
 
@@ -85,18 +85,33 @@ function parseArgs(argv: string[]): ParsedArgs {
 }
 
 function configPath(): string {
-  return process.env.XBV_CONFIG || join(homedir(), '.config', 'xbv', 'config.json');
+  return process.env.SHELF_CONFIG || join(homedir(), '.config', 'shelf', 'config.json');
+}
+
+/**
+ * Location used before the app was renamed. Read once so an existing password
+ * keeps working; the next `shelf config` write lands on the new path.
+ */
+function legacyConfigPath(): string {
+  return join(homedir(), '.config', 'xbv', 'config.json');
 }
 
 function readConfigFile(): Partial<Config> | null {
-  const path = configPath();
-  if (!existsSync(path)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<Config>;
-    return { url: parsed.url, password: parsed.password, source: path };
-  } catch {
-    throw new Error(`Invalid JSON in ${path}`);
+  const paths = process.env.SHELF_CONFIG
+    ? [configPath()]
+    : [configPath(), legacyConfigPath()];
+
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<Config>;
+      return { url: parsed.url, password: parsed.password, source: path };
+    } catch {
+      throw new Error(`Invalid JSON in ${path}`);
+    }
   }
+
+  return null;
 }
 
 function parseDevVars(path: string): string | null {
@@ -127,8 +142,9 @@ function findDevVars(startDirs: string[]): string | null {
 }
 
 function loadConfig(): Config {
-  const url = (process.env.XBV_URL || '').trim().replace(/\/+$/, '');
-  const password = process.env.XBV_PASSWORD || '';
+  // XBV_* is the pre-rename spelling; keep reading it so existing shells work.
+  const url = (process.env.SHELF_URL || process.env.XBV_URL || '').trim().replace(/\/+$/, '');
+  const password = process.env.SHELF_PASSWORD || process.env.XBV_PASSWORD || '';
 
   if (url && password) {
     return { url, password, source: 'environment' };
@@ -203,7 +219,7 @@ async function api<T>(
     if (response.status === 401) {
       throw new Error(
         `401 Unauthorized — the password in ${config.source} is not the one the Worker uses.\n` +
-          'Update it with `xbv config --password <new>` or fix .dev.vars/XBV_PASSWORD.',
+          'Update it with `shelf config --password <new>` or fix .dev.vars/XBV_PASSWORD.',
       );
     }
     throw new Error(`HTTP ${response.status}: ${detail || response.statusText}`);
@@ -392,7 +408,7 @@ function clampLimit(value: string | boolean | undefined, fallback: number, max: 
 
 async function commandSearch(args: ParsedArgs): Promise<void> {
   const query = args.positional.join(' ').trim();
-  if (!query) throw new Error('Usage: xbv search <words> [--limit 10] [--json]');
+  if (!query) throw new Error('Usage: shelf search <words> [--limit 10] [--json]');
 
   const limit = clampLimit(args.flags.limit, 10, 50);
   const result = await api<ListResult>('api/bookmarks', { q: query, limit, view: 'all' });
@@ -432,7 +448,7 @@ async function commandRecent(args: ParsedArgs): Promise<void> {
 
 async function commandShow(args: ParsedArgs): Promise<void> {
   const target = args.positional[0];
-  if (!target) throw new Error('Usage: xbv show <id | post id | URL> [--json]');
+  if (!target) throw new Error('Usage: shelf show <id | post id | URL> [--json]');
 
   const id = bookmarkIdArg(target);
   const result = await api<GetResult>(`api/bookmarks/${id}`);
@@ -557,7 +573,7 @@ async function commandTopics(args: ParsedArgs): Promise<void> {
 
 async function commandTopic(args: ParsedArgs): Promise<void> {
   const slug = args.positional[0];
-  if (!slug) throw new Error('Usage: xbv topic <slug> [--limit 50] [--json]');
+  if (!slug) throw new Error('Usage: shelf topic <slug> [--limit 50] [--json]');
 
   const limit = clampLimit(args.flags.limit, 50, 100);
   const topics = await api<TopicListResult>('api/topics');
@@ -674,7 +690,7 @@ async function commandExport(args: ParsedArgs): Promise<void> {
   writeFileSync(join(dir, 'bookmarks.jsonl'), `${jsonl}\n`, 'utf8');
 
   const index = [
-    '# X Bookmark Vault export',
+    '# Shelf export',
     '',
     `Exported ${bookmarks.length} bookmarks on ${new Date().toISOString().slice(0, 10)}.`,
     'One markdown file per bookmark (YAML front matter), plus `bookmarks.jsonl` for ingestion.',
@@ -740,7 +756,7 @@ const MCP_TOOLS = [
   {
     name: 'search_bookmarks',
     description:
-      "Search the user's private X and LinkedIn bookmark vault. Matches post text, AI summaries, " +
+      "Search the user's private Shelf archive (X and LinkedIn). Matches post text, AI summaries, " +
       'authors, linked-page text and topic names. Every whitespace-separated term must match. ' +
       'Searches both active and archived items. Returns compact cards (author, date, topics, summary excerpt, URL, post id).',
     inputSchema: {
@@ -801,7 +817,7 @@ const MCP_TOOLS = [
 ];
 
 const MCP_INSTRUCTIONS =
-  'This server exposes the user\'s personal X bookmark archive. When the user refers to something ' +
+  'This server exposes the user\'s personal Shelf archive. When the user refers to something ' +
   'they saved or asks what they have read about a subject, call search_bookmarks first, then ' +
   'get_bookmark for the entries worth quoting. Prefer quoting the AI summary and original post text ' +
   'verbatim. Summaries have a Turkish primary (`summary`) and often an English translation (`summaryEn`); ' +
@@ -898,7 +914,7 @@ async function handleMcpMessage(raw: string): Promise<void> {
         sendResult(id, {
           protocolVersion: typeof requested === 'string' ? requested : '2025-06-18',
           capabilities: { tools: {} },
-          serverInfo: { name: 'xbv', version: VERSION },
+          serverInfo: { name: 'shelf', version: VERSION },
           instructions: MCP_INSTRUCTIONS,
         });
         return;
@@ -964,30 +980,33 @@ async function runMcp(): Promise<void> {
 // Entry point
 // ---------------------------------------------------------------------------
 
-const HELP = `xbv ${VERSION} — read the X Bookmark Vault from the terminal or an AI client.
+const HELP = `shelf ${VERSION} — read your Shelf archive from the terminal or an AI client.
 
 Usage:
-  xbv search <words> [--limit 10] [--json]   search text, summaries, authors, topics
-  xbv show <id|URL> [--json]                 one bookmark (short id, post id, or URL)
-  xbv recent [--limit 10] [--json]           newest bookmarks
-  xbv topics [--json]                        AI topics + rolling syntheses
-  xbv topic <slug> [--limit 50] [--json]     one topic's synthesis + items
-  xbv export [--dir ./dir]                   markdown + jsonl for local RAG
-  xbv stats [--json]                         archive counts
-  xbv youtube [--limit 20] [--dry-run]       fetch missing YouTube transcripts locally
-  xbv config [--password <pw>] [--url <u>]   show or write credentials
-  xbv mcp                                    stdio MCP server for AI clients
+  shelf search <words> [--limit 10] [--json]   search text, summaries, authors, topics
+  shelf show <id|URL> [--json]                 one bookmark (short id, post id, or URL)
+  shelf recent [--limit 10] [--json]           newest bookmarks
+  shelf topics [--json]                        AI topics + rolling syntheses
+  shelf topic <slug> [--limit 50] [--json]     one topic's synthesis + items
+  shelf export [--dir ./dir]                   markdown + jsonl for local RAG
+  shelf stats [--json]                         archive counts
+  shelf youtube [--limit 20] [--dry-run]       fetch missing YouTube transcripts locally
+  shelf config [--password <pw>] [--url <u>]   show or write credentials
+  shelf mcp                                    stdio MCP server for AI clients
 
 Configuration:
-  XBV_URL + XBV_PASSWORD      environment (wins)
-  ~/.config/xbv/config.json   { "url": "...", "password": "..." }
+  SHELF_URL + SHELF_PASSWORD  environment (wins)
+  ~/.config/shelf/config.json { "url": "...", "password": "..." }
   .dev.vars                   fallback when run inside the repo
 
-  First run:  xbv config --url https://<worker>.workers.dev --password <pw>
+  XBV_URL / XBV_PASSWORD and ~/.config/xbv/config.json still work as the
+  pre-rename fallbacks.
+
+  First run:  shelf config --url https://<worker>.workers.dev --password <pw>
 
 MCP examples:
-  claude mcp add xbv -- xbv mcp
-  codex mcp add xbv -- xbv mcp
+  claude mcp add shelf -- shelf mcp
+  codex mcp add shelf -- shelf mcp
 `;
 
 async function main(): Promise<void> {
@@ -1035,6 +1054,6 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
-  console.error(`xbv: ${(error as Error).message}`);
+  console.error(`shelf: ${(error as Error).message}`);
   process.exit(1);
 });

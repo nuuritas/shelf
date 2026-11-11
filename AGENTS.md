@@ -6,7 +6,7 @@ change things without breaking them.
 
 ## What this is
 
-Single-user X and LinkedIn bookmark archive. One Cloudflare Worker
+Single-user bookmark archive for X and LinkedIn posts. One Cloudflare Worker
 (`src/worker.ts`) plus one SQLite-backed Durable Object (`src/bookmarks-do.ts`).
 Server-rendered HTML, no client framework, no build step. TypeScript 7.0.2
 (native compiler), bundled by Wrangler.
@@ -31,7 +31,7 @@ src/util.ts          escaping, linkify, cookies, base64, slugs
 src/types.ts         shared domain types
 public/              static assets, PWA manifest/service worker, share APK
 android/             transparent share APK sources + no-Gradle build script
-cli/xbv.ts           Bun CLI + stdio MCP server (search/show/export/mcp)
+cli/shelf.ts         Bun CLI + stdio MCP server (search/show/export/mcp)
 .github/workflows/   CI + maintainer push log
 test/                node:test unit tests
 docs/PROGRESS.md     long-form project knowledge
@@ -49,9 +49,9 @@ bun run deploy:personal     # deploy the maintainer instance (wrangler.personal.
 bunx wrangler deploy        # deploy with the public wrangler.jsonc
 bunx wrangler tail          # production logs
 ./android/build.sh          # rebuild public/BookmarkShare.apk
-xbv search "claude code"    # CLI → ~/.local/bin/xbv symlink to cli/xbv.ts
-xbv mcp                     # stdio MCP server for Claude/Codex/Cursor
-xbv youtube [--limit 20]    # fetch missing YouTube transcripts from this Mac
+shelf search "claude code"  # CLI → ~/.local/bin/shelf symlink to cli/shelf.ts
+shelf mcp                   # stdio MCP server for Claude/Codex/Cursor
+shelf youtube [--limit 20]  # fetch missing YouTube transcripts from this Mac
 ```
 
 `.dev.vars` (gitignored): `APP_PASSWORD` is required and `APP_SECRET` signs the
@@ -157,7 +157,7 @@ API: see `docs/PROGRESS.md` §3.
 - All HTTP calls go to the OpenAI-compatible endpoint in `AI_BASE_URL` with model
   `AI_MODEL`, authorised by `AI_API_KEY` (`OPENCODE_API_KEY` is a legacy alias).
   Every request also sends `x-opencode-session` with a stable per-job value
-  (`xbv-<tweetId>`, `xbv-<tweetId>-v<n>`, `xbv-topic-<slug>`). OpenCode Go
+  (`shelf-<tweetId>`, `shelf-<tweetId>-v<n>`, `shelf-topic-<slug>`). OpenCode Go
   requires that header; other endpoints ignore it, so keep sending it.
 - Cloudflare's `@cf/` frontier models (DeepSeek, Kimi, GLM) need a Workers Paid
   billing method. On the binding path, select one by setting `AI_MODEL` to its
@@ -195,12 +195,12 @@ API: see `docs/PROGRESS.md` §3.
   the only parser. Keep it forgiving: it is the integration point for any
   third-party or self-hosted caption source.
 - YouTube is additionally reachable through `POST /api/bookmarks/:id/transcripts`
-  and `xbv youtube`, which runs `get-youtube-transcript` on the Mac's residential
+  and `shelf youtube`, which runs `get-youtube-transcript` on the Mac's residential
   IP and re-queues the summary. This is the free path when no Supadata key is
   set; it is not part of the Worker request path.
 - `SUMMARY_LANGUAGE` sets the main summary language (Turkish in production).
   When the main language is Turkish, a finished summary automatically queues an
-  English version in `summary_en` (`translateSummary`, session `xbv-<tweetId>-en`).
+  English version in `summary_en` (`translateSummary`, session `shelf-<tweetId>-en`).
   The UI's English board reads that column; `POST /translate-all` only queues
   missing translations, so it is safe to click repeatedly.
 
@@ -230,9 +230,9 @@ API: see `docs/PROGRESS.md` §3.
   It is embedded in `public/BookmarkShare.apk`, which is why the APK is
   gitignored and rebuilt by `android/build.sh` — never commit it.
 - Never commit `.dev.vars`, `android/*.keystore`, `.wrangler/`, or `out/`.
-- The CLI stores the vault password in `~/.config/xbv/config.json` (mode 0600,
+- The CLI stores the vault password in `~/.config/shelf/config.json` (mode 0600,
   outside the repo). Rotating `APP_PASSWORD` on the Worker requires
-  `xbv config --password <new>`; the CLI reports a stale password as a 401 hint.
+  `shelf config --password <new>`; the CLI reports a stale password as a 401 hint.
 - All outbound fetches must keep the SSRF guard in `links.ts`; do not fetch
   private hosts.
 
@@ -276,7 +276,7 @@ API: see `docs/PROGRESS.md` §3.
   paid fallback, not the default.
 - YouTube returns HTTP 429 to Worker IPs and every Innertube client returns
   `LOGIN_REQUIRED`, so do not try to scrape caption tracks in the Worker. Use
-  the Piped default, `TRANSCRIPT_API_URL`, Supadata, `xbv youtube` from a
+  the Piped default, `TRANSCRIPT_API_URL`, Supadata, `shelf youtube` from a
   residential connection, or accept the page-description fallback.
 - A VPS and several commercial proxy providers were also tested and get the
   same 429/`LOGIN_REQUIRED`; backbone ports sometimes refuse connections. Do not

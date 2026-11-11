@@ -1,6 +1,6 @@
-# Project knowledge — X Bookmark Vault
+# Project knowledge — Shelf
 
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 Repository: <https://github.com/nuuritas/x-bookmark-vault>
 
 This document describes the maintainer's deployment. Domain names, provider
@@ -107,7 +107,7 @@ wall-clock is long but CPU stays low.
   `@cf/openai/whisper-large-v3-turbo` (no key, ~214 free audio minutes/day).
   YouTube links read captions from public Piped instances with no key at all
   (two are tried by default), fall back to Supadata native captions when
-  `SUPADATA_API_KEY` is set, and can also be filled by `xbv youtube` from the
+  `SUPADATA_API_KEY` is set, and can also be filled by `shelf youtube` from the
   Mac's residential IP (it runs `get-youtube-transcript` and posts through
   `/api/bookmarks/:id/transcripts`).
   Results are stored in `bookmarks.transcripts_json`, fed to the summarizer, and
@@ -133,16 +133,16 @@ wall-clock is long but CPU stays low.
 - Collapsed cards (3-line peek, expand on tap) and folded topic syntheses
 - Custom domain, with the workers.dev URL kept as a fallback
 - `/api/stats` reports row counts and real SQLite database size
-- Local access for AI work: `cli/xbv.ts` (search/show/topics/export) and
-  `xbv mcp`, a stdio MCP server exposing `search_bookmarks`, `get_bookmark`,
+- Local access for AI work: `cli/shelf.ts` (search/show/topics/export) and
+  `shelf mcp`, a stdio MCP server exposing `search_bookmarks`, `get_bookmark`,
   `list_topics`, `get_topic`. Read-only; the Worker stays the source of truth,
-  nothing is mirrored. `xbv export` writes one markdown file per bookmark
+  nothing is mirrored. `shelf export` writes one markdown file per bookmark
   (YAML front matter) plus `bookmarks.jsonl` for local RAG.
 - Search (`q`) spans text, author, AI summary, linked-page text, and topic
   names; whitespace-separated terms are ANDed.
 - Short bookmark ids: every card shows a `#k7f3` chip (click to copy, with a
   `copied` flash). The id is stored in `bookmarks.ref`, generated on insert and
-  backfilled for older rows. `GET/DELETE /api/bookmarks/:id` and `xbv show`
+  backfilled for older rows. `GET/DELETE /api/bookmarks/:id` and `shelf show`
   accept a ref, a tweet id, or an x.com URL. Refs are 5 chars from an alphabet
   without `0/o/1/l/i` and always contain a letter, so they never look like the
   all-digit tweet ids.
@@ -185,7 +185,7 @@ wall-clock is long but CPU stays low.
 | Nov 7 | TS migration (TS 7.0.2 native) | Type safety as state grew |
 | Nov 7 | Custom domain | Cleaner URL, APK rebuilt against it |
 | Nov 7–10 | Motion digest experiments (v1–v5) | Monthly/Offprint-style artifact, eventually narrated |
-| Nov 10 | `xbv` CLI + MCP server | Saved posts must be usable inside local AI chats, not only in the browser |
+| Nov 10 | `shelf` CLI + MCP server | Saved posts must be usable inside local AI chats, not only in the browser |
 | Nov 10 | Short `#ref` ids on cards, copy on click | "look at this one" needs a handle shorter than a 19-digit tweet id |
 | Nov 10 | Archive toggle + bilingual summaries | Finished posts should leave the feed without being deleted; the same summaries should be readable in English |
 | Nov 10 | Calendar + single-day library view | Finding what was saved on a date should not require scrolling the whole feed |
@@ -193,6 +193,7 @@ wall-clock is long but CPU stays low.
 | Nov 11 | Piped as the default YouTube caption source, no key | Supadata needs a signup and a 100-credit ceiling; a fresh deploy should read captions immediately |
 | Nov 11 | README replaced by an agent install prompt + `INSTALL.md` | Nobody installs a Cloudflare Worker by hand; an agent needs a checklist it can execute |
 | Nov 11 | LinkedIn posts saved through the guest page | The same share sheet should work for posts people send from LinkedIn, without a LinkedIn developer app |
+| Nov 11 | Renamed to **Shelf**: UI, PWA, CLI and docs drop the X | The archive already holds LinkedIn posts, and the name was narrower than the product. The Worker script and the Android package keep their old names so existing storage and installs survive |
 
 ### Video transcripts
 
@@ -222,7 +223,7 @@ several others tested were down. `PIPED_API_URL` overrides the ladder, and
 A `TRANSCRIPT_API_URL` template is tried first, so any third-party or
 self-hosted caption source can be plugged in without touching the Worker: JSON
 (`text`, `transcript`, `content`), WebVTT, SRT, and plain text are all accepted.
-For a zero-cost path, `xbv youtube` runs `get-youtube-transcript` on this Mac's
+For a zero-cost path, `shelf youtube` runs `get-youtube-transcript` on this Mac's
 residential IP, then posts the result to `/api/bookmarks/:id/transcripts`. The
 DO stores it and re-queues the summary. It is manual or scheduled, not part of
 the Worker request path. Without a key, captions, or a local sync, the summary
@@ -280,7 +281,7 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
   proxy providers (direct and rotating) all return 429 or `LOGIN_REQUIRED`;
   some backbone ports refuse connections outright, and residential egress was
   not available from those providers. Only a residential connection works,
-  which is what the hourly `xbv youtube` run uses.
+  which is what the hourly `shelf youtube` run uses.
 - **Video pipeline is not committed** — it lived in `/tmp`, which this machine
   cleans. Recreate it under `video/` before relying on it.
 - **TTS is online**: edge-tts sends the script to Microsoft. Local options

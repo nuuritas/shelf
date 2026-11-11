@@ -280,7 +280,7 @@ async function readFxTwitter(parsed: ParsedXUrl, env: Partial<Env>): Promise<XPo
     {
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'XBookmarkVault/1.0',
+        'User-Agent': 'Shelf/1.0',
       },
     },
     timeoutMs(env),
@@ -317,7 +317,7 @@ async function readOfficial(parsed: ParsedXUrl, env: Partial<Env>): Promise<XPos
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${env.X_BEARER_TOKEN}`,
-        'User-Agent': 'XBookmarkVault/1.0',
+        'User-Agent': 'Shelf/1.0',
       },
     },
     timeoutMs(env),

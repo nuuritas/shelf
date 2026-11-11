@@ -183,7 +183,7 @@ async function transcribeX(target: VideoTarget, env: Partial<Env>): Promise<Vide
   }
 
   const response = await fetchWithTimeout(mediaUrl, {
-    headers: { 'User-Agent': 'XBookmarkVault/1.0', Accept: 'video/mp4,video/*;q=0.8' },
+    headers: { 'User-Agent': 'Shelf/1.0', Accept: 'video/mp4,video/*;q=0.8' },
   });
   if (!response.ok) throw new Error(`The video returned HTTP ${response.status}.`);
 
@@ -500,7 +500,7 @@ async function transcribeCustomProvider(
     if (response.status === 429) {
       return unavailable(
         target,
-        'The transcript service is out of quota for this month. Add a second provider or use xbv youtube.',
+        'The transcript service is out of quota for this month. Add a second provider or use shelf youtube.',
       );
     }
     throw new Error(`Transcript service returned HTTP ${response.status}.`);
