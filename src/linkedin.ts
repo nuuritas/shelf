@@ -37,7 +37,7 @@ export function parseLinkedInUrl(input: string): ParsedLinkedInUrl | null {
 
   const activityId =
     url.pathname.match(/\/feed\/update\/urn:li:activity:(\d+)/i)?.[1] ??
-    url.pathname.match(/\/activity-(\d+)(?:-[^/]+)?\/?$/i)?.[1];
+    url.pathname.match(/(?:^|[-/])activity-(\d+)(?:-[^/]+)?\/?$/i)?.[1];
   if (!activityId) return null;
 
   return {
