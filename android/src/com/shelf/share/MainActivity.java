@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     private ProgressBar progress;
     private String siteHost;
     private boolean night;
+    private long pausedAt;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -131,7 +132,18 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        pausedAt = System.currentTimeMillis();
         CookieManager.getInstance().flush();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Coming back after a while should show what happened since, not a stale page.
+        if (pausedAt > 0 && System.currentTimeMillis() - pausedAt > 60_000) {
+            web.reload();
+        }
+        pausedAt = 0;
     }
 
     @Override
