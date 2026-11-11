@@ -243,7 +243,7 @@ function bookmarkIdArg(value: string): string {
   if (match) return match[1];
   const idQuery = trimmed.match(/[?&]id=(\d{1,25})/);
   if (idQuery) return idQuery[1];
-  throw new Error(`Not a bookmark id, tweet id, or URL: ${value}`);
+  throw new Error(`Not a bookmark id, post id, or URL: ${value}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ function renderBookmark(bookmark: Bookmark): string {
   if (topics) meta.push(`Topics: ${topics}`);
   if (bookmark.archivedAt) meta.push('Archived');
   if (bookmark.ref) meta.push(`id: ${bookmark.ref}`);
-  meta.push(`tweet: ${bookmark.tweetId}`);
+  meta.push(`post: ${bookmark.tweetId}`);
   lines.push('', meta.join(' · '));
 
   if (bookmark.summary) {
@@ -432,7 +432,7 @@ async function commandRecent(args: ParsedArgs): Promise<void> {
 
 async function commandShow(args: ParsedArgs): Promise<void> {
   const target = args.positional[0];
-  if (!target) throw new Error('Usage: xbv show <id | tweet id | x.com URL> [--json]');
+  if (!target) throw new Error('Usage: xbv show <id | post id | URL> [--json]');
 
   const id = bookmarkIdArg(target);
   const result = await api<GetResult>(`api/bookmarks/${id}`);
@@ -740,9 +740,9 @@ const MCP_TOOLS = [
   {
     name: 'search_bookmarks',
     description:
-      "Search the user's private X/Twitter bookmark vault. Matches post text, AI summaries, " +
+      "Search the user's private X and LinkedIn bookmark vault. Matches post text, AI summaries, " +
       'authors, linked-page text and topic names. Every whitespace-separated term must match. ' +
-      'Searches both active and archived items. Returns compact cards (author, date, topics, summary excerpt, URL, tweet id).',
+      'Searches both active and archived items. Returns compact cards (author, date, topics, summary excerpt, URL, post id).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -764,13 +764,13 @@ const MCP_TOOLS = [
     description:
       'Fetch one saved bookmark in full: the Turkish AI summary, its English translation, original post, ' +
       'quoted post, X Article, linked-page text, topics, archive state, and alternative summary versions. Accepts the short id shown on ' +
-      'each card (e.g. "k7f3"), a tweet id, or an x.com status URL.',
+      'each card (e.g. "k7f3"), a post id, or an x.com status URL.',
     inputSchema: {
       type: 'object',
       properties: {
         id: {
           type: 'string',
-          description: 'Short bookmark id from search results (e.g. "k7f3"), a tweet id, or an x.com status URL.',
+          description: 'Short bookmark id from search results (e.g. "k7f3"), a post id, or an x.com status URL.',
         },
       },
       required: ['id'],
@@ -968,7 +968,7 @@ const HELP = `xbv ${VERSION} — read the X Bookmark Vault from the terminal or 
 
 Usage:
   xbv search <words> [--limit 10] [--json]   search text, summaries, authors, topics
-  xbv show <id|x.com URL> [--json]           one bookmark (short id, tweet id, or URL)
+  xbv show <id|URL> [--json]                 one bookmark (short id, post id, or URL)
   xbv recent [--limit 10] [--json]           newest bookmarks
   xbv topics [--json]                        AI topics + rolling syntheses
   xbv topic <slug> [--limit 50] [--json]     one topic's synthesis + items
