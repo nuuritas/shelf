@@ -190,13 +190,13 @@ export function renderPage({
 
       <main class="shell">
         <details class="add-drawer">
-          <summary><span class="add-icon">+</span> Save a link from X</summary>
+          <summary><span class="add-icon">+</span> Save a link from X or LinkedIn</summary>
           <form class="add-form" method="post" action="/add">
-            <label class="sr-only" for="url">X post URL</label>
+            <label class="sr-only" for="url">Post URL</label>
             <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/… or https://www.linkedin.com/posts/…" required value="${addValue}">
             <button type="submit">Save post</button>
           </form>
-          <p class="fine-print">On Android: <strong>Share → Bookmark Vault</strong> in X. The post, quote, article, links, and images are read and summarized automatically.</p>
+          <p class="fine-print">On Android: <strong>Share → Bookmark Vault</strong> from X or LinkedIn. The post, quote, article, links, and images are read and summarized automatically.</p>
         </details>
 
         ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
@@ -561,7 +561,7 @@ function renderBookmark(
           <span class="dot">·</span>
           <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
           <span class="dot">·</span>
-          <a href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer">Open on X</a>
+          <a href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer">Open on ${escapeHtml(source)}</a>
           <span class="dot">·</span>
           <form method="post" action="/archive" class="inline-form">
             <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
