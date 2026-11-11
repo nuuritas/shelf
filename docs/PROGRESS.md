@@ -198,6 +198,7 @@ wall-clock is long but CPU stays low.
 | Nov 11 | Android app opens in-app: launcher entry on a WebView, not a browser hop | The share APK had no `MAIN`/`LAUNCHER` filter at all, so tapping it did nothing. `MainActivity` now shows the library in a WebView, links to other sites go to the browser, and the share target still saves silently |
 | Nov 11 | Android app follows the system theme and keeps the session | The WebView forced `Theme.Light`, so the site rendered light on a dark phone, and the launch window drew under the status bar. A `values`/`values-night` theme pair fixes the scheme, window insets keep the header clear, and the cookie jar is flushed after login and on pause |
 | Nov 11 | Share result is a visible card, not a toast | A share used to pop the library window and hide the outcome. The share task now has its own affinity, the card shows the server's error text with Retry, and any host is extracted (t.co links are expanded first) |
+| Nov 11 | YouTube links save as bookmarks | Pasting `youtu.be/...?si=` failed because the save path only knew X and LinkedIn. `src/youtube.ts` reads oEmbed plus the watch page (title, channel, description, thumbnail) and stores `provider = 'youtube'`; the existing transcript ladder then feeds the summary |
 
 ### Video transcripts
 

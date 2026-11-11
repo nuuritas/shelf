@@ -254,7 +254,7 @@ async function fetchAllBookmarks(params: Record<string, string | number>): Promi
 /** Accepts a short ref ("k7f3"), a tweet id, or an x.com status URL. */
 function bookmarkIdArg(value: string): string {
   const trimmed = value.trim();
-  if (/^[A-Za-z0-9]{1,25}$/.test(trimmed)) return trimmed;
+  if (/^[A-Za-z0-9_-]{1,30}$/.test(trimmed)) return trimmed;
   const match = trimmed.match(/\/status(?:es)?\/(\d{1,25})/);
   if (match) return match[1];
   const idQuery = trimmed.match(/[?&]id=(\d{1,25})/);
