@@ -2,7 +2,6 @@ package com.shelf.share;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -17,33 +16,15 @@ import java.util.regex.Pattern;
 
 /**
  * Invisible share target. It receives text/plain from Android, posts the first
- * URL to the Cloudflare Worker, shows a toast, and finishes. Launching the icon
- * with no share payload opens the library in the browser instead, so the app is
- * not a dead entry in the launcher.
+ * URL to the Worker, shows a toast, and finishes. The launcher entry lives in
+ * MainActivity, which shows the library in a WebView.
  */
 public class ShareActivity extends Activity {
-    // Both values are injected by android/build.sh; never commit real ones.
-    private static final String ENDPOINT = "__SHARE_ENDPOINT__";
-    private static final String TOKEN = "__SHARE_TOKEN__";
-    /** The library itself: the endpoint minus its `/api/bookmarks` tail. */
-    private static final String SITE_URL = siteUrl();
-
-    private static String siteUrl() {
-        int cut = ENDPOINT.indexOf("/api/");
-        return cut > 0 ? ENDPOINT.substring(0, cut) : ENDPOINT;
-    }
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        Intent intent = getIntent();
-        if (intent != null && Intent.ACTION_MAIN.equals(intent.getAction())) {
-            openSite();
-            return;
-        }
-
-        final String shared = sharedText(intent);
+        final String shared = sharedText(getIntent());
 
         new Thread(new Runnable() {
             @Override
@@ -84,19 +65,6 @@ public class ShareActivity extends Activity {
         }).start();
     }
 
-    /** Launcher tap: hand the library URL to the default browser. */
-    private void openSite() {
-        try {
-            Intent view = new Intent(Intent.ACTION_VIEW, Uri.parse(SITE_URL));
-            view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(view);
-        } catch (Exception error) {
-            Toast.makeText(getApplicationContext(), SITE_URL, Toast.LENGTH_LONG).show();
-        } finally {
-            finish();
-        }
-    }
-
     private static String sharedText(Intent intent) {
         if (intent == null) return "";
         String text = intent.getStringExtra(Intent.EXTRA_TEXT);
@@ -125,7 +93,7 @@ public class ShareActivity extends Activity {
     }
 
     private static int post(String link) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(ENDPOINT).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) new URL(Config.ENDPOINT).openConnection();
         try {
             connection.setRequestMethod("POST");
             connection.setConnectTimeout(15_000);
@@ -133,7 +101,7 @@ public class ShareActivity extends Activity {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("Authorization", "Bearer " + TOKEN);
+            connection.setRequestProperty("Authorization", "Bearer " + Config.TOKEN);
             connection.setRequestProperty("User-Agent", "Shelf/1.0");
 
             String body = "{\"url\":\"" + escapeJson(link) + "\"}";

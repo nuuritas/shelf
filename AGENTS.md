@@ -30,7 +30,7 @@ src/render.ts        SSR HTML + the entire stylesheet as a template string
 src/util.ts          escaping, linkify, cookies, base64, slugs
 src/types.ts         shared domain types
 public/              static assets, PWA manifest/service worker, share APK
-android/             transparent share APK sources + no-Gradle build script
+android/             share target + WebView app, no-Gradle build script
 cli/shelf.ts         Bun CLI + stdio MCP server (search/show/export/mcp)
 .github/workflows/   CI + maintainer push log
 test/                node:test unit tests
