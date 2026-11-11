@@ -100,6 +100,22 @@ test('readLinkedInPost prefers the meta description and reads the author after t
   }
 });
 
+test("readLinkedInPost keeps the text after an apostrophe inside a double-quoted meta content", async () => {
+  const body =
+    "It's a good way to: read the whole post, not just the part before the apostrophe. Short link and hashtags follow.";
+  const html = `<head>
+    <meta name="description" content="${body}">
+  </head><body><main><p>It</p></main></body>`;
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: true, status: 200, url: POST, text: async () => html });
+    const post = await readLinkedInPost(POST);
+    assert.equal(post.text, body);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test('readLinkedInPost falls through a short meta description to og:description', async () => {
   const description = 'A longer og description that carries the real post body.';
   const html = `<head>

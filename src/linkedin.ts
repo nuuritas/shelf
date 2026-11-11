@@ -137,14 +137,14 @@ function metaContent(html: string, name: string): string {
   for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
     const key = tag.match(/(?:name|property)\s*=\s*["']([^"']+)["']/i)?.[1];
     if (key?.toLowerCase() !== name.toLowerCase()) continue;
-    const content = tag.match(/content\s*=\s*["']([\s\S]*?)["']/i)?.[1];
+    const content = tag.match(/content\s*=\s*(["'])([\s\S]*?)\1/i)?.[2];
     if (content) return htmlToText(content);
   }
   return '';
 }
 
 function canonicalFromPage(html: string): string {
-  const link = html.match(/<link\b[^>]*rel=["']canonical["'][^>]*>/i)?.[0];
-  const href = link?.match(/href=["']([^"']+)["']/i)?.[1];
+  const link = html.match(/<link\b[^>]*rel=(["'])canonical\1[^>]*>/i)?.[0];
+  const href = link?.match(/href=(["'])([\s\S]*?)\1/i)?.[2];
   return safeHttpUrl(metaContent(html, 'og:url')) || safeHttpUrl(href || '') || '';
 }
