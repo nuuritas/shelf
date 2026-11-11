@@ -5,6 +5,8 @@ import { LinkedInReadError, parseLinkedInUrl, readLinkedInPost } from '../src/li
 const ID = '7525978195154649089';
 const CANONICAL = `https://www.linkedin.com/posts/jane-doe_we-are-hiring-activity-${ID}-AbCd`;
 const POST = `${CANONICAL}/?trk=public_post`;
+const SHARE_ID = '7525978194345132034';
+const SHARE = `https://www.linkedin.com/posts/reisdebora_databricks-databrickscertification-dataengineering-share-${SHARE_ID}--NtC/`;
 
 test('parses post, feed update, and pulse URLs, and rejects links without an activity id', () => {
   assert.deepEqual(parseLinkedInUrl(POST), { id: `li${ID}`, activityId: ID, canonicalUrl: CANONICAL });
@@ -16,6 +18,14 @@ test('parses post, feed update, and pulse URLs, and rejects links without an act
   assert.equal(parseLinkedInUrl('https://x.com/a/status/123'), null);
   assert.equal(parseLinkedInUrl('not a link'), null);
   assert.equal(parseLinkedInUrl('https://www.linkedin.com/pulse/no-id-here'), null);
+});
+
+test('parses the share URL with its share id', () => {
+  assert.deepEqual(parseLinkedInUrl(SHARE), {
+    id: `li${SHARE_ID}`,
+    activityId: SHARE_ID,
+    canonicalUrl: SHARE.replace(/\/+$/, ''),
+  });
 });
 
 test('readLinkedInPost returns an empty post when LinkedIn answers 999 or has no body', async () => {
@@ -58,6 +68,21 @@ test('readLinkedInPost reads the author, text, image, canonical URL, and request
     assert.equal(request.init.redirect, 'follow');
     assert.match(request.init.headers['User-Agent'], /Mozilla\/5\.0/);
     assert.equal('Cookie' in request.init.headers, false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('readLinkedInPost collapses a share link to the canonical activity id', async () => {
+  const html = `<head>
+    <meta property="og:url" content="${CANONICAL}">
+  </head><body><main><p>We are hiring.</p></main></body>`;
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: true, status: 200, url: CANONICAL, text: async () => html });
+    const post = await readLinkedInPost(SHARE);
+    assert.equal(post.tweetId, `li${ID}`);
+    assert.equal(post.url, CANONICAL);
   } finally {
     globalThis.fetch = original;
   }

@@ -37,7 +37,7 @@ export function parseLinkedInUrl(input: string): ParsedLinkedInUrl | null {
 
   const activityId =
     url.pathname.match(/\/feed\/update\/urn:li:activity:(\d+)/i)?.[1] ??
-    url.pathname.match(/(?:^|[-/])activity-(\d+)(?:-[^/]+)?\/?$/i)?.[1];
+    url.pathname.match(/(?:^|[-/])(?:activity|share)-(\d+)(?:-[^/]+)?\/?$/i)?.[1];
   if (!activityId) return null;
 
   return {
@@ -75,12 +75,15 @@ export async function readLinkedInPost(input: string): Promise<XPost> {
     const title = metaContent(html, 'og:title');
     const name = metaContent(html, 'author') || title.match(/^(.+?)\s+on LinkedIn\b/i)?.[1]?.trim();
     const image = safeHttpUrl(metaContent(html, 'og:image'));
+    const canonicalUrl = canonicalFromPage(html) || parsed.canonicalUrl;
+    const canonicalId = parseLinkedInUrl(canonicalUrl)?.activityId;
     const media: MediaItem[] = image
       ? [{ type: 'photo', url: image, posterUrl: null, width: null, height: null, altText: null, durationMs: null, variants: [] }]
       : [];
     return {
       ...emptyPost(parsed),
-      url: canonicalFromPage(html) || parsed.canonicalUrl,
+      tweetId: canonicalId && canonicalId !== parsed.activityId ? `li${canonicalId}` : parsed.id,
+      url: canonicalUrl,
       text,
       author: name ? { name, username: null, avatarUrl: null, verified: false } : null,
       media,
