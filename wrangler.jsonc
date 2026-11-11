@@ -1,9 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // Keep this script name. The product is Shelf now, but Durable Object
-  // storage belongs to the Worker script, so renaming it would publish a new,
-  // empty archive. Only the visible branding changed.
-  "name": "x-bookmark-vault",
+  // Durable Object storage belongs to the Worker script, so renaming an
+  // existing deployment starts an empty archive. Pick the name before the first
+  // deploy; after that it is an internal identifier.
+  "name": "shelf",
   "main": "src/worker.ts",
   "workers_dev": true,
   "compatibility_date": "2026-10-26",

@@ -48,7 +48,7 @@ bunx wrangler dev           # local Worker (needs .dev.vars)
 bun run deploy:personal     # deploy the maintainer instance (wrangler.personal.jsonc)
 bunx wrangler deploy        # deploy with the public wrangler.jsonc
 bunx wrangler tail          # production logs
-./android/build.sh          # rebuild public/BookmarkShare.apk
+./android/build.sh          # rebuild public/ShelfShare.apk
 shelf search "claude code"  # CLI → ~/.local/bin/shelf symlink to cli/shelf.ts
 shelf mcp                   # stdio MCP server for Claude/Codex/Cursor
 shelf youtube [--limit 20]  # fetch missing YouTube transcripts from this Mac
@@ -84,7 +84,7 @@ the merge commits that arrive on `main`.
 Public contributors follow `CONTRIBUTING.md` (fork → branch → PR). The
 maintainer's own changes, including docs and chores, follow this loop:
 
-1. Open an issue in `nuuritas/x-bookmark-vault` with the goal and an acceptance
+1. Open an issue in `nuuritas/shelf` with the goal and an acceptance
    check.
 2. Add the issue to **All work** (project 1), set Workstream `XB`, and move it to
    `Todo`/`In Progress` when work starts. The project's Auto-add workflow is not
@@ -227,7 +227,7 @@ API: see `docs/PROGRESS.md` §3.
 - Auth: cookie session signed with `APP_SECRET`/`APP_PASSWORD`, or
   `Authorization: Bearer <APP_PASSWORD>`.
 - The APK uses an add-only `SHARE_TOKEN` accepted only on `POST /api/bookmarks`.
-  It is embedded in `public/BookmarkShare.apk`, which is why the APK is
+  It is embedded in `public/ShelfShare.apk`, which is why the APK is
   gitignored and rebuilt by `android/build.sh` — never commit it.
 - Never commit `.dev.vars`, `android/*.keystore`, `.wrangler/`, or `out/`.
 - The CLI stores the vault password in `~/.config/shelf/config.json` (mode 0600,

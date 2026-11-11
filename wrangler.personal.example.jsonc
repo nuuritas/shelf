@@ -14,7 +14,7 @@
 // the first deploy; leave it alone afterwards.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "x-bookmark-vault",
+  "name": "shelf",
   "main": "src/worker.ts",
   "workers_dev": true,
   "routes": [

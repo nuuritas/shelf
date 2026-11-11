@@ -314,7 +314,7 @@ export function renderPage({
         <span class="dot">·</span>
         <span>Summaries by OpenCode</span>
         <span class="dot">·</span>
-        <a href="/BookmarkShare.apk">Android share app</a>
+        <a href="/ShelfShare.apk">Android share app</a>
       </footer>
     `,
   });

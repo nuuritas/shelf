@@ -7,7 +7,7 @@
   "description": "A tiny Cloudflare-native bookmark archive for X and LinkedIn, with automatic AI summaries.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nuuritas/x-bookmark-vault.git"
+    "url": "git+https://github.com/nuuritas/shelf.git"
   },
   "scripts": {
     "setup": "bun scripts/setup.ts",

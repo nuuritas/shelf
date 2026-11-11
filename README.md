@@ -12,9 +12,9 @@ Nobody installs this by hand, so don't. Paste this into Claude Code, Codex,
 Cursor, or any agent that can run commands:
 
 ```text
-Set up Shelf for me: https://github.com/nuuritas/x-bookmark-vault
+Set up Shelf for me: https://github.com/nuuritas/shelf
 
-Read https://raw.githubusercontent.com/nuuritas/x-bookmark-vault/main/INSTALL.md
+Read https://raw.githubusercontent.com/nuuritas/shelf/main/INSTALL.md
 and follow it exactly.
 
 Ask me three things first:

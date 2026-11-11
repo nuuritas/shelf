@@ -1,7 +1,7 @@
 # Project knowledge — Shelf
 
 Last updated: 2026-11-11
-Repository: <https://github.com/nuuritas/x-bookmark-vault>
+Repository: <https://github.com/nuuritas/shelf>
 
 This document describes the maintainer's deployment. Domain names, provider
 choices, and measured quotas refer to that instance; your deployment will differ.
@@ -27,7 +27,7 @@ is not built yet, but is planned (see §7).
 Android share sheet
       │  ACTION_SEND (text/plain)
       ▼
-BookmarkShare.apk  ──POST /api/bookmarks (Bearer SHARE_TOKEN)──┐
+ShelfShare.apk  ──POST /api/bookmarks (Bearer SHARE_TOKEN)──┐
                                                                │
 Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄─────┘
                                       │
@@ -193,7 +193,7 @@ wall-clock is long but CPU stays low.
 | Nov 11 | Piped as the default YouTube caption source, no key | Supadata needs a signup and a 100-credit ceiling; a fresh deploy should read captions immediately |
 | Nov 11 | README replaced by an agent install prompt + `INSTALL.md` | Nobody installs a Cloudflare Worker by hand; an agent needs a checklist it can execute |
 | Nov 11 | LinkedIn posts saved through the guest page | The same share sheet should work for posts people send from LinkedIn, without a LinkedIn developer app |
-| Nov 11 | Renamed to **Shelf**: UI, PWA, CLI and docs drop the X | The archive already holds LinkedIn posts, and the name was narrower than the product. The Worker script and the Android package keep their old names so existing storage and installs survive |
+| Nov 11 | Renamed to **Shelf** everywhere: UI, PWA, CLI, repo, Worker script, Android package | The archive already holds LinkedIn posts, and the name was narrower than the product. Durable Object storage belongs to the script, so the 52-bookmark archive moved through a temporary `GET /api/dump` -> `POST /api/restore` into the new `shelf` Worker (verified row for row) before the old script was deleted. The Android package id changed too, so the share APK installs as a new app |
 
 ### Video transcripts
 
@@ -311,7 +311,7 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - One feature per issue and PR, imperative commit subject, tests and
   `bun run typecheck` before pushing. The PR body starts with `Closes #N`; direct
   pushes to `main` are emergency-only.
-- Never commit `.dev.vars`, the keystore, or `public/BookmarkShare.apk`
+- Never commit `.dev.vars`, the keystore, or `public/ShelfShare.apk`
   (it embeds `SHARE_TOKEN`).
 - The README stays short and leads with the agent install prompt; install
   details live in `INSTALL.md`, which must stay executable by an agent (exact
