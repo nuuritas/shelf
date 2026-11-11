@@ -1,5 +1,6 @@
 import { isAiConfigured } from './ai.ts';
 import { Bookmarks } from './bookmarks-do.ts';
+import { parseLinkedInUrl } from './linkedin.ts';
 import { CSS, renderCalendar, renderLogin, renderPage, renderSetup } from './render.ts';
 import type {
   ArchiveResult,
@@ -353,9 +354,9 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
     return redirect('/?error=Could+not+read+the+shared+link');
   }
 
-  const parsed = extractXUrl(input);
+  const parsed = extractXUrl(input) ?? parseLinkedInUrl(input);
   if (!parsed) {
-    return redirect('/?error=That+does+not+look+like+an+X+post+link');
+    return redirect('/?error=That+does+not+look+like+an+X+or+LinkedIn+post+link');
   }
 
   try {
@@ -373,7 +374,7 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
 async function handleDeleteForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const id = String(form.get('id') || '');
-  if (!/^\d{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+  if (!/^[A-Za-z0-9]{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
   const back = safeReturn(form.get('returnTo'), '/');
   try {
     await doJson<DeleteResult>(env, '/delete', {
@@ -466,8 +467,8 @@ async function handleApiSave(request: Request, env: Env): Promise<Response> {
 
   const record = isRecord(body) ? body : {};
   const input = [record.url, record.text].filter(Boolean).join('\n');
-  const parsed = extractXUrl(input);
-  if (!parsed) return jsonResponse({ error: 'That does not look like an X post link.' }, 400);
+  const parsed = extractXUrl(input) ?? parseLinkedInUrl(input);
+  if (!parsed) return jsonResponse({ error: 'That does not look like an X or LinkedIn post link.' }, 400);
 
   try {
     const result = await doJson<SaveResult>(env, '/save', {
