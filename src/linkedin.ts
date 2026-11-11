@@ -73,9 +73,13 @@ export async function readLinkedInPost(input: string): Promise<XPost> {
     if (!text) return emptyPost(parsed);
 
     const title = metaContent(html, 'og:title');
-    const name = metaContent(html, 'author') || title.match(/^(.+?)\s+on LinkedIn\b/i)?.[1]?.trim();
+    const name =
+      metaContent(html, 'author') ||
+      title.match(/^(.+?)\s+on LinkedIn\b/i)?.[1]?.trim() ||
+      titleAfterLastPipe(title);
     const image = safeHttpUrl(metaContent(html, 'og:image'));
     const canonicalUrl = canonicalFromPage(html) || parsed.canonicalUrl;
+    const username = canonicalUsername(canonicalUrl);
     const canonicalId = parseLinkedInUrl(canonicalUrl)?.activityId;
     const media: MediaItem[] = image
       ? [{ type: 'photo', url: image, posterUrl: null, width: null, height: null, altText: null, durationMs: null, variants: [] }]
@@ -85,7 +89,7 @@ export async function readLinkedInPost(input: string): Promise<XPost> {
       tweetId: canonicalId && canonicalId !== parsed.activityId ? `li${canonicalId}` : parsed.id,
       url: canonicalUrl,
       text,
-      author: name ? { name, username: null, avatarUrl: null, verified: false } : null,
+      author: name ? { name, username, avatarUrl: null, verified: false } : null,
       media,
     };
   } catch {
@@ -105,11 +109,28 @@ function emptyPost(parsed: ParsedLinkedInUrl): XPost {
 }
 
 function postText(html: string): string {
+  const description = metaContent(html, 'description');
+  if (description.length >= 40) return description;
+  const ogDescription = metaContent(html, 'og:description');
+  if (ogDescription) return ogDescription;
   const container =
     html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1] ??
     html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1];
   const text = container ? htmlToText(container) : '';
-  return text || metaContent(html, 'og:description') || metaContent(html, 'description');
+  return text || description;
+}
+
+function titleAfterLastPipe(title: string): string {
+  const pipe = title.lastIndexOf('|');
+  return pipe === -1 ? '' : title.slice(pipe + 1).trim();
+}
+
+function canonicalUsername(url: string): string | null {
+  try {
+    return new URL(url).pathname.match(/\/in\/([^/?#]+)/i)?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function metaContent(html: string, name: string): string {

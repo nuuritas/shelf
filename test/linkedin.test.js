@@ -73,6 +73,80 @@ test('readLinkedInPost reads the author, text, image, canonical URL, and request
   }
 });
 
+test('readLinkedInPost prefers the meta description and reads the author after the last pipe in og:title', async () => {
+  const body =
+    'Starts today! The Databricks Advanced Learning Festival runs through December 08 2026.';
+  const html = `<head>
+    <meta name="description" content="${body}">
+    <meta property="og:title" content="Databricks Advanced Learning Festival: November 10 - December 08 2026 | Debora Reis, MSc.">
+    <meta property="og:url" content="${CANONICAL}">
+  </head><body><main>
+    <p>Debora Reis, MSc.</p>
+    <p>Starts today!</p>
+    <p>Like Comment Share</p>
+    <p>A comment that must not become the post body.</p>
+    <p>To view or add a comment, sign in</p>
+  </main></body>`;
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: true, status: 200, url: POST, text: async () => html });
+    const post = await readLinkedInPost(POST);
+    assert.equal(post.text, body);
+    assert.deepEqual(post.author, {
+      name: 'Debora Reis, MSc.', username: null, avatarUrl: null, verified: false,
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('readLinkedInPost falls through a short meta description to og:description', async () => {
+  const description = 'A longer og description that carries the real post body.';
+  const html = `<head>
+    <meta name="description" content="LinkedIn">
+    <meta property="og:description" content="${description}">
+  </head><body><main><p>Author header and comment chrome.</p></main></body>`;
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: true, status: 200, url: POST, text: async () => html });
+    const post = await readLinkedInPost(POST);
+    assert.equal(post.text, description);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('readLinkedInPost falls through a short meta description to the article text', async () => {
+  const html = `<head>
+    <meta name="description" content="LinkedIn">
+  </head><body><main><p>Short description fallback body.</p></main></body>`;
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: true, status: 200, url: POST, text: async () => html });
+    const post = await readLinkedInPost(POST);
+    assert.equal(post.text, 'Short description fallback body.');
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('readLinkedInPost reads the profile username from a canonical /in/ URL', async () => {
+  const profile = 'https://www.linkedin.com/in/debora-reis';
+  const html = `<head>
+    <meta name="description" content="A profile description long enough to stand in for the post body.">
+    <meta property="og:title" content="Debora Reis, MSc. | Debora Reis, MSc.">
+    <link rel="canonical" href="${profile}">
+  </head><body></body>`;
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: true, status: 200, url: POST, text: async () => html });
+    const post = await readLinkedInPost(POST);
+    assert.equal(post.author.username, 'debora-reis');
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test('readLinkedInPost collapses a share link to the canonical activity id', async () => {
   const html = `<head>
     <meta property="og:url" content="${CANONICAL}">
