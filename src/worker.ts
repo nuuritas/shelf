@@ -183,27 +183,6 @@ const worker: ExportedHandler<Env> = {
       return secure(await apiGuard(() => handleApiStats(env)));
     }
 
-    // Temporary migration helpers: copy the archive to a Worker with a new
-    // script name. Same password as the rest of the API.
-    if (request.method === 'GET' && url.pathname === '/api/dump') {
-      return secure(await apiGuard(async () => jsonResponse(await doJson(env, '/dump'))));
-    }
-
-    if (request.method === 'POST' && url.pathname === '/api/restore') {
-      return secure(
-        await apiGuard(async () => {
-          const payload = await request.json();
-          return jsonResponse(
-            await doJson(env, '/restore', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-            }),
-          );
-        }),
-      );
-    }
-
     if (request.method === 'GET' && url.pathname === '/api/topics') {
       return secure(await apiGuard(() => handleApiTopics(env)));
     }

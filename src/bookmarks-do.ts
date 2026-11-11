@@ -43,16 +43,6 @@ import type {
 
 const STALE_SUMMARY_MS = 10 * 60 * 1000;
 
-/** A SQLite cell as the runtime hands it back. */
-type SqlValue = string | number | null | ArrayBuffer;
-
-/** A whole-database copy, used when the Worker script is renamed. */
-export interface DumpPayload {
-  version?: number;
-  exportedAt?: string;
-  tables?: Record<string, Record<string, SqlValue>[]>;
-}
-
 /* A gateway blip should cost seconds, not the card. One automatic retry after a
    minute covers a momentary 429/5xx; after that the reader decides. */
 const SUMMARY_RETRY_DELAY_MS = 60 * 1000;
@@ -429,18 +419,6 @@ export class Bookmarks extends DurableObject<Env> {
 
       if (request.method === 'GET' && url.pathname === '/stats') {
         return jsonResponse(this.stats());
-      }
-
-      // Full-database copy. Used once when the Worker script is renamed: DO
-      // storage belongs to the script, so the new Worker starts empty and has
-      // to be seeded from a dump of the old one.
-      if (request.method === 'GET' && url.pathname === '/dump') {
-        return jsonResponse(this.dumpAll());
-      }
-
-      if (request.method === 'POST' && url.pathname === '/restore') {
-        const body = (await request.json()) as DumpPayload;
-        return jsonResponse(this.restoreAll(body));
       }
 
       return jsonResponse({ error: 'Not found.' }, 404);
@@ -1097,54 +1075,6 @@ export class Bookmarks extends DurableObject<Env> {
       bytes,
       rows,
     };
-  }
-
-  /** Application tables, minus SQLite's and the runtime's internal ones. */
-  private userTables(): string[] {
-    return this.sql
-      .exec<{ name: string }>(
-        `SELECT name FROM sqlite_master
-         WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB '_cf_*'
-         ORDER BY name`,
-      )
-      .toArray()
-      .map(row => row.name);
-  }
-
-  dumpAll(): DumpPayload {
-    const tables: Record<string, Record<string, SqlValue>[]> = {};
-    for (const name of this.userTables()) {
-      tables[name] = this.sql.exec<Record<string, SqlValue>>(`SELECT * FROM "${name}"`).toArray();
-    }
-    return { version: 1, exportedAt: new Date().toISOString(), tables };
-  }
-
-  restoreAll(payload: DumpPayload): { restored: Record<string, number> } {
-    const source = payload?.tables;
-    if (!source || typeof source !== 'object') {
-      throw Object.assign(new Error('Dump payload needs a `tables` object.'), { status: 400 });
-    }
-
-    const known = new Set(this.userTables());
-    const restored: Record<string, number> = {};
-
-    this.ctx.storage.transactionSync(() => {
-      for (const [table, rows] of Object.entries(source)) {
-        if (!known.has(table) || !Array.isArray(rows)) continue;
-        for (const row of rows) {
-          const columns = Object.keys(row ?? {}).filter(name => /^[a-z_]+$/.test(name));
-          if (!columns.length) continue;
-          this.sql.exec(
-            `INSERT OR REPLACE INTO "${table}" (${columns.map(name => `"${name}"`).join(', ')})
-             VALUES (${columns.map(() => '?').join(', ')})`,
-            ...columns.map(name => row[name]),
-          );
-        }
-        restored[table] = rows.length;
-      }
-    });
-
-    return { restored };
   }
 
   async alarm(): Promise<void> {
