@@ -1,5 +1,5 @@
 /**
- * Shared domain types for X Bookmark Vault.
+ * Shared domain types for Shelf.
  *
  * Everything here describes data that crosses module boundaries or is stored
  * in SQLite / returned by the AI. Runtime validation stays in the modules that
