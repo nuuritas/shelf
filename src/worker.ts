@@ -423,7 +423,7 @@ async function handleTranslateMissingForm(request: Request, env: Env): Promise<R
 async function handleSummarizeForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const id = String(form.get('id') || '');
-  if (!/^\d{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+  if (!/^[A-Za-z0-9]{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
 
   const requested = String(form.get('mode') || '');
   const mode = requested === 'version' ? 'version' : requested === 'translate' ? 'translate' : 'default';
