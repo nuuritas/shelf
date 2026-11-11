@@ -1,0 +1,6 @@
+<resources>
+    <!-- DeviceDefault follows the system, so WebView reports the real scheme. -->
+    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:windowBackground">#f4f0e8</item>
+    </style>
+</resources>
