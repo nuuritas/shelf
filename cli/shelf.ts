@@ -22,7 +22,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -174,7 +174,7 @@ function loadConfig(): Config {
       'No vault password found.',
       '',
       'Set one of:',
-      '  XBV_PASSWORD (and optionally XBV_URL)',
+      '  SHELF_PASSWORD (and optionally SHELF_URL)',
       `  ${configPath()}  →  { "url": "${DEFAULT_URL}", "password": "..." }`,
       'or run from a checkout that contains .dev.vars.',
     ].join('\n'),
@@ -219,7 +219,7 @@ async function api<T>(
     if (response.status === 401) {
       throw new Error(
         `401 Unauthorized — the password in ${config.source} is not the one the Worker uses.\n` +
-          'Update it with `shelf config --password <new>` or fix .dev.vars/XBV_PASSWORD.',
+          'Update it with `shelf config --password <new>` or fix .dev.vars/SHELF_PASSWORD.',
       );
     }
     throw new Error(`HTTP ${response.status}: ${detail || response.statusText}`);
@@ -720,7 +720,13 @@ function commandConfig(args: ParsedArgs): void {
     const password = args.flags.password;
     if (!password.trim()) throw new Error('--password must not be empty');
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify({ url, password }, null, 2)}\n`, 'utf8');
+    // The file holds the vault password: create it private and fix the mode on
+    // an existing file, which `writeFileSync` otherwise leaves at 0644.
+    writeFileSync(path, `${JSON.stringify({ url, password }, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    chmodSync(path, 0o600);
     console.log(`Wrote ${path}`);
     return;
   }
