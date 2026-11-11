@@ -40,8 +40,8 @@ commands.
 
 ## What it does
 
-- **Save** — paste an X or LinkedIn link, use the Android share sheet, or POST
-  to the API.
+- **Save** — paste an X, LinkedIn or YouTube link, use the Android share sheet,
+  or POST to the API.
 - **Keep the post properly** — text, author, quoted post, full X articles,
   images, video links, metrics, where the platform exposes them.
 - **Read the links** — GitHub repos through the API, other pages through a

@@ -136,6 +136,7 @@ export function collectVideoTargets(bookmark: Bookmark): VideoTarget[] {
 /** Video ids in the saved links and in the post text, newest first. */
 export function collectYoutubeIds(bookmark: Bookmark): string[] {
   const urls = [
+    ...(bookmark.url ? [bookmark.url] : []),
     ...(bookmark.links ?? []).map(link => link.finalUrl || link.url),
     ...(String(bookmark.text || '').match(/https?:\/\/[^\s<>"']+/g) ?? []),
   ];

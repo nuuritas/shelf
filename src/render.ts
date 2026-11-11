@@ -62,6 +62,7 @@ function sourceName(url: string | null): string {
     return 'Post';
   }
   if (host === 'linkedin.com' || host.endsWith('.linkedin.com')) return 'LinkedIn';
+  if (host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com')) return 'YouTube';
   if (
     host === 'x.com' ||
     host.endsWith('.x.com') ||
@@ -190,13 +191,13 @@ export function renderPage({
 
       <main class="shell">
         <details class="add-drawer">
-          <summary><span class="add-icon">+</span> Save a link from X or LinkedIn</summary>
+          <summary><span class="add-icon">+</span> Save a link from X, LinkedIn or YouTube</summary>
           <form class="add-form" method="post" action="/add">
             <label class="sr-only" for="url">Post URL</label>
-            <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/… or https://www.linkedin.com/posts/…" required value="${addValue}">
+            <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/… · linkedin.com/posts/… · youtu.be/…" required value="${addValue}">
             <button type="submit">Save post</button>
           </form>
-          <p class="fine-print">On Android: <strong>Share → Shelf</strong> from X or LinkedIn. The post, quote, article, links, and images are read and summarized automatically.</p>
+          <p class="fine-print">On Android: <strong>Share → Shelf</strong> from X, LinkedIn or YouTube. The post, quote, article, links, video and images are read and summarized automatically.</p>
         </details>
 
         ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}

@@ -1,6 +1,7 @@
 import { isAiConfigured } from './ai.ts';
 import { Bookmarks } from './bookmarks-do.ts';
 import { parseLinkedInUrl } from './linkedin.ts';
+import { parseYouTubeUrl } from './youtube.ts';
 import { CSS, renderCalendar, renderLogin, renderPage, renderSetup } from './render.ts';
 import type {
   ArchiveResult,
@@ -148,12 +149,12 @@ const worker: ExportedHandler<Env> = {
     }
 
     // Digits are tweet ids; anything alphanumeric is a short bookmark ref.
-    const archiveMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9]{1,25})\/archive$/);
+    const archiveMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9_-]{1,30})\/archive$/);
     if (archiveMatch && request.method === 'POST') {
       return secure(await apiGuard(() => handleApiArchive(archiveMatch[1], env, request)));
     }
 
-    const bookmarkMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9]{1,25})$/);
+    const bookmarkMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9_-]{1,30})$/);
     if (bookmarkMatch) {
       if (request.method === 'GET') {
         return secure(await apiGuard(() => handleApiGet(bookmarkMatch[1], env)));
@@ -163,13 +164,13 @@ const worker: ExportedHandler<Env> = {
       }
     }
 
-    const summaryMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9]{1,25})\/summarize$/);
+    const summaryMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9_-]{1,30})\/summarize$/);
     if (summaryMatch && request.method === 'POST') {
       return secure(await apiGuard(() => handleApiSummarize(summaryMatch[1], env, request)));
     }
 
     const transcriptsMatch = url.pathname.match(
-      /^\/api\/bookmarks\/([A-Za-z0-9]{1,25})\/transcripts$/,
+      /^\/api\/bookmarks\/([A-Za-z0-9_-]{1,30})\/transcripts$/,
     );
     if (transcriptsMatch && request.method === 'POST') {
       return secure(await apiGuard(() => handleApiTranscripts(transcriptsMatch[1], env, request)));
@@ -354,7 +355,7 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
     return redirect('/?error=Could+not+read+the+shared+link');
   }
 
-  const parsed = extractXUrl(input) ?? parseLinkedInUrl(input);
+  const parsed = extractXUrl(input) ?? parseLinkedInUrl(input) ?? parseYouTubeUrl(input);
   if (!parsed) {
     return redirect('/?error=That+does+not+look+like+an+X+or+LinkedIn+post+link');
   }
@@ -374,7 +375,7 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
 async function handleDeleteForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const id = String(form.get('id') || '');
-  if (!/^[A-Za-z0-9]{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+  if (!/^[A-Za-z0-9_-]{1,30}$/.test(id)) return redirect('/?error=Invalid+bookmark');
   const back = safeReturn(form.get('returnTo'), '/');
   try {
     await doJson<DeleteResult>(env, '/delete', {
@@ -391,7 +392,7 @@ async function handleDeleteForm(request: Request, env: Env): Promise<Response> {
 async function handleArchiveForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const id = String(form.get('id') || '');
-  if (!/^[A-Za-z0-9]{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+  if (!/^[A-Za-z0-9_-]{1,30}$/.test(id)) return redirect('/?error=Invalid+bookmark');
 
   const archived = String(form.get('archived') || '') === '1';
   const back = safeReturn(form.get('returnTo'), '/');
@@ -423,7 +424,7 @@ async function handleTranslateMissingForm(request: Request, env: Env): Promise<R
 async function handleSummarizeForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const id = String(form.get('id') || '');
-  if (!/^[A-Za-z0-9]{1,25}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+  if (!/^[A-Za-z0-9_-]{1,30}$/.test(id)) return redirect('/?error=Invalid+bookmark');
 
   const requested = String(form.get('mode') || '');
   const mode = requested === 'version' ? 'version' : requested === 'translate' ? 'translate' : 'default';
@@ -467,8 +468,8 @@ async function handleApiSave(request: Request, env: Env): Promise<Response> {
 
   const record = isRecord(body) ? body : {};
   const input = [record.url, record.text].filter(Boolean).join('\n');
-  const parsed = extractXUrl(input) ?? parseLinkedInUrl(input);
-  if (!parsed) return jsonResponse({ error: 'That does not look like an X or LinkedIn post link.' }, 400);
+  const parsed = extractXUrl(input) ?? parseLinkedInUrl(input) ?? parseYouTubeUrl(input);
+  if (!parsed) return jsonResponse({ error: 'That does not look like an X, LinkedIn or YouTube post link.' }, 400);
 
   try {
     const result = await doJson<SaveResult>(env, '/save', {

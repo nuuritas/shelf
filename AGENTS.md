@@ -6,7 +6,7 @@ change things without breaking them.
 
 ## What this is
 
-Single-user bookmark archive for X and LinkedIn posts. One Cloudflare Worker
+Single-user bookmark archive for X, LinkedIn and YouTube posts. One Cloudflare Worker
 (`src/worker.ts`) plus one SQLite-backed Durable Object (`src/bookmarks-do.ts`).
 Server-rendered HTML, no client framework, no build step. TypeScript 7.0.2
 (native compiler), bundled by Wrangler.
@@ -25,6 +25,7 @@ src/ai.ts            AI prompts + requests (summary, translation, topics, synthe
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
 src/linkedin.ts      public LinkedIn post reader (guest page meta tags)
+src/youtube.ts       public YouTube video reader (oEmbed + watch page meta tags)
 src/transcript.ts    video transcripts (Whisper for X, Piped by default for YouTube)
 src/render.ts        SSR HTML + the entire stylesheet as a template string
 src/util.ts          escaping, linkify, cookies, base64, slugs
