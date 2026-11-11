@@ -12,7 +12,7 @@ operating guide for coding agents; this is the context behind it.
 
 ## 1. What the product is
 
-A single-user archive for X (Twitter) posts. A link is shared from Android —
+A single-user archive for X (Twitter) and LinkedIn posts. A link is shared from Android —
 one tap, no app window — and the post is saved, read, and explained by an AI.
 Over time the archive organizes itself into topics and writes its own rolling
 syntheses, so it behaves less like a list of bookmarks and more like a small
@@ -38,6 +38,7 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
                           item_topics, summary_versions
                                       │
                                       ├─ FxTwitter / official X API (read post)
+                                      ├─ LinkedIn guest page (read public post)
                                       ├─ GitHub API + readability (read links)
                                       ├─ Workers AI binding (summaries, topics,
                                       │  versions; no API key, text only)
@@ -66,7 +67,7 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 
 | Table | Purpose |
 |---|---|
-| `bookmarks` | One row per X post: text, author, media JSON, quote JSON, article JSON, links JSON, transcripts JSON, metrics, `summary`, `summary_en`, `archived_at`, topic/version/translation job state |
+| `bookmarks` | One row per saved post (X or LinkedIn): text, author, media JSON, quote JSON, article JSON, links JSON, transcripts JSON, metrics, `summary`, `summary_en`, `archived_at`, topic/version/translation job state |
 | `topics` | AI-induced areas of interest: `slug`, `name`, `description`, `overview` (rolling synthesis), `overview_count` |
 | `item_topics` | Many-to-many filing, with confidence |
 | `summary_versions` | v2+ summaries, each with the instruction that produced it. v1 lives in `bookmarks.summary` |
@@ -95,6 +96,13 @@ wall-clock is long but CPU stays low.
 - PWA shell with service worker (share target works on Chrome, not Brave)
 - AI summary: natural Turkish prose, 3–5 paragraphs; reads images as base64,
   X Article bodies, quoted posts, up to two external links, and video transcripts
+- LinkedIn posts: a public post URL is collapsed to its `activity` id, the
+  canonical page is read without cookies, and the post text comes from the
+  `description`/`og:description` meta tag (falling back to the article body).
+  Author, image, and canonical URL come from the same tags. A login wall, a
+  deleted post, or a members-only post saves the row with no text and the
+  summary works from the URL; nothing throws. There is no LinkedIn API key and
+  no session to configure
 - Video transcripts: the smallest MP4 of an X video goes to Workers AI
   `@cf/openai/whisper-large-v3-turbo` (no key, ~214 free audio minutes/day).
   YouTube links read captions from public Piped instances with no key at all
@@ -184,6 +192,7 @@ wall-clock is long but CPU stays low.
 | Nov 11 | Workers AI as the default summarizer, any OpenAI-compatible endpoint as the upgrade | Deploying needed a third-party key before the first summary; the AI binding was already bound for Whisper |
 | Nov 11 | Piped as the default YouTube caption source, no key | Supadata needs a signup and a 100-credit ceiling; a fresh deploy should read captions immediately |
 | Nov 11 | README replaced by an agent install prompt + `INSTALL.md` | Nobody installs a Cloudflare Worker by hand; an agent needs a checklist it can execute |
+| Nov 11 | LinkedIn posts saved through the guest page | The same share sheet should work for posts people send from LinkedIn, without a LinkedIn developer app |
 
 ### Video transcripts
 
@@ -261,7 +270,12 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
   fixes individual rows.
 - **Video transcripts are capped at 20 MB and two per bookmark.** Whisper runs
   on the MP4 bytes; the Worker cannot extract audio from larger files. YouTube
-  captions require `SUPADATA_API_KEY` and are native-only.
+  captions come from Piped by default (native captions only) and from Supadata
+  when `SUPADATA_API_KEY` is set.
+- **LinkedIn is guest-page only.** There is no post API without a LinkedIn app,
+  so `src/linkedin.ts` reads the public HTML. Members-only, deleted, or
+  logged-in-only posts save with empty text, and the meta tags can change
+  without notice. Do not add cookie or session handling to read more.
 - **YouTube proxy/VPS checks (2026-11-11)**: a VPS and several commercial
   proxy providers (direct and rotating) all return 429 or `LOGIN_REQUIRED`;
   some backbone ports refuse connections outright, and residential egress was

@@ -1,10 +1,10 @@
 # X Bookmark Vault
 
-Your own X (Twitter) bookmark archive, on your own Cloudflare account. Paste or
-share a post and it keeps the text, the quote, the full article, the images and
-the links, then writes a plain-language summary of what it says. One Worker, one
-SQLite Durable Object, server-rendered HTML, no build step, no database to
-manage. The free plan is enough for personal use.
+Your own X (Twitter) and LinkedIn bookmark archive, on your own Cloudflare
+account. Paste or share a post and it keeps the text, the quote, the full
+article, the images and the links, then writes a plain-language summary of what
+it says. One Worker, one SQLite Durable Object, server-rendered HTML, no build
+step, no database to manage. The free plan is enough for personal use.
 
 ## Install it with your AI
 
@@ -40,9 +40,10 @@ commands.
 
 ## What it does
 
-- **Save** — paste a link, use the Android share sheet, or POST to the API.
+- **Save** — paste an X or LinkedIn link, use the Android share sheet, or POST
+  to the API.
 - **Keep the post properly** — text, author, quoted post, full X articles,
-  images, video links, metrics.
+  images, video links, metrics, where the platform exposes them.
 - **Read the links** — GitHub repos through the API, other pages through a
   readability extractor.
 - **Summarize** — natural prose from Workers AI with no key, any
@@ -61,7 +62,8 @@ Nothing, for a personal archive:
   bookmarks; reset at 00:00 UTC. Or bring a provider key.
 - YouTube captions: free through public Piped instances, no key. Supadata's 100
   monthly credits are the optional fallback.
-- X posts: read through FxTwitter's public API, no X subscription.
+- Posts: X links go through FxTwitter's public API with no X subscription;
+  LinkedIn links are read from the public guest page, no login.
 
 ## Optional pieces
 
