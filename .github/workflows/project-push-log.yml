@@ -79,7 +79,7 @@ jobs:
             const all = [...fresh.map(item => item.line), ...existingLines].slice(0, 80);
             const latest = subject(head?.message || ordered[ordered.length - 1]?.message || 'push');
             const nextBody = [
-              'Rolling log of pushes to this repository. The **All work** project keeps this issue as the X Bookmark Vault activity card.',
+              'Rolling log of pushes to this repository. The **All work** project keeps this issue as the Shelf activity card.',
               '',
               `Repository: https://github.com/${owner}/${repo}`,
               `Latest push: ${stamp} on \`${branch}\``,

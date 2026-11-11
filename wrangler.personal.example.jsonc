@@ -8,9 +8,13 @@
 //
 // Anything you leave out is inherited from nothing — this is a complete config,
 // because Wrangler does not merge two config files.
+//
+// Renaming an existing deployment: Durable Object storage belongs to the Worker
+// script, so a new "name" starts with an empty archive. Pick the name before
+// the first deploy; leave it alone afterwards.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "x-bookmark-vault",
+  "name": "shelf",
   "main": "src/worker.ts",
   "workers_dev": true,
   "routes": [

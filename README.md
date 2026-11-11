@@ -1,4 +1,4 @@
-# X Bookmark Vault
+# Shelf
 
 Your own X (Twitter) and LinkedIn bookmark archive, on your own Cloudflare
 account. Paste or share a post and it keeps the text, the quote, the full
@@ -12,9 +12,9 @@ Nobody installs this by hand, so don't. Paste this into Claude Code, Codex,
 Cursor, or any agent that can run commands:
 
 ```text
-Set up X Bookmark Vault for me: https://github.com/nuuritas/x-bookmark-vault
+Set up Shelf for me: https://github.com/nuuritas/shelf
 
-Read https://raw.githubusercontent.com/nuuritas/x-bookmark-vault/main/INSTALL.md
+Read https://raw.githubusercontent.com/nuuritas/shelf/main/INSTALL.md
 and follow it exactly.
 
 Ask me three things first:
@@ -70,7 +70,7 @@ Nothing, for a personal archive:
 - **Android share APK** — a share target that saves in the background, built
   without Gradle. No iOS app yet; iOS is planned, and the web app works as a PWA
   on iPhone until then.
-- **CLI and MCP** — `xbv search`, `xbv export`, `xbv mcp`.
+- **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`.
 - **Custom domain** — a workers.dev URL works; a domain is three lines in
   `wrangler.jsonc`.
 - **Transcript services** — `SUPADATA_API_KEY`, `TRANSCRIPT_API_URL`, or your own

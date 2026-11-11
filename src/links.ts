@@ -170,7 +170,7 @@ async function readGitHub(
 ): Promise<LinkRead> {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
-    'User-Agent': 'XBookmarkVault/1.0',
+    'User-Agent': 'Shelf/1.0',
     'X-GitHub-Api-Version': '2022-11-28',
   };
   if (env.GITHUB_TOKEN) headers.Authorization = `Bearer ${env.GITHUB_TOKEN}`;
@@ -203,7 +203,7 @@ async function readGitHub(
     try {
       const response = await request(
         `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/HEAD/README.md`,
-        { headers: { 'User-Agent': 'XBookmarkVault/1.0' } },
+        { headers: { 'User-Agent': 'Shelf/1.0' } },
         timeout(env),
       );
       if (response.ok) readme = await response.text();
@@ -247,7 +247,7 @@ async function readWebPage(url: string, env: Partial<Env>): Promise<LinkRead> {
     {
       headers: {
         Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8',
-        'User-Agent': 'XBookmarkVault/1.0 (+link reader)',
+        'User-Agent': 'Shelf/1.0 (+link reader)',
       },
     },
     timeout(env),
@@ -315,7 +315,7 @@ async function resolveTco(url: string, env: Partial<Env>): Promise<string | null
       {
         method: 'GET',
         redirect: 'follow',
-        headers: { 'User-Agent': 'XBookmarkVault/1.0' },
+        headers: { 'User-Agent': 'Shelf/1.0' },
       },
       Math.min(timeout(env), 10_000),
     );

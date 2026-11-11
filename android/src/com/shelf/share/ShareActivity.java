@@ -1,4 +1,4 @@
-package com.bookmarkvault.share;
+package com.shelf.share;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -105,7 +105,7 @@ public class ShareActivity extends Activity {
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Authorization", "Bearer " + TOKEN);
-            connection.setRequestProperty("User-Agent", "BookmarkShare/1.0");
+            connection.setRequestProperty("User-Agent", "Shelf/1.0");
 
             String body = "{\"url\":\"" + escapeJson(link) + "\"}";
             OutputStream output = connection.getOutputStream();

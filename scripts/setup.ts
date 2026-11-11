@@ -201,7 +201,7 @@ async function main(): Promise<void> {
     if (value) secrets[key] = value;
   }
 
-  const bulkPath = join(tmpdir(), `xbv-secrets-${process.pid}.json`);
+  const bulkPath = join(tmpdir(), `shelf-secrets-${process.pid}.json`);
   writeFileSync(bulkPath, JSON.stringify(secrets), { mode: 0o600 });
   console.log(`\nUploading ${Object.keys(secrets).join(', ')} as Worker secrets...`);
 

@@ -1437,7 +1437,7 @@ export class Bookmarks extends DurableObject<Env> {
       const result = await summarizePost(bookmark, this.env, {
         instruction,
         previousSummary: bookmark.summary || '',
-        session: `xbv-${tweetId}-v${version}`,
+        session: `shelf-${tweetId}-v${version}`,
       });
 
       this.sql.exec(
@@ -1571,7 +1571,7 @@ export class Bookmarks extends DurableObject<Env> {
 
     try {
       const result = await translateSummary(row.summary, this.env, {
-        session: `xbv-${tweetId}-en`,
+        session: `shelf-${tweetId}-en`,
       });
       this.sql.exec(
         `UPDATE bookmarks

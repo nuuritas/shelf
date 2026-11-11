@@ -1,13 +1,13 @@
 {
-  "name": "x-bookmark-vault",
+  "name": "shelf",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "A tiny Cloudflare-native X bookmark reader with automatic AI summaries.",
+  "description": "A tiny Cloudflare-native bookmark archive for X and LinkedIn, with automatic AI summaries.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nuuritas/x-bookmark-vault.git"
+    "url": "git+https://github.com/nuuritas/shelf.git"
   },
   "scripts": {
     "setup": "bun scripts/setup.ts",

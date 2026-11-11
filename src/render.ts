@@ -166,19 +166,19 @@ export function renderPage({
 
   return pageShell({
     title: topic
-      ? `${topic.name} · X Bookmark Vault`
+      ? `${topic.name} · Shelf`
       : currentDay
-        ? `${dayLabel} · X Bookmark Vault`
+        ? `${dayLabel} · Shelf`
         : view === 'archived'
-          ? 'Archive · X Bookmark Vault'
-          : 'X Bookmark Vault',
+          ? 'Archive · Shelf'
+          : 'Shelf',
     bodyClass: 'home',
     head: pending ? '<meta http-equiv="refresh" content="4">' : '',
     body: `
       <header class="topbar">
         <a class="brand" href="/">
-          <span class="brand-mark">X</span>
-          <span>Bookmark Vault</span>
+          <span class="brand-mark">S</span>
+          <span>Shelf</span>
         </a>
         <div class="top-actions">
           <span class="count">${total} ${view === 'archived' ? 'archived' : 'active'}</span>
@@ -196,7 +196,7 @@ export function renderPage({
             <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/… or https://www.linkedin.com/posts/…" required value="${addValue}">
             <button type="submit">Save post</button>
           </form>
-          <p class="fine-print">On Android: <strong>Share → Bookmark Vault</strong> from X or LinkedIn. The post, quote, article, links, and images are read and summarized automatically.</p>
+          <p class="fine-print">On Android: <strong>Share → Shelf</strong> from X or LinkedIn. The post, quote, article, links, and images are read and summarized automatically.</p>
         </details>
 
         ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
@@ -314,7 +314,7 @@ export function renderPage({
         <span class="dot">·</span>
         <span>Summaries by OpenCode</span>
         <span class="dot">·</span>
-        <a href="/BookmarkShare.apk">Android share app</a>
+        <a href="/ShelfShare.apk">Android share app</a>
       </footer>
     `,
   });
@@ -407,14 +407,14 @@ export function renderCalendar({
   }).join('');
 
   return pageShell({
-    title: `${label} · Calendar · X Bookmark Vault`,
+    title: `${label} · Calendar · Shelf`,
     bodyClass: 'home calendar-page',
     head: '',
     body: `
       <header class="topbar">
         <a class="brand" href="${escapeHtml(libraryHref('/', { lang }))}">
-          <span class="brand-mark">X</span>
-          <span>Bookmark Vault</span>
+          <span class="brand-mark">S</span>
+          <span>Shelf</span>
         </a>
         <div class="top-actions">
           <span class="count">${calendar.total} saved this month</span>
@@ -926,15 +926,15 @@ function renderEmpty(
 
 export function renderLogin({ error, next }: { error?: string | null; next?: string | null } = {}): string {
   return pageShell({
-    title: 'Log in · X Bookmark Vault',
+    title: 'Log in · Shelf',
     bodyClass: 'login-page',
     head: '',
     body: `
       <main class="login-wrap">
         <div class="login-card">
-          <span class="brand-mark large">X</span>
+          <span class="brand-mark large">S</span>
           <p class="eyebrow">Private library</p>
-          <h1>Bookmark Vault</h1>
+          <h1>Shelf</h1>
           <p class="lede">Enter the password to open your saved posts.</p>
           ${error ? `<div class="banner error">${escapeHtml(error)}</div>` : ''}
           <form method="post" action="/login" class="login-form">
@@ -957,7 +957,7 @@ export function renderSetup(): string {
     body: `
       <main class="login-wrap">
         <div class="login-card setup-card">
-          <span class="brand-mark large">X</span>
+          <span class="brand-mark large">S</span>
           <p class="eyebrow">One more step</p>
           <h1>Set a password</h1>
           <p class="lede">This app is locked until an <code>APP_PASSWORD</code> secret is set.</p>
@@ -976,7 +976,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f0e8">
-  <meta name="description" content="A private, self-hosted reader for X posts, quotes, and images.">
+  <meta name="description" content="A private, self-hosted reader for X and LinkedIn posts, quotes, and images.">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">

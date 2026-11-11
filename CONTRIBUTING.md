@@ -41,7 +41,7 @@ lists the traps that have already cost time (duplicate storage types hanging
 - One concern per PR, with a short description of the behaviour change and how
   you verified it.
 - Imperative commit subjects, for example `Fix calendar day links`.
-- Do not commit `.dev.vars`, keystores, `out/`, or `public/BookmarkShare.apk`.
+- Do not commit `.dev.vars`, keystores, `out/`, or `public/ShelfShare.apk`.
 - New behaviour that a user can see should come with a test where the code is
   testable outside the Worker, or a clear manual check in the PR body.
 

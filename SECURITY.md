@@ -2,7 +2,7 @@
 
 ## How this app is meant to be run
 
-X Bookmark Vault is a **single-user** app. It has one password, one shared
+Shelf is a **single-user** app. It has one password, one shared
 library, and no accounts. It is not a multi-tenant service, and it does not try
 to be one.
 

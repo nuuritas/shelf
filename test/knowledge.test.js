@@ -149,11 +149,11 @@ test('translateSummary asks the AI for English and returns plain text', async ()
     const result = await translateSummary('Türkçe bir açıklama.', {
       OPENCODE_API_KEY: 'test-key',
       AI_MODEL: 'deepseek-v4.1-flash',
-    }, { session: 'xbv-20-en' });
+    }, { session: 'shelf-20-en' });
 
     assert.equal(result.text, 'An English explanation.');
     assert.match(captured.url, /chat\/completions$/);
-    assert.equal(captured.init.headers['x-opencode-session'], 'xbv-20-en');
+    assert.equal(captured.init.headers['x-opencode-session'], 'shelf-20-en');
     const body = JSON.parse(captured.init.body);
     assert.match(body.messages[0].content, /English/);
     assert.match(body.messages[1].content, /Türkçe bir açıklama\./);

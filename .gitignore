@@ -6,7 +6,7 @@ node_modules/
 *.log
 android/build/
 android/*.keystore
-public/BookmarkShare.apk
+public/ShelfShare.apk
 out/
 
 # Local deployment config: keeps your worker name, domain, and model settings

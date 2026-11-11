@@ -33,7 +33,7 @@ import { extractXUrl } from './x.ts';
 
 export { Bookmarks };
 
-const SESSION_COOKIE = 'xbv_session';
+const SESSION_COOKIE = 'shelf_session';
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',

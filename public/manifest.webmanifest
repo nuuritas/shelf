@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "X Bookmark Vault",
-  "short_name": "Bookmarks",
+  "name": "Shelf",
+  "short_name": "Shelf",
   "description": "Save X and LinkedIn posts, quotes, and images into a private library with automatic AI summaries.",
   "start_url": "/",
   "scope": "/",

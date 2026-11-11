@@ -47,7 +47,7 @@ mkdir -p "$BUILD/classes" "$BUILD/dex" "$BUILD/res"
 # The token is injected into a temporary source file, never the tracked source.
 sed -e "s|__SHARE_TOKEN__|$TOKEN|g" \
   -e "s|__SHARE_ENDPOINT__|$ENDPOINT|g" \
-  "$ANDROID_DIR/src/com/bookmarkvault/share/ShareActivity.java" \
+  "$ANDROID_DIR/src/com/shelf/share/ShareActivity.java" \
   > "$BUILD/ShareActivity.java"
 
 javac --release 11 \
@@ -59,7 +59,7 @@ javac --release 11 \
   --min-api 26 \
   --lib "$PLATFORM_JAR" \
   --output "$BUILD/dex" \
-  "$BUILD"/classes/com/bookmarkvault/share/*.class
+  "$BUILD"/classes/com/shelf/share/*.class
 
 "$BUILD_TOOLS/aapt2" compile \
   --dir "$ANDROID_DIR/res" \
@@ -85,27 +85,27 @@ javac --release 11 \
 if [[ ! -f "$KEYSTORE" ]]; then
   keytool -genkeypair \
     -keystore "$KEYSTORE" \
-    -alias bookmark \
+    -alias shelf \
     -keyalg RSA \
     -keysize 2048 \
     -validity 10000 \
     -storepass "$PASS" \
     -keypass "$PASS" \
-    -dname "CN=Bookmark Vault, O=Personal, C=TR" \
+    -dname "CN=Shelf, O=Personal, C=TR" \
     >/dev/null 2>&1
 fi
 
 "$BUILD_TOOLS/zipalign" -f 4 "$BUILD/unsigned.apk" "$BUILD/aligned.apk"
 "$BUILD_TOOLS/apksigner" sign \
   --ks "$KEYSTORE" \
-  --ks-key-alias bookmark \
+  --ks-key-alias shelf \
   --ks-pass "pass:$PASS" \
   --key-pass "pass:$PASS" \
-  --out "$BUILD/BookmarkShare.apk" \
+  --out "$BUILD/ShelfShare.apk" \
   "$BUILD/aligned.apk"
 
-"$BUILD_TOOLS/apksigner" verify "$BUILD/BookmarkShare.apk"
-cp "$BUILD/BookmarkShare.apk" "$ROOT/public/BookmarkShare.apk"
+"$BUILD_TOOLS/apksigner" verify "$BUILD/ShelfShare.apk"
+cp "$BUILD/ShelfShare.apk" "$ROOT/public/ShelfShare.apk"
 
-echo "Built $BUILD/BookmarkShare.apk"
-ls -lh "$BUILD/BookmarkShare.apk" "$ROOT/public/BookmarkShare.apk"
+echo "Built $BUILD/ShelfShare.apk"
+ls -lh "$BUILD/ShelfShare.apk" "$ROOT/public/ShelfShare.apk"
