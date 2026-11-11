@@ -8,6 +8,7 @@ import {
   writeTopicOverview,
 } from './ai.ts';
 import { readExternalLinks } from './links.ts';
+import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
 import { readTranscripts } from './transcript.ts';
 import { clampInteger, jsonResponse } from './util.ts';
 import { readPost } from './x.ts';
@@ -432,7 +433,10 @@ export class Bookmarks extends DurableObject<Env> {
   }
 
   async save(input: string | ParsedXUrl): Promise<SaveResult> {
-    const post = await readPost(input, this.env);
+    const post =
+      typeof input === 'string' && parseLinkedInUrl(input)
+        ? await readLinkedInPost(input)
+        : await readPost(input, this.env);
     const existing: ExistingBookmarkRow | undefined = this.sql
       .exec<ExistingBookmarkRow>(
         `SELECT tweet_id, summary, summary_status, text, article_json
@@ -812,12 +816,16 @@ export class Bookmarks extends DurableObject<Env> {
     return bookmark;
   }
 
-  /** Tweet ids are digits; a short ref is anything else. */
+  /** Tweet ids are digits; a short ref or a stored key such as li<activityId> is anything else. */
   resolveId(idOrRef: string | null | undefined): string | null {
     if (!idOrRef) return null;
     const key = String(idOrRef).trim();
     if (!key) return null;
     if (/^\d{1,25}$/.test(key)) return key;
+    const exact = this.sql
+      .exec<{ tweet_id: string }>('SELECT tweet_id FROM bookmarks WHERE tweet_id = ?', key)
+      .toArray()[0];
+    if (exact?.tweet_id) return exact.tweet_id;
     const row = this.sql
       .exec<{ tweet_id: string }>('SELECT tweet_id FROM bookmarks WHERE lower(ref) = lower(?)', key)
       .toArray()[0];
