@@ -52,6 +52,27 @@ export interface RenderPageOptions {
   bilingual?: boolean;
 }
 
+/** Short source name for a bookmark URL, used as the outbound link label. */
+function sourceName(url: string | null): string {
+  if (!url) return 'Post';
+  let host = '';
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return 'Post';
+  }
+  if (host === 'linkedin.com' || host.endsWith('.linkedin.com')) return 'LinkedIn';
+  if (
+    host === 'x.com' ||
+    host.endsWith('.x.com') ||
+    host === 'twitter.com' ||
+    host.endsWith('.twitter.com')
+  ) {
+    return 'X';
+  }
+  return 'Post';
+}
+
 /** Build a library/topic URL without empty or default parameters. */
 function libraryHref(
   path: string,
@@ -172,7 +193,7 @@ export function renderPage({
           <summary><span class="add-icon">+</span> Save a link from X</summary>
           <form class="add-form" method="post" action="/add">
             <label class="sr-only" for="url">X post URL</label>
-            <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/…" required value="${addValue}">
+            <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/… or https://www.linkedin.com/posts/…" required value="${addValue}">
             <button type="submit">Save post</button>
           </form>
           <p class="fine-print">On Android: <strong>Share → Bookmark Vault</strong> in X. The post, quote, article, links, and images are read and summarized automatically.</p>
@@ -472,6 +493,8 @@ function renderBookmark(
   const avatar = safeHttpUrl(author.avatarUrl);
   const initial = escapeHtml((author.name || author.username || '?').slice(0, 1).toUpperCase());
   const archived = Boolean(bookmark.archivedAt);
+  const outboundUrl = safeHttpUrl(bookmark.url);
+  const source = sourceName(outboundUrl);
 
   const extras = [];
   if (bookmark.article) extras.push('X Article');
@@ -507,7 +530,7 @@ function renderBookmark(
             </div>
           </div>
         </div>
-        <a class="x-link" href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer" aria-label="Open on X">X ↗</a>
+        <a class="x-link" href="${escapeHtml(outboundUrl || '#')}" target="_blank" rel="noopener noreferrer" aria-label="Open on ${escapeHtml(source)}">${escapeHtml(source)} ↗</a>
       </header>
 
       <div class="tweet-text">${linkifyText(bookmark.text)}</div>
