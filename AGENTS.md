@@ -276,3 +276,20 @@ API: see `docs/PROGRESS.md` §3.
   same 429/`LOGIN_REQUIRED`; backbone ports sometimes refuse connections. Do not
   retry datacenter egress for YouTube; only a residential IP or a managed API
   works.
+
+## Autonomous agent (superagent)
+
+This repository has its own `dsh-superagent` instance (`bookmark`, panel `http://192.168.1.102:3083`).
+It is not a chat bot you invoke: any issue opened on this repository by an allowed account
+(`nuuritas`) is a work order — no mention and no label are required.
+
+- It acknowledges once on the issue, works in its own clone on `agent/<ticket>`, opens one pull
+  request against `main`, and merges it itself when the guardrails hold. If they do not hold it
+  replies `blocked` with one question instead of merging.
+- Guardrails: one module, at most 200 changed lines, no dependency, lockfile, deployment or
+  generated-file change. It never builds, tests, deploys, or reads secrets.
+- The issue thread is the contract. Nothing in this repository calls operator scripts, and this
+  repository has no dependency on them.
+- Operator tooling — status, configuration and instance control — lives in `nuuritas/spl-hazirlik`:
+  `scripts/superagent-status.sh`, `scripts/superagent-sync.sh`, `scripts/superagent-instance.sh`,
+  and `plans/SUPERAGENT.md`.
