@@ -264,6 +264,11 @@ API: see `docs/PROGRESS.md` §3.
   not a rendering bug.
 - English translations are a second AI call; a failure must not change
   `summary_status`. The primary summary stays readable and the card offers retry.
+- LinkedIn is guest-page only. `src/linkedin.ts` reads the public page's meta
+  tags for a post's `activity` id; there is no post API without a LinkedIn app.
+  Login walls, members-only posts, and deleted posts save with empty text
+  instead of failing, and the tags can change without notice. Do not add cookies
+  or session handling to read more.
 - Video transcripts are part of the app; the separate video digest/TTS pipeline
   is still experimental. See `docs/PROGRESS.md` §5.
 - Transcript caps: 20 MB and two videos per bookmark. Longer X videos need a
