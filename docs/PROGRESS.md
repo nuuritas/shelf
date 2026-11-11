@@ -195,6 +195,7 @@ wall-clock is long but CPU stays low.
 | Nov 11 | LinkedIn posts saved through the guest page | The same share sheet should work for posts people send from LinkedIn, without a LinkedIn developer app |
 | Nov 11 | Renamed to **Shelf** everywhere: UI, PWA, CLI, repo, Worker script, Android package | The archive already holds LinkedIn posts, and the name was narrower than the product. Durable Object storage belongs to the script, so the 52-bookmark archive moved through a temporary `GET /api/dump` -> `POST /api/restore` into the new `shelf` Worker (verified row for row) before the old script was deleted. The Android package id changed too, so the share APK installs as a new app |
 | Nov 11 | Bookcase app icon; `shelf.nuritas.tr` | The old mark was an X bookmark. The new one is a bookcase with a leaning book, laid out for the maskable safe zone; the old hostname stays attached so installed apps and links keep working |
+| Nov 11 | Android app opens in-app: launcher entry on a WebView, not a browser hop | The share APK had no `MAIN`/`LAUNCHER` filter at all, so tapping it did nothing. `MainActivity` now shows the library in a WebView, links to other sites go to the browser, and the share target still saves silently |
 
 ### Video transcripts
 

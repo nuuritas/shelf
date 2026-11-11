@@ -212,7 +212,8 @@ grep -q '^SHARE_ENDPOINT=' .dev.vars || echo "SHARE_ENDPOINT=$BASE/api/bookmarks
 created on the first build and gitignored. Install the APK with
 `adb install -r public/ShelfShare.apk`, then share an X post to
 **Shelf** from the Android share sheet. The app also has a launcher icon: tapping
-it opens the library in the browser, so it is not a dead entry in the drawer.
+it opens the library inside the app (a WebView), and links to other sites open
+in your browser.
 
 Tell the user the APK path. Never commit it: it embeds `SHARE_TOKEN`.
 

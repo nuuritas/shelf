@@ -45,18 +45,20 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD/classes" "$BUILD/dex" "$BUILD/res"
 
 # The token is injected into a temporary source file, never the tracked source.
-sed -e "s|__SHARE_TOKEN__|$TOKEN|g" \
-  -e "s|__SHARE_ENDPOINT__|$ENDPOINT|g" \
-  "$ANDROID_DIR/src/com/shelf/share/ShareActivity.java" \
-  > "$BUILD/ShareActivity.java"
+for source in Config MainActivity ShareActivity; do
+  sed -e "s|__SHARE_TOKEN__|$TOKEN|g" \
+    -e "s|__SHARE_ENDPOINT__|$ENDPOINT|g" \
+    "$ANDROID_DIR/src/com/shelf/share/$source.java" \
+    > "$BUILD/$source.java"
+done
 
 javac --release 11 \
   -classpath "$PLATFORM_JAR" \
   -d "$BUILD/classes" \
-  "$BUILD/ShareActivity.java"
+  "$BUILD"/Config.java "$BUILD"/MainActivity.java "$BUILD"/ShareActivity.java
 
 "$BUILD_TOOLS/d8" \
-  --min-api 26 \
+  --min-api 23 \
   --lib "$PLATFORM_JAR" \
   --output "$BUILD/dex" \
   "$BUILD"/classes/com/shelf/share/*.class
@@ -69,10 +71,10 @@ javac --release 11 \
   -o "$BUILD/unsigned.apk" \
   -I "$PLATFORM_JAR" \
   --manifest "$ANDROID_DIR/AndroidManifest.xml" \
-  --min-sdk-version 26 \
+  --min-sdk-version 23 \
   --target-sdk-version 36 \
-  --version-code 2 \
-  --version-name 1.1 \
+  --version-code 3 \
+  --version-name 1.2 \
   -R "$BUILD/res.zip" \
   --auto-add-overlay
 
@@ -97,6 +99,9 @@ fi
 
 "$BUILD_TOOLS/zipalign" -f 4 "$BUILD/unsigned.apk" "$BUILD/aligned.apk"
 "$BUILD_TOOLS/apksigner" sign \
+  --v1-signing-enabled true \
+  --v2-signing-enabled true \
+  --v3-signing-enabled true \
   --ks "$KEYSTORE" \
   --ks-key-alias shelf \
   --ks-pass "pass:$PASS" \

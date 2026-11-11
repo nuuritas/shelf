@@ -67,8 +67,8 @@ Nothing, for a personal archive:
 
 ## Optional pieces
 
-- **Android share APK** — a share target that saves in the background, built
-  without Gradle. No iOS app yet; iOS is planned, and the web app works as a PWA
+- **Android share APK** — a share target that saves in the background, plus a
+  launcher icon that opens the library in the app. Built without Gradle. No iOS app yet; iOS is planned, and the web app works as a PWA
   on iPhone until then.
 - **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`.
 - **Custom domain** — a workers.dev URL works; a domain is three lines in
