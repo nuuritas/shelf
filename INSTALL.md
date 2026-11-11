@@ -156,7 +156,8 @@ curl -s -H "Authorization: Bearer $PASS" "$BASE/api/bookmarks" | head -c 200
 Expect JSON, not `{"error":"Authentication required."}`.
 
 c. Save a real post and wait for its summary. Use an X post the user names, or
-any public post with text:
+any public post with text. An X link is the usual case; a public LinkedIn post
+URL is also accepted:
 
 ```bash
 curl -s -X POST "$BASE/api/bookmarks" \
@@ -251,6 +252,7 @@ xbv search "anything"
 | `bun install` fails | Bun missing or outdated; reinstall Bun. |
 | APK build: SDK not found | Install Android build-tools and a platform, or set `ANDROID_HOME`. |
 | YouTube transcript `unavailable` | Piped instance down or the video has no captions. Retry later or configure Supadata. |
+| LinkedIn post cannot be read | Only public posts work, through the guest page; members-only or deleted posts return a read error. Check the URL in a logged-out browser. |
 
 ## What to report
 

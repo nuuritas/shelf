@@ -6,10 +6,10 @@ change things without breaking them.
 
 ## What this is
 
-Single-user X bookmark archive. One Cloudflare Worker (`src/worker.ts`) plus one
-SQLite-backed Durable Object (`src/bookmarks-do.ts`). Server-rendered HTML, no
-client framework, no build step. TypeScript 7.0.2 (native compiler), bundled by
-Wrangler.
+Single-user X and LinkedIn bookmark archive. One Cloudflare Worker
+(`src/worker.ts`) plus one SQLite-backed Durable Object (`src/bookmarks-do.ts`).
+Server-rendered HTML, no client framework, no build step. TypeScript 7.0.2
+(native compiler), bundled by Wrangler.
 
 The repository is public; `main` deploys the maintainer's own instance, whose
 domain and provider live in a gitignored `wrangler.personal.jsonc`. There is no
@@ -24,6 +24,7 @@ src/bookmarks-do.ts  Durable Object: schema, queries, alarm queue, AI jobs
 src/ai.ts            AI prompts + requests (summary, translation, topics, synthesis)
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
+src/linkedin.ts      public LinkedIn post reader (guest page meta tags)
 src/transcript.ts    video transcripts (Whisper for X, Piped by default for YouTube)
 src/render.ts        SSR HTML + the entire stylesheet as a template string
 src/util.ts          escaping, linkify, cookies, base64, slugs
