@@ -2,6 +2,7 @@ package com.shelf.share;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,18 +17,33 @@ import java.util.regex.Pattern;
 
 /**
  * Invisible share target. It receives text/plain from Android, posts the first
- * URL to the Cloudflare Worker, shows a toast, and finishes. No app UI.
+ * URL to the Cloudflare Worker, shows a toast, and finishes. Launching the icon
+ * with no share payload opens the library in the browser instead, so the app is
+ * not a dead entry in the launcher.
  */
 public class ShareActivity extends Activity {
     // Both values are injected by android/build.sh; never commit real ones.
     private static final String ENDPOINT = "__SHARE_ENDPOINT__";
     private static final String TOKEN = "__SHARE_TOKEN__";
+    /** The library itself: the endpoint minus its `/api/bookmarks` tail. */
+    private static final String SITE_URL = siteUrl();
+
+    private static String siteUrl() {
+        int cut = ENDPOINT.indexOf("/api/");
+        return cut > 0 ? ENDPOINT.substring(0, cut) : ENDPOINT;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        final String shared = sharedText(getIntent());
+        Intent intent = getIntent();
+        if (intent != null && Intent.ACTION_MAIN.equals(intent.getAction())) {
+            openSite();
+            return;
+        }
+
+        final String shared = sharedText(intent);
 
         new Thread(new Runnable() {
             @Override
@@ -40,7 +56,7 @@ public class ShareActivity extends Activity {
                     } else {
                         int code = post(link);
                         if (code == 200 || code == 201) {
-                            message = "Saved to Bookmarks";
+                            message = "Saved to Shelf";
                         } else if (code == 401) {
                             message = "Share token rejected";
                         } else {
@@ -66,6 +82,19 @@ public class ShareActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    /** Launcher tap: hand the library URL to the default browser. */
+    private void openSite() {
+        try {
+            Intent view = new Intent(Intent.ACTION_VIEW, Uri.parse(SITE_URL));
+            view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(view);
+        } catch (Exception error) {
+            Toast.makeText(getApplicationContext(), SITE_URL, Toast.LENGTH_LONG).show();
+        } finally {
+            finish();
+        }
     }
 
     private static String sharedText(Intent intent) {
