@@ -24,6 +24,8 @@ import android.widget.ProgressBar;
  * other sites are handed to the browser; the shelf itself stays in the app.
  */
 public class MainActivity extends Activity {
+    static final String EXTRA_OPEN_URL = "open_url";
+
     private WebView web;
     private ProgressBar progress;
     private String siteHost;
@@ -110,12 +112,32 @@ public class MainActivity extends Activity {
             }
         });
 
+        Notifications.prepare(this);
+        Notifications.checkSoon(this);
+        Notifications.requestPermission(this);
+
         if (state != null) {
             web.restoreState(state);
             progress.setVisibility(View.GONE);
         } else {
-            web.loadUrl(Config.SITE_URL);
+            web.loadUrl(startUrl(getIntent()));
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String path = intent.getStringExtra(EXTRA_OPEN_URL);
+        if (path != null && path.startsWith("/")) {
+            web.loadUrl(Config.SITE_URL + path);
+        }
+    }
+
+    /** A notification can ask for one bookmark; otherwise the library. */
+    private String startUrl(Intent intent) {
+        String path = intent == null ? null : intent.getStringExtra(EXTRA_OPEN_URL);
+        return path != null && path.startsWith("/") ? Config.SITE_URL + path : Config.SITE_URL;
     }
 
     /** Dark status/navigation icons on a light page, light icons on a dark one. */

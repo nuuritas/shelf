@@ -45,7 +45,7 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD/classes" "$BUILD/dex" "$BUILD/res"
 
 # The token is injected into a temporary source file, never the tracked source.
-for source in Config MainActivity ShareActivity; do
+for source in Config MainActivity ShareActivity Notifications NotificationJobService; do
   sed -e "s|__SHARE_TOKEN__|$TOKEN|g" \
     -e "s|__SHARE_ENDPOINT__|$ENDPOINT|g" \
     "$ANDROID_DIR/src/com/shelf/share/$source.java" \
@@ -55,7 +55,8 @@ done
 javac --release 11 \
   -classpath "$PLATFORM_JAR" \
   -d "$BUILD/classes" \
-  "$BUILD"/Config.java "$BUILD"/MainActivity.java "$BUILD"/ShareActivity.java
+  "$BUILD"/Config.java "$BUILD"/MainActivity.java "$BUILD"/ShareActivity.java \
+  "$BUILD"/Notifications.java "$BUILD"/NotificationJobService.java
 
 "$BUILD_TOOLS/d8" \
   --min-api 23 \
@@ -73,8 +74,8 @@ javac --release 11 \
   --manifest "$ANDROID_DIR/AndroidManifest.xml" \
   --min-sdk-version 23 \
   --target-sdk-version 36 \
-  --version-code 9 \
-  --version-name 1.8 \
+  --version-code 10 \
+  --version-name 1.9 \
   -R "$BUILD/res.zip" \
   --auto-add-overlay
 

@@ -53,6 +53,8 @@ commands.
   syntheses, full-text search, a calendar, archive and restore.
 - **Tune it** — a Settings page (web and the Android app) for the summary
   prompt and language; new summaries pick up the change without a redeploy.
+- **Get notified** — a browser notification when a summary is ready, and a
+  background check in the Android app that posts a system notification.
 - **Reach it from AI tools** — a Bun CLI and a stdio MCP server, so Claude Code,
   Codex, or Cursor can search the vault themselves.
 

@@ -193,6 +193,30 @@ const worker: ExportedHandler<Env> = {
       return secure(await apiGuard(() => handleApiTranslateAll(env)));
     }
 
+    if (request.method === 'GET' && url.pathname === '/api/push/key') {
+      return secure(await apiGuard(() => handleApiPushKey(env)));
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/push/state') {
+      return secure(await apiGuard(() => handleApiPushState(env)));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/push/subscribe') {
+      return secure(await apiGuard(() => handleApiPushSubscribe(request, env)));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/push/unsubscribe') {
+      return secure(await apiGuard(() => handleApiPushUnsubscribe(request, env)));
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/notifications/next') {
+      return secure(await apiGuard(() => handleApiNotificationNext(env)));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/notifications/test') {
+      return secure(await apiGuard(() => handleApiNotificationTest(env)));
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/stats') {
       return secure(await apiGuard(() => handleApiStats(env)));
     }
@@ -349,11 +373,13 @@ async function handleCalendarPage(url: URL, env: Env): Promise<Response> {
 
 async function handleSettingsPage(url: URL, env: Env): Promise<Response> {
   const settings = await readSettings(env);
+  const push = await readPushState(env);
   return htmlResponse(
     renderSettings({
       settings,
       ai: aiConfig(env),
       aiConfigured: isAiConfigured(env),
+      pushSubscriptions: push.subscriptions,
       notice: url.searchParams.get('notice'),
       error: url.searchParams.get('error'),
     }),
@@ -641,6 +667,58 @@ async function handleApiSummarize(
   return jsonResponse(result, 202);
 }
 
+async function handleApiPushKey(env: Env): Promise<Response> {
+  return jsonResponse(await doJson<{ publicKey: string }>(env, '/push/key'));
+}
+
+async function handleApiPushState(env: Env): Promise<Response> {
+  return jsonResponse(await doJson<{ subscriptions: number }>(env, '/push/state'));
+}
+
+async function handleApiPushSubscribe(request: Request, env: Env): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Body must be JSON.' }, 400);
+  }
+  const result = await doJson<{ subscriptions: number }>(env, '/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return jsonResponse(result);
+}
+
+async function handleApiPushUnsubscribe(request: Request, env: Env): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+  const result = await doJson<{ subscriptions: number }>(env, '/push/unsubscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return jsonResponse(result);
+}
+
+async function handleApiNotificationNext(env: Env): Promise<Response> {
+  return jsonResponse(
+    await doJson<{ notification: unknown }>(env, '/notifications/next'),
+  );
+}
+
+async function handleApiNotificationTest(env: Env): Promise<Response> {
+  return jsonResponse(
+    await doJson<{ queued: boolean; subscriptions: number }>(env, '/notifications/test', {
+      method: 'POST',
+    }),
+  );
+}
+
 async function handleApiStats(env: Env): Promise<Response> {
   return jsonResponse(await doJson<StatsResult>(env, '/stats'));
 }
@@ -650,6 +728,15 @@ async function apiGuard(handler: () => Promise<Response>): Promise<Response> {
     return await handler();
   } catch (error) {
     return jsonResponse({ error: errorMessage(error) }, errorStatus(error, 500));
+  }
+}
+
+/** Subscription count for the settings page; zero if the DO cannot answer. */
+async function readPushState(env: Env): Promise<{ subscriptions: number }> {
+  try {
+    return await doJson<{ subscriptions: number }>(env, '/push/state');
+  } catch {
+    return { subscriptions: 0 };
   }
 }
 
