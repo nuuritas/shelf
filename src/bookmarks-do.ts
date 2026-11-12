@@ -10,6 +10,14 @@ import {
 import { readExternalLinks } from './links.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
 import {
+  createVapidKeys,
+  parsePushSubscription,
+  pushEndpoint,
+  sendPush,
+  summaryNotification,
+  type VapidKeys,
+} from './push.ts';
+import {
   defaultSummaryLanguage,
   normalizeSummaryLanguage,
   normalizeSummaryPrompt,
@@ -32,6 +40,8 @@ import type {
   MediaItem,
   Metrics,
   ParsedXUrl,
+  PushNotification,
+  PushSubscriptionRecord,
   Quote,
   ReindexResult,
   SaveResult,
@@ -151,6 +161,10 @@ type TopicCountRow = {
 
 type TopicRefRow = { tweet_id: string; slug: string; name: string };
 
+type NotificationRow = { id: number; title: string; body: string; url: string };
+
+type PushRow = { endpoint: string; p256dh: string; auth: string };
+
 type StatsRow = {
   total: number;
   archived: number | null;
@@ -258,6 +272,22 @@ export class Bookmarks extends DurableObject<Env> {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        endpoint TEXT PRIMARY KEY,
+        p256dh TEXT NOT NULL DEFAULT '',
+        auth TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        url TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        delivered_at TEXT
       );
     `);
 
@@ -372,19 +402,8 @@ export class Bookmarks extends DurableObject<Env> {
         ? current.summaryPrompt
         : normalizeSummaryPrompt(input.summaryPrompt);
     const language = normalizeSummaryLanguage(input.summaryLanguage, current.summaryLanguage);
-    const now = new Date().toISOString();
-
-    const write = (key: string, value: string) => {
-      this.sql.exec(
-        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-        key,
-        value,
-        now,
-      );
-    };
-    write('summary_prompt', prompt);
-    write('summary_language', language);
+    this.putSetting('summary_prompt', prompt);
+    this.putSetting('summary_language', language);
 
     return { summaryPrompt: prompt, summaryLanguage: language };
   }
@@ -404,6 +423,150 @@ export class Bookmarks extends DurableObject<Env> {
     const language = this.primaryLanguage();
     const configured = String(this.env.SUMMARY_LANGUAGE || 'en').toLowerCase();
     return configured === language ? this.env : { ...this.env, SUMMARY_LANGUAGE: language };
+  }
+
+  private putSetting(key: string, value: string): void {
+    this.sql.exec(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      key,
+      value,
+      new Date().toISOString(),
+    );
+  }
+
+  /** The VAPID pair, generated on first use and kept out of StoredSettings. */
+  async vapidKeys(): Promise<VapidKeys> {
+    const rows = this.sql
+      .exec<{ key: string; value: string }>(
+        "SELECT key, value FROM settings WHERE key IN ('push_vapid_public', 'push_vapid_private')",
+      )
+      .toArray();
+    const values = new Map(rows.map(row => [row.key, row.value]));
+    const publicKey = values.get('push_vapid_public') || '';
+    const privateJson = values.get('push_vapid_private') || '';
+    if (publicKey && privateJson) {
+      try {
+        return { publicKey, privateKey: JSON.parse(privateJson) as JsonWebKey };
+      } catch {
+        console.warn('Stored VAPID key is unreadable; generating a new pair.');
+      }
+    }
+
+    const keys = await createVapidKeys();
+    this.putSetting('push_vapid_public', keys.publicKey);
+    this.putSetting('push_vapid_private', JSON.stringify(keys.privateKey));
+    return keys;
+  }
+
+  pushState(): { subscriptions: number } {
+    const row = this.sql
+      .exec<{ count: number }>('SELECT COUNT(*) AS count FROM push_subscriptions')
+      .toArray()[0];
+    return { subscriptions: Number(row?.count ?? 0) };
+  }
+
+  subscribePush(record: PushSubscriptionRecord | null): { subscriptions: number } {
+    if (!record) {
+      const error: StatusError = new Error('That is not a valid HTTPS push subscription.');
+      error.status = 400;
+      throw error;
+    }
+    this.sql.exec(
+      `INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(endpoint) DO UPDATE SET
+         p256dh = excluded.p256dh, auth = excluded.auth, created_at = excluded.created_at`,
+      record.endpoint,
+      record.p256dh,
+      record.auth,
+      new Date().toISOString(),
+    );
+    // A person has a few browsers, not a fleet.
+    this.sql.exec(
+      `DELETE FROM push_subscriptions WHERE endpoint NOT IN (
+         SELECT endpoint FROM push_subscriptions ORDER BY created_at DESC, endpoint DESC LIMIT 10
+       )`,
+    );
+    return this.pushState();
+  }
+
+  unsubscribePush(endpoint: string): { subscriptions: number } {
+    if (endpoint) this.sql.exec('DELETE FROM push_subscriptions WHERE endpoint = ?', endpoint);
+    return this.pushState();
+  }
+
+  /** Hand the oldest undelivered row to one device, then mark it delivered. */
+  nextNotification(): { notification: PushNotification | null } {
+    const row = this.sql
+      .exec<NotificationRow>(
+        `SELECT id, title, body, url FROM notifications
+         WHERE delivered_at IS NULL ORDER BY id ASC LIMIT 1`,
+      )
+      .toArray()[0];
+    if (!row) return { notification: null };
+    this.sql.exec(
+      'UPDATE notifications SET delivered_at = ? WHERE id = ?',
+      new Date().toISOString(),
+      row.id,
+    );
+    return { notification: { title: row.title, body: row.body, url: row.url } };
+  }
+
+  queueNotification(notification: PushNotification): void {
+    this.sql.exec(
+      'INSERT INTO notifications (title, body, url, created_at) VALUES (?, ?, ?, ?)',
+      notification.title,
+      notification.body,
+      notification.url,
+      new Date().toISOString(),
+    );
+    this.sql.exec(
+      `DELETE FROM notifications WHERE id NOT IN (
+         SELECT id FROM notifications ORDER BY id DESC LIMIT 50
+       )`,
+    );
+  }
+
+  /** One payload-less push per browser; endpoints that return 404/410 go away. */
+  async pushSubscriptions(): Promise<void> {
+    const subscriptions = this.sql
+      .exec<PushRow>('SELECT endpoint, p256dh, auth FROM push_subscriptions')
+      .toArray();
+    if (!subscriptions.length) return;
+
+    const keys = await this.vapidKeys();
+    const contact = String(this.env.PUSH_CONTACT || '').trim() || undefined;
+    const results = await Promise.all(
+      subscriptions.map(subscription => sendPush(subscription, keys, contact)),
+    );
+    results.forEach((result, index) => {
+      if (result === 'gone') {
+        this.sql.exec(
+          'DELETE FROM push_subscriptions WHERE endpoint = ?',
+          subscriptions[index].endpoint,
+        );
+      }
+    });
+  }
+
+  async notifySummaryReady(bookmark: Bookmark): Promise<void> {
+    try {
+      this.queueNotification(summaryNotification(bookmark));
+      await this.pushSubscriptions();
+    } catch (error) {
+      console.error('Summary notification failed', error);
+    }
+  }
+
+  async testNotification(): Promise<{ queued: boolean; subscriptions: number }> {
+    this.queueNotification({
+      title: 'Shelf test notification',
+      body: 'Notifications are working. A summary will arrive here next.',
+      url: '/settings',
+    });
+    await this.pushSubscriptions();
+    return { queued: true, subscriptions: this.pushState().subscriptions };
   }
 
   /** A ref that is not in use yet. */
@@ -435,6 +598,35 @@ export class Bookmarks extends DurableObject<Env> {
           summaryLanguage?: unknown;
         };
         return jsonResponse(this.saveSettings(body));
+      }
+
+      if (request.method === 'GET' && url.pathname === '/push/key') {
+        return jsonResponse({ publicKey: (await this.vapidKeys()).publicKey });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/push/state') {
+        return jsonResponse(this.pushState());
+      }
+
+      if (request.method === 'POST' && url.pathname === '/push/subscribe') {
+        const body = (await request.json()) as {
+          endpoint?: unknown;
+          keys?: { p256dh?: unknown; auth?: unknown } | null;
+        };
+        return jsonResponse(this.subscribePush(parsePushSubscription(body)));
+      }
+
+      if (request.method === 'POST' && url.pathname === '/push/unsubscribe') {
+        const body = (await request.json()) as { endpoint?: unknown };
+        return jsonResponse(this.unsubscribePush(pushEndpoint(body.endpoint)?.toString() || ''));
+      }
+
+      if (request.method === 'GET' && url.pathname === '/notifications/next') {
+        return jsonResponse(this.nextNotification());
+      }
+
+      if (request.method === 'POST' && url.pathname === '/notifications/test') {
+        return jsonResponse(await this.testNotification());
       }
 
       if (request.method === 'GET' && url.pathname === '/list') {
@@ -1744,6 +1936,7 @@ export class Bookmarks extends DurableObject<Env> {
         new Date().toISOString(),
         tweetId,
       );
+      await this.notifySummaryReady({ ...bookmark, summary: result.text });
     } catch (error) {
       const message =
         error instanceof Error ? error.message.slice(0, 500) : 'Unknown summary error.';

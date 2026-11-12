@@ -23,6 +23,7 @@ src/worker.ts        routing, auth, redirects, HTML responses
 src/bookmarks-do.ts  Durable Object: schema, queries, alarm queue, AI jobs
 src/ai.ts            AI prompts + requests (summary, translation, topics, synthesis)
 src/settings.ts      stored-preference validation and env fallbacks
+src/push.ts          VAPID signing, endpoint validation, summary notification text
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
 src/linkedin.ts      public LinkedIn post reader (guest page meta tags)
@@ -60,7 +61,8 @@ shelf youtube [--limit 20]  # fetch missing YouTube transcripts from this Mac
 session cookie. `SHARE_TOKEN`, `SHARE_ENDPOINT`, and `KEYSTORE_PASS` are only
 needed to build the APK. `AI_API_KEY` is optional: without it, summaries run on
 the Workers AI binding. `OPENCODE_API_KEY` still works as an alias, and
-`SUPADATA_API_KEY` is optional and only enables YouTube captions. The local
+`SUPADATA_API_KEY` is optional and only enables YouTube captions. `PUSH_CONTACT`
+is the optional VAPID contact URI (defaults to the repository URL). The local
 OpenCode key is currently expired; production has a working secret.
 
 ## Maintainer project board (forks can ignore this)
@@ -115,7 +117,7 @@ the flat latest-first library, and a query or `day` always renders the flat list
 The library and folder pages accept `view=active|archived` and `lang=tr|en`; the
 library also accepts `day=YYYY-MM-DD` for a single saved day (linked from
 `/calendar`). Forms carry a `returnTo` so a mutation keeps the current view,
-language, day, and layout.
+language, day, and layout. `/settings` also drives notification subscriptions.
 API: see `docs/PROGRESS.md` §3.
 
 ## Durable Object rules
@@ -217,6 +219,28 @@ API: see `docs/PROGRESS.md` §3.
   The UI's English board reads that column; `POST /translate-all` only queues
   missing translations, so it is safe to click repeatedly.
 
+## Notifications
+
+- Web Push is **payload-less** by design: the Worker sends a VAPID-signed tickle
+  to each stored subscription, and `public/sw.js` fetches
+  `/api/notifications/next` with the session cookie to get the text. This keeps
+  notification content out of the push service and avoids RFC 8291 encryption.
+- VAPID keys are generated once with Web Crypto and stored in the `settings`
+  table (`push_vapid_*`), not in `StoredSettings`; the DO hands out only the
+  public key. `src/push.ts` owns the JWT (`ES256`, raw `r || s` signature) and
+  the endpoint validation (HTTPS, public host only).
+- `push_subscriptions` is capped at ten, `notifications` at fifty. A 404/410
+  from a push endpoint removes that subscription. A notification row is claimed
+  once (`delivered_at`), so a browser and the Android app do not both show it.
+- The Android WebView cannot receive Web Push. `NotificationJobService` uses
+  `JobScheduler` (15-minute periodic plus a one-off after a share/launch) to poll
+  the same endpoint with the WebView's session cookie and posts a system
+  notification. No Firebase, no Google services dependency.
+- A finished summary queues one notification in `summarizeRow`; a failed push
+  must never fail the summary (`notifySummaryReady` catches its own errors).
+- The Settings page's test button (`POST /api/notifications/test`) is the quick
+  way to check the browser path and, after forcing the job, the Android path.
+
 ## Rendering and CSS
 
 - HTML is built in `render.ts`; every interpolated value must go through
@@ -260,7 +284,10 @@ API: see `docs/PROGRESS.md` §3.
    deploy from `main` after the merge.
 5. If AI behaviour changed: run one real save/reindex in production and inspect
    the resulting text, not just the HTTP status.
-6. Deliver through the issue → branch → PR → merge loop above. One feature per
+6. If notifications changed: send the Settings test in a browser, and run
+   `adb shell cmd jobscheduler run -f com.shelf.share 7401` after queueing one
+   for the APK.
+7. Deliver through the issue → branch → PR → merge loop above. One feature per
    issue and PR, imperative commit subject. Do not push to `main` directly.
 
 ## Traps seen in this repo

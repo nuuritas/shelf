@@ -41,6 +41,7 @@ public class ShareActivity extends Activity {
                 try {
                     Result result = post(expandShortLink(link));
                     if (result.code == 200 || result.code == 201) {
+                        Notifications.checkSoon(getApplicationContext());
                         toast("Saved to Shelf", 1200);
                     } else if (result.code == 401) {
                         toast("Share token rejected", 2000);

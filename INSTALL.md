@@ -218,6 +218,20 @@ in your browser.
 
 Tell the user the APK path. Never commit it: it embeds `SHARE_TOKEN`.
 
+## Notifications (optional)
+
+Open **Settings** in the web app (or in the Android app) and turn on
+notifications. The browser asks for permission; VAPID keys and the subscription
+stay in the Durable Object. `PUSH_CONTACT` can be a `mailto:` or `https:` URI
+that a push service can use to contact the owner; it defaults to the repository
+URL.
+
+The Android app cannot receive Web Push inside a WebView, so it polls the
+Worker in the background (about every 15 minutes, plus a sooner check after a
+share) and posts a system notification. Android 13+ asks for the notification
+permission on first launch. The Settings page's **Send a test notification**
+button checks the browser path; the Android path needs the app to be logged in.
+
 ## Transcripts (optional)
 
 YouTube captions work out of the box through public Piped instances; there is

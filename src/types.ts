@@ -21,6 +21,8 @@ export interface Env {
   AI_BASE_URL?: string;
   AI_MODEL?: string;
   SUMMARY_LANGUAGE?: string;
+  /** Contact URI for VAPID; defaults to the public repository URL. */
+  PUSH_CONTACT?: string;
   X_BEARER_TOKEN?: string;
   X_PROVIDER?: string;
   BOOKMARKS: DurableObjectNamespace;
@@ -67,6 +69,20 @@ export interface StoredSettings {
   /** Empty means the built-in prompt in `src/ai.ts`. */
   summaryPrompt: string;
   summaryLanguage: SummaryLanguage;
+}
+
+/** A browser or Android push endpoint, as stored in the DO. */
+export interface PushSubscriptionRecord {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+/** The payload `/api/notifications/next` hands to a service worker. */
+export interface PushNotification {
+  title: string;
+  body: string;
+  url: string;
 }
 
 export interface Author {

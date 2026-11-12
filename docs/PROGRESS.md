@@ -35,7 +35,8 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
                                       ▼
                           Durable Object "library"
                           SQLite: bookmarks, topics,
-                          item_topics, summary_versions, settings
+                          item_topics, summary_versions, settings,
+                          push_subscriptions, notifications
                                       │
                                       ├─ FxTwitter / official X API (read post)
                                       ├─ LinkedIn guest page (read public post)
@@ -71,7 +72,9 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 | `topics` | AI-induced areas of interest: `slug`, `name`, `description`, `overview` (rolling synthesis), `overview_count` |
 | `item_topics` | Many-to-many filing, with confidence |
 | `summary_versions` | v2+ summaries, each with the instruction that produced it. v1 lives in `bookmarks.summary` |
-| `settings` | Per-deployment preferences: the summary prompt override and the default summary language |
+| `settings` | Per-deployment preferences: the summary prompt override and the default summary language; also holds the VAPID key pair |
+| `push_subscriptions` | Browser push endpoints (HTTPS only, capped at ten) |
+| `notifications` | Finished-summary rows waiting for a service worker or the Android job, capped at fifty |
 
 Schema evolution is idempotent: `CREATE TABLE IF NOT EXISTS` plus `ALTER TABLE`
 inside `try { } catch { }` in the DO constructor.
@@ -137,6 +140,10 @@ wall-clock is long but CPU stays low.
   translation is queued automatically into `summary_en`. The `Türkçe / English`
   switch re-renders the same page; missing translations show a per-card button,
   and one banner button queues every missing one
+- Notifications: a payload-less VAPID push wakes the service worker, which
+  fetches the summary text from the Worker and shows a browser notification;
+  the Android app polls the same endpoint in the background and posts a system
+  notification. Settings has enable/disable and a test button.
 - Settings (`/settings`, also reachable inside the Android WebView): edit the
   main summary prompt with an 8,000-character limit and a reset-to-default, and
   choose the summary language. Stored in the Durable Object, so new summaries

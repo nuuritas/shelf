@@ -543,6 +543,7 @@ export interface RenderSettingsOptions {
   settings: StoredSettings;
   ai: { provider: string; model: string; transport: string };
   aiConfigured: boolean;
+  pushSubscriptions?: number;
   notice?: string | null;
   error?: string | null;
 }
@@ -563,10 +564,15 @@ export function renderSettings({
   settings,
   ai,
   aiConfigured,
+  pushSubscriptions = 0,
   notice,
   error,
 }: RenderSettingsOptions): string {
   const customPrompt = Boolean(settings.summaryPrompt);
+  const pushDetail =
+    pushSubscriptions > 0
+      ? `${pushSubscriptions} ${pushSubscriptions === 1 ? 'browser is' : 'browsers are'} subscribed.`
+      : 'No browsers are subscribed yet.';
   const prompt = settings.summaryPrompt || DEFAULT_SUMMARY_PROMPT;
   const noticeText = notice ? SETTINGS_NOTICES[notice] : '';
   const limit = MAX_SUMMARY_PROMPT_LENGTH.toLocaleString('en-US');
@@ -642,13 +648,19 @@ export function renderSettings({
               <p class="settings-note">${aiConfigured ? 'The API key lives in Worker secrets; it is never shown or edited here.' : 'No AI is configured yet. Set <code>AI_PROVIDER</code> and a key, or bind Workers AI, then redeploy.'} Change the provider or model in the Worker configuration.</p>
             </section>
 
-            <section class="settings-card settings-card-muted">
+            <section class="settings-card settings-card-muted" data-push>
               <div class="settings-card-head">
                 <h3>Notifications</h3>
-                <span class="settings-badge">Not yet</span>
+                <span class="settings-badge" data-push-badge>Checking</span>
               </div>
-              <p class="settings-note">Shelf does not send notifications yet, on the web or in the Android app. When they ship, their switches will live here.</p>
-              <label class="settings-toggle"><input type="checkbox" disabled> <span>Notify me when a summary is ready</span></label>
+              <p class="settings-note">Get a notification when a summary finishes. On the web, your browser asks for permission; in the Android app, Shelf checks in the background and posts a system notification.</p>
+              <p class="settings-note" data-push-state>Checking this browser…</p>
+              <div class="settings-actions">
+                <button class="secondary" type="button" data-push-enable hidden>Enable notifications</button>
+                <button class="secondary" type="button" data-push-disable hidden>Disable notifications</button>
+                <button class="secondary" type="button" data-push-test hidden>Send a test notification</button>
+              </div>
+              <p class="fine-print" data-push-detail>${escapeHtml(pushDetail)}</p>
             </section>
 
             <div class="settings-actions settings-actions-foot">

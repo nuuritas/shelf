@@ -254,7 +254,7 @@ test('the settings page shows the built-in prompt until the owner saves a custom
   assert.match(html, /value="tr" checked/);
   assert.match(html, /Workers AI binding/);
   assert.match(html, /Notifications/);
-  assert.match(html, /Not yet/);
+  assert.match(html, /data-push/);
 });
 
 test('the settings page renders a save notice and an inline error', () => {
@@ -274,4 +274,20 @@ test('the settings page renders a save notice and an inline error', () => {
   });
   assert.match(failed, /class="banner error"/);
   assert.match(failed, /The prompt is too long\./);
+});
+
+
+test('the notifications card shows the subscription count and controls', () => {
+  const html = renderSettings({
+    settings: { summaryPrompt: '', summaryLanguage: 'en' },
+    ai: { provider: 'openai', model: 'gpt-4.1-mini', transport: 'http' },
+    aiConfigured: true,
+    pushSubscriptions: 2,
+  });
+
+  assert.match(html, /2 browsers are subscribed\./);
+  assert.match(html, /data-push-enable/);
+  assert.match(html, /data-push-disable/);
+  assert.match(html, /data-push-test/);
+  assert.match(html, /Send a test notification/);
 });
