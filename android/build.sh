@@ -73,8 +73,8 @@ javac --release 11 \
   --manifest "$ANDROID_DIR/AndroidManifest.xml" \
   --min-sdk-version 23 \
   --target-sdk-version 36 \
-  --version-code 8 \
-  --version-name 1.7 \
+  --version-code 9 \
+  --version-name 1.8 \
   -R "$BUILD/res.zip" \
   --auto-add-overlay
 
