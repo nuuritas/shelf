@@ -2,21 +2,10 @@ package com.shelf.share;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.res.Configuration;
-import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -28,170 +17,55 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Share target. Posts the first link in the shared text to the Worker and shows
- * what happened: a small card with the result, the server's own error text when
- * it refuses the link, and a retry button. It never opens the library window.
+ * Invisible share target: no window, no card. It posts the first link in the
+ * shared text and shows one short toast, then finishes. The launcher entry
+ * lives in MainActivity.
  */
 public class ShareActivity extends Activity {
     private static final Pattern LINK = Pattern.compile("https?://\\S+", Pattern.CASE_INSENSITIVE);
     private static final Pattern ERROR_FIELD = Pattern.compile("\"error\"\\s*:\\s*\"([^\"]*)\"");
 
-    private TextView title;
-    private TextView detail;
-    private ProgressBar spinner;
-    private Button retry;
-    private Button close;
-    private String link;
-
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        boolean night = (getResources().getConfiguration().uiMode
-            & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-        buildUi(night);
 
-        link = extractLink(sharedText(getIntent()));
+        final String link = extractLink(sharedText(getIntent()));
         if (link == null) {
-            fail("No link in the shared text. Share a post from X or LinkedIn, not just text.");
+            toast("Share a post link", 1800);
             return;
         }
-        save();
-    }
 
-    private void buildUi(boolean night) {
-        int ink = night ? Color.parseColor("#f3ede3") : Color.parseColor("#1c1a17");
-        int muted = night ? Color.parseColor("#b6ac9f") : Color.parseColor("#726b61");
-        int card = night ? Color.parseColor("#1d1b18") : Color.parseColor("#fffdf8");
-        int line = night ? Color.parseColor("#332f29") : Color.parseColor("#e3dbcf");
-
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#99000000"));
-
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(24), dp(22), dp(24), dp(16));
-
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(card);
-        shape.setCornerRadius(dp(22));
-        shape.setStroke(Math.max(1, dp(1)), line);
-        box.setBackground(shape);
-
-        title = new TextView(this);
-        title.setTextColor(ink);
-        title.setTextSize(18);
-        title.setText("Saving to Shelf");
-        box.addView(title);
-
-        detail = new TextView(this);
-        detail.setTextColor(muted);
-        detail.setTextSize(13);
-        detail.setPadding(0, dp(8), 0, dp(14));
-        box.addView(detail);
-
-        spinner = new ProgressBar(this);
-        box.addView(spinner, new LinearLayout.LayoutParams(dp(28), dp(28)));
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.END);
-        actions.setPadding(0, dp(8), 0, 0);
-
-        int accent = night ? Color.parseColor("#e77a4f") : Color.parseColor("#c24a22");
-
-        retry = new Button(this);
-        retry.setText("Retry");
-        retry.setTextColor(accent);
-        retry.setBackground(null);
-        retry.setVisibility(View.GONE);
-        retry.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (link != null) {
-                    save();
-                }
-            }
-        });
-        actions.addView(retry);
-
-        close = new Button(this);
-        close.setText("Close");
-        close.setTextColor(accent);
-        close.setBackground(null);
-        close.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                finish();
-            }
-        });
-        actions.addView(close);
-
-        box.addView(actions);
-
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        params.gravity = Gravity.CENTER;
-        int margin = dp(28);
-        params.setMargins(margin, margin, margin, margin);
-        root.addView(box, params);
-        setContentView(root);
-    }
-
-    private void save() {
-        title.setText("Saving to Shelf");
-        detail.setText(link);
-        spinner.setVisibility(View.VISIBLE);
-        retry.setVisibility(View.GONE);
-
-        final String target = link;
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    String expanded = expandShortLink(target);
-                    Result result = post(expanded);
+                    Result result = post(expandShortLink(link));
                     if (result.code == 200 || result.code == 201) {
-                        succeed();
+                        toast("Saved to Shelf", 1200);
                     } else if (result.code == 401) {
-                        fail("The share token was rejected. Rebuild the APK with the current SHARE_TOKEN.");
+                        toast("Share token rejected", 2000);
                     } else {
-                        fail("HTTP " + result.code + (result.message.isEmpty() ? "" : ": " + result.message));
+                        toast(result.message.isEmpty() ? "Not saved (" + result.code + ")" : result.message, 2200);
                     }
                 } catch (Exception error) {
-                    String message = error.getMessage();
-                    fail("Network error" + (message == null || message.isEmpty() ? "." : ": " + message));
+                    toast("Not saved: network error", 2000);
                 }
             }
         }).start();
     }
 
-    private void succeed() {
+    /** One toast, then finish; never a second window on top of the caller. */
+    private void toast(final String message, final long holdMs) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                spinner.setVisibility(View.GONE);
-                title.setText("Saved to Shelf");
-                retry.setVisibility(View.GONE);
+                Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
                 new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         finish();
                     }
-                }, 1100);
-            }
-        });
-    }
-
-    private void fail(final String message) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                spinner.setVisibility(View.GONE);
-                title.setText("Could not save");
-                detail.setText(message);
-                retry.setVisibility(View.VISIBLE);
+                }, holdMs);
             }
         });
     }
@@ -284,10 +158,5 @@ public class ShareActivity extends Activity {
 
     private static String escapeJson(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private int dp(int value) {
-        return Math.round(TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics()));
     }
 }
