@@ -10,14 +10,14 @@ test('slugify folds Turkish letters into URL-safe slugs', () => {
   assert.equal(slugify('  '), 'topic');
 });
 
-test('renders topic navigation with counts and an active topic', () => {
+test('renders a folder page with its synthesis and a way back to all folders', () => {
   const html = renderPage({
     bookmarks: [],
     total: 18,
     query: '',
     topics: [
-      { slug: 'ajan-mimarisi', name: 'Ajan Mimarisi', count: 7 },
-      { slug: 'dogu-akdeniz', name: 'Doğu Akdeniz', count: 2 },
+      { slug: 'ajan-mimarisi', name: 'Ajan Mimarisi', count: 7, archivedCount: 0 },
+      { slug: 'dogu-akdeniz', name: 'Doğu Akdeniz', count: 2, archivedCount: 0 },
     ],
     topic: {
       slug: 'ajan-mimarisi',
@@ -25,20 +25,91 @@ test('renders topic navigation with counts and an active topic', () => {
       description: 'Ajanların oturum sınırlarını aşması.',
       overview: 'Birinci paragraf.\n\nİkinci paragraf.',
       count: 7,
+      archivedCount: 0,
     },
     notice: null,
     error: null,
     aiConfigured: true,
   });
 
-  assert.match(html, /href="\/t\/ajan-mimarisi"/);
-  assert.match(html, /href="\/t\/dogu-akdeniz"/);
-  assert.match(html, /class="topic-tab all "/);
-  assert.match(html, /Ajan Mimarisi/);
+  assert.match(html, /class="folder-crumbs"/);
+  assert.match(html, /← All folders/);
+  assert.match(html, /<h2>Ajan Mimarisi<\/h2>/);
+  assert.match(html, /Folder · 7 active/);
   assert.match(html, /Ajanların oturum sınırlarını aşması\./);
   assert.match(html, /<p>Birinci paragraf\.<\/p>/);
   assert.match(html, /<p>İkinci paragraf\.<\/p>/);
-  assert.match(html, /class="topic-tab active"/);
+  assert.doesNotMatch(html, /class="topic-tab/);
+  assert.doesNotMatch(html, /class="folder-grid"/);
+});
+
+test('renders a folder index on the home page instead of a tweet list', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 18,
+    query: '',
+    topics: [
+      {
+        slug: 'ajan-mimarisi',
+        name: 'Ajan Mimarisi',
+        description: 'Ajanların oturum sınırlarını aşması.',
+        count: 7,
+        archivedCount: 1,
+      },
+      { slug: 'dogu-akdeniz', name: 'Doğu Akdeniz', description: '', count: 2, archivedCount: 0 },
+    ],
+    notice: null,
+    error: null,
+    aiConfigured: true,
+  });
+
+  assert.match(html, /class="folder-grid"/);
+  assert.match(html, /class="folder-card"/);
+  assert.match(html, /href="\/t\/ajan-mimarisi"/);
+  assert.match(html, /href="\/t\/dogu-akdeniz"/);
+  assert.match(html, /class="folder-name">Ajan Mimarisi</);
+  assert.match(html, /7 saves · 1 archived/);
+  assert.match(html, /Browse by folder/);
+  assert.doesNotMatch(html, /class="cards"/);
+  assert.doesNotMatch(html, /topic-tabs/);
+});
+
+test('layout=saves keeps the flat latest-first library', () => {
+  const html = renderPage({
+    bookmarks: [
+      {
+        tweetId: '123',
+        url: 'https://x.com/a/status/123',
+        text: 'A saved post.',
+        createdAt: '2026-11-01T10:00:00.000Z',
+        savedAt: '2026-11-01T10:00:00.000Z',
+        author: { name: 'A', username: 'a', avatarUrl: null, verified: false },
+        media: [],
+        quote: null,
+        article: null,
+        links: [],
+        metrics: {},
+        summary: 'A summary.',
+        summaryStatus: 'done',
+      },
+    ],
+    total: 1,
+    query: '',
+    topics: [
+      { slug: 'test', name: 'Test', count: 1, archivedCount: 0 },
+    ],
+    layout: 'saves',
+    activeTotal: 1,
+    archivedTotal: 0,
+    notice: null,
+    error: null,
+    aiConfigured: true,
+  });
+
+  assert.match(html, /class="cards"/);
+  assert.match(html, /A saved post\./);
+  assert.match(html, /All saves<span>1<\/span>/);
+  assert.doesNotMatch(html, /class="folder-grid"/);
 });
 
 test('escapes topic syntheses before rendering them', () => {
@@ -86,7 +157,7 @@ test('keeps the add form and long syntheses folded by default', () => {
   assert.match(html, /<details class="add-drawer">/);
   assert.match(html, /class="topic-overview is-folded"/);
   assert.match(html, /data-fold/);
-  assert.match(html, /topic-tabs/);
+  assert.match(html, /class="folder-crumbs"/);
 });
 
 test('keeps the original summary and renders new versions beside it', () => {

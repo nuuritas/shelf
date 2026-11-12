@@ -40,7 +40,7 @@ async function handleShare(request) {
       );
     }
 
-    return absoluteRedirect('/?notice=shared');
+    return absoluteRedirect('/?layout=saves&notice=shared');
   } catch {
     return absoluteRedirect('/?error=Share+failed');
   }

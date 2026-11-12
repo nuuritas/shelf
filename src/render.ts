@@ -46,6 +46,8 @@ export interface RenderPageOptions {
   aiConfigured?: boolean;
   view?: 'active' | 'archived';
   lang?: 'tr' | 'en';
+  /** `folders` is the default home; `saves` is the flat latest-first list. */
+  layout?: 'folders' | 'saves';
   activeTotal?: number;
   archivedTotal?: number;
   missingEnglish?: number;
@@ -77,11 +79,12 @@ function sourceName(url: string | null): string {
 /** Build a library/topic URL without empty or default parameters. */
 function libraryHref(
   path: string,
-  { query = '', day = null, view = 'active', lang = 'tr' }: {
+  { query = '', day = null, view = 'active', lang = 'tr', layout = 'folders' }: {
     query?: string;
     day?: string | null;
     view?: 'active' | 'archived';
     lang?: 'tr' | 'en';
+    layout?: 'folders' | 'saves';
   } = {},
 ): string {
   const params = new URLSearchParams();
@@ -89,6 +92,7 @@ function libraryHref(
   if (day) params.set('day', day);
   if (view === 'archived') params.set('view', 'archived');
   if (lang === 'en') params.set('lang', 'en');
+  if (layout === 'saves') params.set('layout', 'saves');
   const search = params.toString();
   return search ? `${path}?${search}` : path;
 }
@@ -105,6 +109,7 @@ export function renderPage({
   aiConfigured = false,
   view: viewOption = 'active',
   lang: langOption = 'tr',
+  layout: layoutOption = 'folders',
   activeTotal = 0,
   archivedTotal = 0,
   missingEnglish = 0,
@@ -112,6 +117,7 @@ export function renderPage({
 }: RenderPageOptions): string {
   const view = viewOption === 'archived' ? 'archived' : 'active';
   const lang = langOption === 'en' ? 'en' : 'tr';
+  const layout = layoutOption === 'saves' ? 'saves' : 'folders';
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(dayOption || '')) ? String(dayOption) : null;
   const pending = bookmarks.some(
     bookmark =>
@@ -122,36 +128,43 @@ export function renderPage({
   const path = topic ? `/t/${topic.slug}` : '/';
   const currentQuery = topic ? '' : query;
   const currentDay = topic ? null : day;
-  const activeCount = topic ? topic.count : activeTotal;
-  const archivedCount = topic ? topic.archivedCount : archivedTotal;
-  const returnTo = libraryHref(path, { query: currentQuery, day: currentDay, view, lang });
+  const activeCount = (topic ? topic.count : activeTotal) ?? 0;
+  const archivedCount = (topic ? topic.archivedCount : archivedTotal) ?? 0;
+  const layoutParam = topic ? 'folders' : layout;
+  const returnTo = libraryHref(path, {
+    query: currentQuery,
+    day: currentDay,
+    view,
+    lang,
+    layout: layoutParam,
+  });
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
   const showTranslateBanner =
     lang === 'en' && bilingual && aiConfigured && missingEnglish > 0;
   const dayLabel = currentDay ? formatDate(`${currentDay}T00:00:00.000Z`) : '';
   const calendarHref = lang === 'en' ? '/calendar?lang=en' : '/calendar';
+  const showingList =
+    !topic && (layout === 'saves' || Boolean(currentQuery) || Boolean(currentDay));
+  const showFolders = !topic && !showingList && topics.length > 0;
 
-  const topicTabs = topics
-    .map(entry => {
-      const tabCount = view === 'archived' ? entry.archivedCount : entry.count;
-      return `
-        <a class="topic-tab ${topic?.slug === entry.slug ? 'active' : ''}" href="${escapeHtml(
-          libraryHref(`/t/${entry.slug}`, { view, lang }),
-        )}"${entry.archivedCount ? ` title="${entry.archivedCount} archived"` : ''}>
-          ${escapeHtml(entry.name)}<span>${tabCount ?? 0}</span>
-        </a>
-      `;
-    })
-    .join('');
+  const folderTopics = [...topics].sort((left, right) => {
+    const leftCount = (view === 'archived' ? left.archivedCount : left.count) ?? 0;
+    const rightCount = (view === 'archived' ? right.archivedCount : right.count) ?? 0;
+    return rightCount - leftCount || left.name.localeCompare(right.name, 'tr');
+  });
 
   const eyebrow = topic
-    ? `Topic · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
-    : currentDay
-      ? `Day · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
-      : view === 'archived'
-        ? `Archive · ${archivedCount} saved`
-        : `Library · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`;
+    ? `Folder · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
+    : showFolders
+      ? `${view === 'archived' ? 'Archive' : 'Library'} · ${folderTopics.length} ${
+          folderTopics.length === 1 ? 'folder' : 'folders'
+        }`
+      : currentDay
+        ? `Day · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
+        : view === 'archived'
+          ? `Archive · ${archivedCount} saved`
+          : `Library · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`;
 
   const heading = query
     ? currentDay
@@ -161,18 +174,22 @@ export function renderPage({
       ? `Saved on ${escapeHtml(dayLabel)}`
       : topic
         ? escapeHtml(topic.name)
-        : view === 'archived'
-          ? 'Archived bookmarks'
-          : 'Latest saves';
+        : showFolders
+          ? 'Browse by folder'
+          : view === 'archived'
+            ? 'Archived bookmarks'
+            : 'Latest saves';
 
   return pageShell({
     title: topic
       ? `${topic.name} · Shelf`
-      : currentDay
-        ? `${dayLabel} · Shelf`
-        : view === 'archived'
-          ? 'Archive · Shelf'
-          : 'Shelf',
+      : showFolders
+        ? 'Folders · Shelf'
+        : currentDay
+          ? `${dayLabel} · Shelf`
+          : view === 'archived'
+            ? 'Archive · Shelf'
+            : 'Shelf',
     bodyClass: 'home',
     head: pending ? '<meta http-equiv="refresh" content="4">' : '',
     body: `
@@ -204,6 +221,13 @@ export function renderPage({
         ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
 
         <section class="library" id="library">
+          ${
+            topic
+              ? `<nav class="folder-crumbs" aria-label="Folders">
+                  <a href="${escapeHtml(libraryHref('/', { view, lang }))}">← All folders</a>
+                </nav>`
+              : ''
+          }
           <div class="library-head">
             <div>
               <p class="eyebrow">${escapeHtml(eyebrow)}</p>
@@ -214,28 +238,41 @@ export function renderPage({
                 ${currentDay ? `<input type="hidden" name="day" value="${escapeHtml(currentDay)}">` : ''}
                 ${view === 'archived' ? '<input type="hidden" name="view" value="archived">' : ''}
                 ${lang === 'en' ? '<input type="hidden" name="lang" value="en">' : ''}
+                ${!topic && layout === 'saves' ? '<input type="hidden" name="layout" value="saves">' : ''}
                 <label class="sr-only" for="q">Search bookmarks</label>
                 <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
                 <button type="submit">Search</button>
-                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, view, lang }))}">Clear</a>` : ''}
+                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, view, lang, layout: layoutParam }))}">Clear</a>` : ''}
               </form>
               <div class="library-switches">
+                ${
+                  !topic && topics.length
+                    ? `<nav class="view-switch layout-switch" role="group" aria-label="Library layout">
+                        <a class="${showingList ? '' : 'active'}" href="${escapeHtml(
+                          libraryHref('/', { view, lang, layout: 'folders' }),
+                        )}">Folders<span>${folderTopics.length}</span></a>
+                        <a class="${showingList ? 'active' : ''}" href="${escapeHtml(
+                          libraryHref('/', { view, lang, layout: 'saves' }),
+                        )}">All saves<span>${view === 'archived' ? archivedCount : activeCount}</span></a>
+                      </nav>`
+                    : ''
+                }
                 <nav class="view-switch" role="group" aria-label="Archive filter">
                   <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'active', lang }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'active', lang, layout: layoutParam }),
                   )}">Active<span>${activeCount}</span></a>
                   <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'archived', lang }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'archived', lang, layout: layoutParam }),
                   )}">Archived<span>${archivedCount}</span></a>
                 </nav>
                 ${
                   bilingual
                     ? `<nav class="lang-switch" role="group" aria-label="Summary language">
                         <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'tr' }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'tr', layout: layoutParam }),
                         )}">Türkçe</a>
                         <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'en' }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'en', layout: layoutParam }),
                         )}">English</a>
                       </nav>`
                     : ''
@@ -249,7 +286,7 @@ export function renderPage({
             currentDay
               ? `<div class="day-banner">
                   <span>Showing ${total} ${view === 'archived' ? 'archived' : 'active'} of ${activeCount + archivedCount} ${activeCount + archivedCount === 1 ? 'save' : 'saves'} from <strong>${escapeHtml(dayLabel)}</strong>.</span>
-                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, view, lang }))}">Clear date</a>
+                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, view, lang, layout: layoutParam }))}">Clear date</a>
                 </div>`
               : ''
           }
@@ -261,11 +298,11 @@ export function renderPage({
                   ${
                     topic.overview
                       ? renderTopicOverview(topic.overview)
-                      : `<p class="topic-overview-empty">The synthesis for this thread is still being written.</p>`
+                      : `<p class="topic-overview-empty">The synthesis for this folder is still being written.</p>`
                   }
                   ${
                     lang === 'en' && topic.overview
-                      ? '<p class="topic-language-note">Topic syntheses are written in Turkish.</p>'
+                      ? '<p class="topic-language-note">Folder syntheses are written in Turkish.</p>'
                       : ''
                   }
                 </div>`
@@ -287,23 +324,26 @@ export function renderPage({
               : ''
           }
 
-          <nav class="topic-tabs" aria-label="Topics">
-            <a class="topic-tab all ${topic ? '' : 'active'}" href="${escapeHtml(
-              libraryHref('/', { day: currentDay, view, lang }),
-            )}">All${topic ? '' : `<span>${view === 'archived' ? archivedCount : activeCount}</span>`}</a>
-            ${topicTabs}
-          </nav>
-
           ${
-            bookmarks.length
-              ? `<div class="cards">${bookmarks
-                  .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual))
-                  .join('')}</div>`
-              : renderEmpty(query, view, currentDay)
+            showFolders
+              ? renderFolderGrid(folderTopics, { view, lang })
+              : layout === 'folders' && !topic && !currentQuery && !currentDay
+                ? `<p class="folder-hint">Folders form themselves once a few saves have been summarized. Until then, the latest saves are below.</p>`
+                : ''
           }
 
           ${
-            total > bookmarks.length
+            showFolders
+              ? ''
+              : bookmarks.length
+                ? `<div class="cards">${bookmarks
+                    .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual))
+                    .join('')}</div>`
+                : renderEmpty(query, view, currentDay, Boolean(topic))
+          }
+
+          ${
+            !showFolders && total > bookmarks.length
               ? `<p class="paging-note">Showing ${bookmarks.length} of ${total}. Narrow the search to find older saves.</p>`
               : ''
           }
@@ -461,6 +501,37 @@ export function renderCalendar({
       </footer>
     `,
   });
+}
+
+function renderFolderGrid(
+  topics: TopicSummary[],
+  { view, lang }: { view: 'active' | 'archived'; lang: 'tr' | 'en' },
+): string {
+  return `<div class="folder-grid" aria-label="Folders">${topics
+    .map(entry => {
+      const count = (view === 'archived' ? entry.archivedCount : entry.count) ?? 0;
+      const archived = entry.archivedCount ?? 0;
+      const meta =
+        view === 'archived'
+          ? `${count} archived`
+          : `${count} ${count === 1 ? 'save' : 'saves'}${archived ? ` · ${archived} archived` : ''}`;
+      return `
+        <a class="folder-card" href="${escapeHtml(libraryHref(`/t/${entry.slug}`, { view, lang }))}">
+          <span class="folder-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+              <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/>
+            </svg>
+          </span>
+          <span class="folder-copy">
+            <span class="folder-name">${escapeHtml(entry.name)}</span>
+            ${entry.description ? `<span class="folder-desc">${escapeHtml(entry.description)}</span>` : ''}
+            <span class="folder-meta">${escapeHtml(meta)}</span>
+          </span>
+          <span class="folder-arrow" aria-hidden="true">→</span>
+        </a>
+      `;
+    })
+    .join('')}</div>`;
 }
 
 function renderParagraphs(text: unknown): string {
@@ -880,6 +951,7 @@ function renderEmpty(
   query: string,
   view: 'active' | 'archived' = 'active',
   day: string | null = null,
+  inFolder = false,
 ): string {
   if (query) {
     return `
@@ -888,6 +960,21 @@ function renderEmpty(
         <h3>${view === 'archived' ? 'No matches in the archive' : 'No matches'}</h3>
         <p>Nothing ${view === 'archived' ? 'archived ' : ''}in the library matches “${escapeHtml(query)}”${day ? ' on this day' : ''}.</p>
         <a class="small-button" href="${escapeHtml(libraryHref('/', { day, view }))}">Clear search</a>
+      </div>
+    `;
+  }
+
+  if (inFolder) {
+    return `
+      <div class="empty">
+        <p class="empty-mark">▢</p>
+        <h3>${view === 'archived' ? 'Nothing archived in this folder' : 'Nothing in this folder yet'}</h3>
+        <p>${
+          view === 'archived'
+            ? 'Archive a bookmark from this folder to keep it here for later.'
+            : 'Save a post and the filing step will put it in a folder that fits. You can also browse every save.'
+        }</p>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { view }))}">Browse folders</a>
       </div>
     `;
   }
@@ -985,7 +1072,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=9">
+  <link rel="stylesheet" href="/style.css?v=10">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2216,50 +2303,101 @@ h1, h2, h3, p { margin-top: 0; }
   font-style: italic;
 }
 
-.topic-tabs {
-  position: sticky;
-  top: 0;
-  z-index: 5;
+.folder-crumbs {
   display: flex;
-  gap: 2px;
-  margin: 14px 0 0;
-  background: var(--bg);
-  overflow-x: auto;
-  border-bottom: 1px solid var(--line);
-  scrollbar-width: none;
-}
-
-.topic-tabs::-webkit-scrollbar { display: none; }
-
-.topic-tab {
-  flex: 0 0 auto;
-  padding: 12px 13px 11px;
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
-  color: var(--muted);
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 -6px;
   font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+}
+
+.folder-crumbs a {
+  color: var(--accent-ink);
+  font-weight: 600;
   text-decoration: none;
-  white-space: nowrap;
 }
 
-.topic-tab:hover { color: var(--ink); }
+.folder-crumbs a:hover { text-decoration: underline; }
 
-.topic-tab.active {
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  margin: 4px 0 22px;
+}
+
+.folder-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  min-width: 0;
+  min-height: 104px;
+  padding: 17px 17px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--ink);
-  border-bottom-color: var(--accent);
-  font-weight: 650;
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.topic-tab span {
-  margin-left: 6px;
+.folder-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 10px 26px rgba(31, 24, 18, 0.07);
+  transform: translateY(-1px);
+}
+
+.folder-icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.folder-copy {
+  display: grid;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 5px;
+}
+
+.folder-name {
+  overflow-wrap: anywhere;
+  font-size: 15.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.folder-desc {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.folder-meta {
   color: var(--faint);
-  font-size: 11px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
 
-.topic-tab.active span { color: var(--accent); }
+.folder-arrow {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 15px;
+}
+
+.folder-hint {
+  margin: 2px 0 18px;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
 
 .topic-overview.is-folded .topic-overview-body {
   position: relative;
@@ -2456,8 +2594,8 @@ h1, h2, h3, p { margin-top: 0; }
 @media (max-width: 650px) {
   .shell, .topbar { width: min(100% - 24px, 820px); }
   .topbar { padding-top: 18px; }
-  .topic-tabs { margin-top: 10px; }
-  .topic-tab { padding: 10px 11px 9px; font-size: 12.5px; }
+  .folder-grid { grid-template-columns: 1fr; gap: 10px; }
+  .folder-card { min-height: 96px; padding: 15px; }
   .card.is-collapsed .tweet-text,
   .card.is-collapsed .summary-text { -webkit-line-clamp: 2; }
   .hero { padding: 54px 0 38px; }

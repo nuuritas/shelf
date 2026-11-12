@@ -52,7 +52,7 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 - **Static assets** live in `public/` and are served by Cloudflare.
 - **SSR was chosen deliberately**: one rendering path, no client framework,
   works without JS, auth checked before any HTML is produced. Client JS only
-  enhances (expand cards, fold synthesis, swap topic content in place).
+  enhances (expand cards, fold synthesis, copy refs).
 - **AI providers are presets over three wire paths**: `AI_PROVIDER` selects
   `opencode`, `claude` (Anthropic Messages), `openai`, `cloudflare`, or
   `custom`; `AI_BASE_URL` and `AI_MODEL` override the preset. With no provider
@@ -116,7 +116,13 @@ wall-clock is long but CPU stays low.
 - Topic induction + per-item filing + rolling per-topic synthesis
 - Summary versions: "New version" with an optional instruction; original is
   never overwritten
-- Topic tabs that swap only the library region over `fetch`, preserving scroll
+- Folder-first library: `/` lists the AI topics as flat folder cards (name,
+  description, active/archived counts) instead of opening on a tweet feed.
+  Clicking a card opens `/t/:slug`; a breadcrumb returns to the folder index.
+  There is no horizontal tab strip. `?layout=saves` keeps the flat latest-first
+  list, and a search or day view always uses the list. Folders are the existing
+  topic model, so one bookmark can sit in more than one folder and a reindex can
+  rename or merge them
 - Calendar (`/calendar`): a month grid with the number of saves on each day,
   previous/next month navigation, and a link from every non-empty day to
   `/?day=YYYY-MM-DD`. The day view reuses the normal cards, archive toggle,
