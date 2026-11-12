@@ -1,3 +1,5 @@
+import { DEFAULT_SUMMARY_PROMPT } from './ai.ts';
+import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
 import type {
   Author,
   Bookmark,
@@ -6,6 +8,7 @@ import type {
   MediaItem,
   Metrics,
   Quote,
+  StoredSettings,
   SummaryVersion,
   TopicSummary,
   VideoTranscript,
@@ -200,6 +203,7 @@ export function renderPage({
         </a>
         <div class="top-actions">
           <span class="count">${total} ${view === 'archived' ? 'archived' : 'active'}</span>
+          <a class="calendar-link" href="/settings">Settings</a>
           <form method="post" action="/logout">
             <button class="link-button" type="submit">Log out</button>
           </form>
@@ -459,6 +463,7 @@ export function renderCalendar({
         </a>
         <div class="top-actions">
           <span class="count">${calendar.total} saved this month</span>
+          <a class="calendar-link" href="/settings">Settings</a>
           <form method="post" action="/logout">
             <button class="link-button" type="submit">Log out</button>
           </form>
@@ -532,6 +537,131 @@ function renderFolderGrid(
       `;
     })
     .join('')}</div>`;
+}
+
+export interface RenderSettingsOptions {
+  settings: StoredSettings;
+  ai: { provider: string; model: string; transport: string };
+  aiConfigured: boolean;
+  notice?: string | null;
+  error?: string | null;
+}
+
+const SETTINGS_NOTICES: Record<string, string> = {
+  saved: 'Settings saved. New summaries will use them.',
+  reset: 'The summary prompt is back to the built-in default.',
+};
+
+const TRANSPORT_LABELS: Record<string, string> = {
+  http: 'OpenAI-compatible HTTP',
+  anthropic: 'Anthropic Messages',
+  workers: 'Workers AI binding',
+  none: 'Not configured',
+};
+
+export function renderSettings({
+  settings,
+  ai,
+  aiConfigured,
+  notice,
+  error,
+}: RenderSettingsOptions): string {
+  const customPrompt = Boolean(settings.summaryPrompt);
+  const prompt = settings.summaryPrompt || DEFAULT_SUMMARY_PROMPT;
+  const noticeText = notice ? SETTINGS_NOTICES[notice] : '';
+  const limit = MAX_SUMMARY_PROMPT_LENGTH.toLocaleString('en-US');
+  const count = prompt.length.toLocaleString('en-US');
+  const transport = TRANSPORT_LABELS[ai.transport] || ai.transport;
+
+  return pageShell({
+    title: 'Settings · Shelf',
+    bodyClass: 'home settings-page',
+    head: '',
+    body: `
+      <header class="topbar">
+        <a class="brand" href="/">
+          <span class="brand-mark">S</span>
+          <span>Shelf</span>
+        </a>
+        <div class="top-actions">
+          <a class="calendar-link" href="/">Library</a>
+          <form method="post" action="/logout">
+            <button class="link-button" type="submit">Log out</button>
+          </form>
+        </div>
+      </header>
+
+      <main class="shell">
+        <section class="settings">
+          <div class="settings-head">
+            <p class="eyebrow">Settings</p>
+            <h2>How Shelf reads and writes</h2>
+            <p class="settings-lede">These preferences belong to this deployment. Summaries that already exist keep their text until you summarize them again.</p>
+          </div>
+
+          ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
+          ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
+
+          <form method="post" action="/settings" class="settings-form">
+            <section class="settings-card">
+              <div class="settings-card-head">
+                <h3>Summary prompt</h3>
+                <span class="settings-badge${customPrompt ? ' is-custom' : ''}">${customPrompt ? 'Custom' : 'Built-in'}</span>
+              </div>
+              <p class="settings-note">The instruction the AI follows for every new summary. <code>{{language}}</code> is replaced with the language below. Keep the built-in text — or clear the box — to use the default.</p>
+              <label class="sr-only" for="summary_prompt">Summary prompt</label>
+              <textarea id="summary_prompt" name="summary_prompt" data-prompt-source rows="14" maxlength="${MAX_SUMMARY_PROMPT_LENGTH}" spellcheck="true">${escapeHtml(prompt)}</textarea>
+              <div class="settings-meta">
+                <span><span data-prompt-count>${count}</span> / ${limit} characters</span>
+                <span>${customPrompt ? 'Custom prompt' : 'Built-in prompt'}</span>
+              </div>
+            </section>
+
+            <section class="settings-card">
+              <h3>Summary language</h3>
+              <p class="settings-note">New summaries are written in this language. With Türkçe, Shelf also writes an English version for the language switch. Existing summaries are left alone.</p>
+              <div class="settings-choice" role="radiogroup" aria-label="Summary language">
+                <label>
+                  <input type="radio" name="summary_language" value="tr"${settings.summaryLanguage === 'tr' ? ' checked' : ''}>
+                  <span><strong>Türkçe</strong><small>The main summary is Turkish, with an English version alongside it.</small></span>
+                </label>
+                <label>
+                  <input type="radio" name="summary_language" value="en"${settings.summaryLanguage === 'en' ? ' checked' : ''}>
+                  <span><strong>English</strong><small>Summaries are English only; the language switch is not shown.</small></span>
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-card">
+              <h3>AI</h3>
+              <dl class="settings-facts">
+                <div><dt>Provider</dt><dd>${escapeHtml(ai.provider || (aiConfigured ? 'inferred' : 'none'))}</dd></div>
+                <div><dt>Model</dt><dd>${escapeHtml(ai.model || '—')}</dd></div>
+                <div><dt>Connection</dt><dd>${escapeHtml(transport)}</dd></div>
+              </dl>
+              <p class="settings-note">${aiConfigured ? 'The API key lives in Worker secrets; it is never shown or edited here.' : 'No AI is configured yet. Set <code>AI_PROVIDER</code> and a key, or bind Workers AI, then redeploy.'} Change the provider or model in the Worker configuration.</p>
+            </section>
+
+            <section class="settings-card settings-card-muted">
+              <div class="settings-card-head">
+                <h3>Notifications</h3>
+                <span class="settings-badge">Not yet</span>
+              </div>
+              <p class="settings-note">Shelf does not send notifications yet, on the web or in the Android app. When they ship, their switches will live here.</p>
+              <label class="settings-toggle"><input type="checkbox" disabled> <span>Notify me when a summary is ready</span></label>
+            </section>
+
+            <div class="settings-actions settings-actions-foot">
+              <button type="submit" name="action" value="save">Save settings</button>
+              ${customPrompt ? '<button class="secondary" type="submit" name="action" value="reset" formnovalidate>Reset prompt to default</button>' : ''}
+            </div>
+          </form>
+
+          <p class="settings-foot"><a href="/">← Back to the library</a></p>
+        </section>
+      </main>
+    `,
+  });
 }
 
 function renderParagraphs(text: unknown): string {
@@ -1072,7 +1202,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=10">
+  <link rel="stylesheet" href="/style.css?v=11">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2591,6 +2721,227 @@ h1, h2, h3, p { margin-top: 0; }
 
 .card-topic:hover { background: var(--accent); color: #fff; }
 
+.settings { padding: 12px 0 60px; }
+
+.settings-head {
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-head h2 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+.settings-lede {
+  max-width: 620px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.settings-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.settings-card {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.settings-card h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.settings-badge {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.settings-badge.is-custom {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.settings-note {
+  max-width: 640px;
+  margin: 6px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.settings-note code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-soft);
+  color: var(--accent-ink);
+  font-size: 12px;
+}
+
+.settings-card textarea {
+  display: block;
+  width: 100%;
+  min-height: 260px;
+  padding: 13px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: 0;
+}
+
+.settings-card textarea:focus { border-color: var(--accent); }
+
+.settings-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.settings-actions-foot {
+  margin-top: 4px;
+  padding: 2px 2px 0;
+}
+
+.settings-actions button {
+  padding: 9px 15px;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.settings-actions button.secondary {
+  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+}
+
+.settings-choice { display: grid; gap: 8px; }
+
+.settings-choice label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.settings-choice label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.settings-choice input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.settings-choice small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.settings-facts div {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.settings-facts dt {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-facts dd {
+  margin: 3px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.settings-card-muted { background: var(--surface-soft); }
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.settings-toggle input { accent-color: var(--accent); }
+
+.settings-foot {
+  margin: 18px 0 0;
+  font-size: 13px;
+}
+
+.settings-foot a {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.settings-foot a:hover { text-decoration: underline; }
+
 @media (max-width: 650px) {
   .shell, .topbar { width: min(100% - 24px, 820px); }
   .topbar { padding-top: 18px; }
@@ -2628,5 +2979,9 @@ h1, h2, h3, p { margin-top: 0; }
   .cal-num { font-size: 12.5px; }
   .cal-count { padding: 0 5px; font-size: 9.5px; }
   .day-banner { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .settings-facts { grid-template-columns: 1fr; }
+  .settings-card { padding: 16px; }
+  .settings-card textarea { min-height: 220px; }
+  .settings-actions { flex-direction: column; align-items: stretch; }
 }
 `;

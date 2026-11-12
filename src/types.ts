@@ -59,6 +59,16 @@ export interface WorkersAi {
   run(model: string, input: Record<string, unknown>): Promise<unknown>;
 }
 
+/** Language of the primary summary and the default for the library. */
+export type SummaryLanguage = 'tr' | 'en';
+
+/** Per-deployment preferences stored in the Durable Object, not in env. */
+export interface StoredSettings {
+  /** Empty means the built-in prompt in `src/ai.ts`. */
+  summaryPrompt: string;
+  summaryLanguage: SummaryLanguage;
+}
+
 export interface Author {
   name: string | null;
   username: string | null;

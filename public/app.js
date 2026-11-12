@@ -73,3 +73,16 @@ document.addEventListener('click', async event => {
     chip.classList.remove('is-copied');
   }, 1200);
 });
+
+// Settings: keep the prompt character count honest while typing. The server
+// still enforces the limit; this is only feedback.
+(() => {
+  const source = document.querySelector('[data-prompt-source]');
+  const counter = document.querySelector('[data-prompt-count]');
+  if (!source || !counter) return;
+  const update = () => {
+    counter.textContent = source.value.length.toLocaleString('en-US');
+  };
+  source.addEventListener('input', update);
+  update();
+})();

@@ -9,6 +9,11 @@ import {
 } from './ai.ts';
 import { readExternalLinks } from './links.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
+import {
+  defaultSummaryLanguage,
+  normalizeSummaryLanguage,
+  normalizeSummaryPrompt,
+} from './settings.ts';
 import { parseYouTubeUrl, readYouTubePost } from './youtube.ts';
 import { readTranscripts } from './transcript.ts';
 import { clampInteger, jsonResponse } from './util.ts';
@@ -32,6 +37,8 @@ import type {
   SaveResult,
   StatsResult,
   StoreTranscriptsResult,
+  StoredSettings,
+  SummaryLanguage,
   SummaryVersion,
   TopicOverviewItem,
   TopicPageResult,
@@ -63,11 +70,6 @@ function randomRef(): string {
     for (const byte of bytes) ref += REF_ALPHABET[byte % REF_ALPHABET.length];
     if (/[a-z]/.test(ref)) return ref;
   }
-}
-
-/** The default summaries are Turkish unless the deployment switched to English. */
-function turkishPrimary(env: Partial<Env>): boolean {
-  return String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() !== 'en';
 }
 
 function parseView(value: string | null | undefined): ArchiveView {
@@ -251,6 +253,12 @@ export class Bookmarks extends DurableObject<Env> {
         created_at TEXT NOT NULL,
         PRIMARY KEY (tweet_id, version)
       );
+
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
 
     try {
@@ -339,6 +347,65 @@ export class Bookmarks extends DurableObject<Env> {
     }
   }
 
+  /** Preferences stored in SQLite, with env fallbacks for older deployments. */
+  settings(): StoredSettings {
+    const rows = this.sql
+      .exec<{ key: string; value: string }>('SELECT key, value FROM settings')
+      .toArray();
+    const values = new Map(rows.map(row => [row.key, row.value]));
+    return {
+      summaryPrompt: String(values.get('summary_prompt') || ''),
+      summaryLanguage: normalizeSummaryLanguage(
+        values.get('summary_language'),
+        defaultSummaryLanguage(this.env),
+      ),
+    };
+  }
+
+  saveSettings(input: {
+    summaryPrompt?: unknown;
+    summaryLanguage?: unknown;
+  }): StoredSettings {
+    const current = this.settings();
+    const prompt =
+      input.summaryPrompt === undefined
+        ? current.summaryPrompt
+        : normalizeSummaryPrompt(input.summaryPrompt);
+    const language = normalizeSummaryLanguage(input.summaryLanguage, current.summaryLanguage);
+    const now = new Date().toISOString();
+
+    const write = (key: string, value: string) => {
+      this.sql.exec(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        key,
+        value,
+        now,
+      );
+    };
+    write('summary_prompt', prompt);
+    write('summary_language', language);
+
+    return { summaryPrompt: prompt, summaryLanguage: language };
+  }
+
+  /** The language for new summaries, and the page default when there is no `?lang=`. */
+  primaryLanguage(): SummaryLanguage {
+    return this.settings().summaryLanguage;
+  }
+
+  /** Empty means the built-in prompt in `src/ai.ts`. */
+  summaryPrompt(): string {
+    return this.settings().summaryPrompt;
+  }
+
+  /** The env object the AI helpers read `SUMMARY_LANGUAGE` from. */
+  aiEnv(): Env {
+    const language = this.primaryLanguage();
+    const configured = String(this.env.SUMMARY_LANGUAGE || 'en').toLowerCase();
+    return configured === language ? this.env : { ...this.env, SUMMARY_LANGUAGE: language };
+  }
+
   /** A ref that is not in use yet. */
   uniqueRef(): string {
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -356,6 +423,18 @@ export class Bookmarks extends DurableObject<Env> {
       if (request.method === 'POST' && url.pathname === '/save') {
         const body = (await request.json()) as { url: string | ParsedXUrl };
         return jsonResponse(await this.save(body.url));
+      }
+
+      if (request.method === 'GET' && url.pathname === '/settings') {
+        return jsonResponse(this.settings());
+      }
+
+      if (request.method === 'POST' && url.pathname === '/settings') {
+        const body = (await request.json()) as {
+          summaryPrompt?: unknown;
+          summaryLanguage?: unknown;
+        };
+        return jsonResponse(this.saveSettings(body));
       }
 
       if (request.method === 'GET' && url.pathname === '/list') {
@@ -483,7 +562,7 @@ export class Bookmarks extends DurableObject<Env> {
 
     if (existing) {
       const englishReset =
-        shouldSummarize && turkishPrimary(this.env)
+        shouldSummarize && this.primaryLanguage() === 'tr'
           ? `, summary_en = NULL, summary_en_status = 'pending',
              summary_en_error = NULL, summary_en_started_at = NULL`
           : '';
@@ -501,7 +580,7 @@ export class Bookmarks extends DurableObject<Env> {
       );
     } else {
       const initialEnglishStatus =
-        shouldSummarize && turkishPrimary(this.env) ? 'pending' : null;
+        shouldSummarize && this.primaryLanguage() === 'tr' ? 'pending' : null;
       this.sql.exec(
         `INSERT INTO bookmarks (
           tweet_id, ref, url, author_name, author_username, author_avatar_url, author_verified,
@@ -903,7 +982,7 @@ export class Bookmarks extends DurableObject<Env> {
     if (!isAiConfigured(this.env)) {
       throw new Error('AI_API_KEY is not configured.');
     }
-    if (!turkishPrimary(this.env)) return { queued: 0 };
+    if (this.primaryLanguage() !== 'tr') return { queued: 0 };
 
     const where = `summary_status = 'done' AND summary IS NOT NULL AND summary != ''
       AND (summary_en IS NULL OR summary_en = '')
@@ -964,7 +1043,7 @@ export class Bookmarks extends DurableObject<Env> {
         id,
       );
     } else {
-      const englishReset = turkishPrimary(this.env)
+      const englishReset = this.primaryLanguage() === 'tr'
         ? `, summary_en = NULL, summary_en_status = 'pending',
            summary_en_error = NULL, summary_en_started_at = NULL`
         : '';
@@ -1022,7 +1101,7 @@ export class Bookmarks extends DurableObject<Env> {
 
     const queued = isAiConfigured(this.env) && clean.some(transcript => transcript.status === 'done');
     if (queued) {
-      const englishReset = turkishPrimary(this.env)
+      const englishReset = this.primaryLanguage() === 'tr'
         ? `, summary_en = NULL, summary_en_status = 'pending',
            summary_en_error = NULL, summary_en_started_at = NULL`
         : '';
@@ -1295,7 +1374,7 @@ export class Bookmarks extends DurableObject<Env> {
       summary: row.summary,
     }));
 
-    const built = await bootstrapTopics(items, this.env);
+    const built = await bootstrapTopics(items, this.aiEnv());
     if (!built.length) {
       throw new Error('AI could not group the archive into topics.');
     }
@@ -1355,7 +1434,7 @@ export class Bookmarks extends DurableObject<Env> {
     try {
       const result = await classifyPost(
         { post: bookmark, summary: bookmark.summary || '', topics },
-        this.env,
+        this.aiEnv(),
       );
 
       if (!result.slugs.length) {
@@ -1437,8 +1516,9 @@ export class Bookmarks extends DurableObject<Env> {
       const version = Number(maxRow?.max ?? 1) + 1;
       const instruction = String(row.version_instruction || '').slice(0, 500);
 
-      const result = await summarizePost(bookmark, this.env, {
+      const result = await summarizePost(bookmark, this.aiEnv(), {
         instruction,
+        prompt: this.summaryPrompt(),
         previousSummary: bookmark.summary || '',
         session: `shelf-${tweetId}-v${version}`,
       });
@@ -1519,7 +1599,7 @@ export class Bookmarks extends DurableObject<Env> {
           previous: row.overview || '',
           items,
         },
-        this.env,
+        this.aiEnv(),
       );
 
       this.sql.exec(
@@ -1573,7 +1653,7 @@ export class Bookmarks extends DurableObject<Env> {
     );
 
     try {
-      const result = await translateSummary(row.summary, this.env, {
+      const result = await translateSummary(row.summary, this.aiEnv(), {
         session: `shelf-${tweetId}-en`,
       });
       this.sql.exec(
@@ -1646,9 +1726,11 @@ export class Bookmarks extends DurableObject<Env> {
         }
       }
 
-      const result = await summarizePost(bookmark, this.env);
+      const result = await summarizePost(bookmark, this.aiEnv(), {
+        prompt: this.summaryPrompt(),
+      });
       const english =
-        turkishPrimary(this.env)
+        this.primaryLanguage() === 'tr'
           ? `, summary_en = NULL, summary_en_status = 'pending',
              summary_en_error = NULL, summary_en_started_at = NULL`
           : '';

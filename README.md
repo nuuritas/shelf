@@ -51,6 +51,8 @@ commands.
 - **Organize itself** — topics induced from what you actually save, a
   folder-first library where each topic opens like a folder, per-topic
   syntheses, full-text search, a calendar, archive and restore.
+- **Tune it** — a Settings page (web and the Android app) for the summary
+  prompt and language; new summaries pick up the change without a redeploy.
 - **Reach it from AI tools** — a Bun CLI and a stdio MCP server, so Claude Code,
   Codex, or Cursor can search the vault themselves.
 
