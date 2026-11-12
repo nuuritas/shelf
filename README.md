@@ -48,7 +48,8 @@ commands.
   readability extractor.
 - **Summarize** — natural prose from Workers AI with no key, any
   OpenAI-compatible model, or Anthropic.
-- **Organize itself** — topics induced from what you actually save, per-topic
+- **Organize itself** — topics induced from what you actually save, a
+  folder-first library where each topic opens like a folder, per-topic
   syntheses, full-text search, a calendar, archive and restore.
 - **Reach it from AI tools** — a Bun CLI and a stdio MCP server, so Claude Code,
   Codex, or Cursor can search the vault themselves.

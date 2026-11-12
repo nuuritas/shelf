@@ -108,11 +108,13 @@ take the shortcut.
 `fetch` → session check (`isAuthorized`) or `SHARE_TOKEN` for
 `POST /api/bookmarks` → `doJson(env, path)` → DO stub (`library`) → JSON/HTML.
 
-Pages: `/` (library), `/t/:slug` (topic), `/calendar`, `/login`, `/share` (PWA fallback).
-The library and topic pages accept `view=active|archived` and `lang=tr|en`;
-the library also accepts `day=YYYY-MM-DD` for a single saved day (linked from
+Pages: `/` (folder index), `/t/:slug` (one folder), `/calendar`, `/login`,
+`/share` (PWA fallback). `/` is folder-first by default; `?layout=saves` renders
+the flat latest-first library, and a query or `day` always renders the flat list.
+The library and folder pages accept `view=active|archived` and `lang=tr|en`; the
+library also accepts `day=YYYY-MM-DD` for a single saved day (linked from
 `/calendar`). Forms carry a `returnTo` so a mutation keeps the current view,
-language, and day.
+language, day, and layout.
 API: see `docs/PROGRESS.md` §3.
 
 ## Durable Object rules
@@ -216,7 +218,7 @@ API: see `docs/PROGRESS.md` §3.
   `Cache-Control: no-cache`, but the versioned URL is what guarantees clients
   drop the old copy. Forgetting this makes new markup render unstyled.
 - Client JS (`public/app.js`) is progressive enhancement only: card expand,
-  synthesis fold, in-place topic swap. No framework, no build.
+  synthesis fold, copy-to-clipboard refs. No framework, no build.
 - Archive, language, and day are presentation state: `view=archived`, `lang=en`,
   and `day=YYYY-MM-DD` are query parameters, not stored columns. `archived_at` is
   the only archive state (`NULL` = active). Keep them when adding a link or a

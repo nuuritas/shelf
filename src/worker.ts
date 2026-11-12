@@ -207,6 +207,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
   const day = parseDay(url.searchParams.get('day'));
   const view = parseView(url.searchParams.get('view'));
   const lang = parseLang(url.searchParams.get('lang'));
+  const layout = parseLayout(url.searchParams.get('layout'));
   const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
   const params = new URLSearchParams({ limit: String(limit), view });
   if (query) params.set('q', query);
@@ -226,6 +227,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         topics: topicData.topics,
         view,
         lang,
+        layout,
         activeTotal: data.activeTotal,
         archivedTotal: data.archivedTotal,
         missingEnglish: data.missingEnglish,
@@ -245,6 +247,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         topics: [],
         view,
         lang,
+        layout,
         activeTotal: 0,
         archivedTotal: 0,
         bilingual: isBilingual(env) && isAiConfigured(env),
@@ -366,7 +369,7 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: parsed.canonicalUrl }),
     });
-    return redirect(`/?notice=${result.created ? 'added' : 'exists'}`);
+    return redirect(`/?layout=saves&notice=${result.created ? 'added' : 'exists'}`);
   } catch (error) {
     return redirect(`/?error=${encodeURIComponent(errorMessage(error))}`);
   }
@@ -730,6 +733,11 @@ function withNotice(path: string, notice: string): string {
 
 function parseView(value: string | null): 'active' | 'archived' {
   return value === 'archived' ? 'archived' : 'active';
+}
+
+/** Home is folder-first; `layout=saves` asks for the flat latest-first list. */
+function parseLayout(value: string | null): 'folders' | 'saves' {
+  return value === 'saves' ? 'saves' : 'folders';
 }
 
 /** `YYYY-MM-DD`, or null for anything that is not a real day. */
