@@ -22,6 +22,7 @@ show a login page. Anyone else deploys their own copy with `bun run setup`.
 src/worker.ts        routing, auth, redirects, HTML responses
 src/bookmarks-do.ts  Durable Object: schema, queries, alarm queue, AI jobs
 src/ai.ts            AI prompts + requests (summary, translation, topics, synthesis)
+src/settings.ts      stored-preference validation and env fallbacks
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
 src/linkedin.ts      public LinkedIn post reader (guest page meta tags)
@@ -108,7 +109,7 @@ take the shortcut.
 `fetch` → session check (`isAuthorized`) or `SHARE_TOKEN` for
 `POST /api/bookmarks` → `doJson(env, path)` → DO stub (`library`) → JSON/HTML.
 
-Pages: `/` (folder index), `/t/:slug` (one folder), `/calendar`, `/login`,
+Pages: `/` (folder index), `/t/:slug` (one folder), `/calendar`, `/settings`, `/login`,
 `/share` (PWA fallback). `/` is folder-first by default; `?layout=saves` renders
 the flat latest-first library, and a query or `day` always renders the flat list.
 The library and folder pages accept `view=active|archived` and `lang=tr|en`; the
@@ -201,8 +202,17 @@ API: see `docs/PROGRESS.md` §3.
   and `shelf youtube`, which runs `get-youtube-transcript` on the Mac's residential
   IP and re-queues the summary. This is the free path when no Supadata key is
   set; it is not part of the Worker request path.
-- `SUMMARY_LANGUAGE` sets the main summary language (Turkish in production).
-  When the main language is Turkish, a finished summary automatically queues an
+- `SUMMARY_LANGUAGE` is the **initial default** for the main summary language
+  (Turkish in production). The Settings page stores an override in the
+  `settings` table, and the DO passes it to every AI helper through `aiEnv()`,
+  so the language and prompt change without a redeploy.
+- The summary system prompt comes from the `settings` table (empty means the
+  built-in in `src/ai.ts`). `buildSummarySystemPrompt` replaces
+  `{{language}}`; a custom prompt without that placeholder gets a
+  `Write in <language>.` line in front. The per-item "different angle"
+  instruction is still prefixed, so versions keep working with a custom prompt.
+  Validated at 8,000 characters in `src/settings.ts`.
+- When the main language is Turkish, a finished summary automatically queues an
   English version in `summary_en` (`translateSummary`, session `shelf-<tweetId>-en`).
   The UI's English board reads that column; `POST /translate-all` only queues
   missing translations, so it is safe to click repeatedly.
@@ -219,10 +229,12 @@ API: see `docs/PROGRESS.md` §3.
   drop the old copy. Forgetting this makes new markup render unstyled.
 - Client JS (`public/app.js`) is progressive enhancement only: card expand,
   synthesis fold, copy-to-clipboard refs. No framework, no build.
-- Archive, language, and day are presentation state: `view=archived`, `lang=en`,
-  and `day=YYYY-MM-DD` are query parameters, not stored columns. `archived_at` is
-  the only archive state (`NULL` = active). Keep them when adding a link or a
-  form redirect. Day grouping and the calendar use UTC, matching `formatDate`.
+- Archive and day are presentation state: `view=archived` and `day=YYYY-MM-DD`
+  are query parameters, not stored columns. `archived_at` is the only archive
+  state (`NULL` = active). Keep them when adding a link or a form redirect.
+  Language has a stored default in `settings` (set on `/settings`); `lang=tr|en`
+  stays a per-view override and is still kept on links and form redirects. Day
+  grouping and the calendar use UTC, matching `formatDate`.
 - Keep the no-JS fallback working (`<noscript>` overrides in `pageShell`).
 
 ## Security

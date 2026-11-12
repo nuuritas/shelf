@@ -1,8 +1,14 @@
-import { isAiConfigured } from './ai.ts';
+import { aiConfig, isAiConfigured } from './ai.ts';
 import { Bookmarks } from './bookmarks-do.ts';
 import { parseLinkedInUrl } from './linkedin.ts';
 import { parseYouTubeUrl } from './youtube.ts';
-import { CSS, renderCalendar, renderLogin, renderPage, renderSetup } from './render.ts';
+import { CSS, renderCalendar, renderLogin, renderPage, renderSettings, renderSetup } from './render.ts';
+import {
+  defaultSummaryLanguage,
+  normalizeSummaryLanguage,
+  normalizeSummaryPrompt,
+  validateSummaryPrompt,
+} from './settings.ts';
 import type {
   ArchiveResult,
   ArchiveView,
@@ -15,6 +21,8 @@ import type {
   SaveResult,
   StatsResult,
   StoreTranscriptsResult,
+  StoredSettings,
+  SummaryLanguage,
   SummarizeResult,
   TopicListResult,
   TopicPageResult,
@@ -114,6 +122,11 @@ const worker: ExportedHandler<Env> = {
       return secure(await handleCalendarPage(url, env));
     }
 
+    if (url.pathname === '/settings') {
+      if (request.method === 'GET') return secure(await handleSettingsPage(url, env));
+      if (request.method === 'POST') return secure(await handleSettingsSave(request, env));
+    }
+
     if (request.method === 'GET' && url.pathname.startsWith('/t/')) {
       const slug = decodeURIComponent(url.pathname.slice(3)).replace(/\/+$/, '');
       return secure(await handleTopicPage(slug, env, url));
@@ -206,7 +219,8 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
   const query = (url.searchParams.get('q') || '').trim();
   const day = parseDay(url.searchParams.get('day'));
   const view = parseView(url.searchParams.get('view'));
-  const lang = parseLang(url.searchParams.get('lang'));
+  const settings = await readSettings(env);
+  const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
   const layout = parseLayout(url.searchParams.get('layout'));
   const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
   const params = new URLSearchParams({ limit: String(limit), view });
@@ -231,7 +245,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         activeTotal: data.activeTotal,
         archivedTotal: data.archivedTotal,
         missingEnglish: data.missingEnglish,
-        bilingual: isBilingual(env) && isAiConfigured(env),
+        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
         aiConfigured: isAiConfigured(env),
@@ -250,7 +264,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         layout,
         activeTotal: 0,
         archivedTotal: 0,
-        bilingual: isBilingual(env) && isAiConfigured(env),
+        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
         notice: null,
         error: errorMessage(error),
         aiConfigured: isAiConfigured(env),
@@ -266,7 +280,8 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
   }
 
   const view = parseView(url.searchParams.get('view'));
-  const lang = parseLang(url.searchParams.get('lang'));
+  const settings = await readSettings(env);
+  const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
 
   try {
     const [data, topicData] = await Promise.all([
@@ -290,7 +305,7 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
         topic: data.topic,
         view,
         lang,
-        bilingual: isBilingual(env) && isAiConfigured(env),
+        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
         aiConfigured: isAiConfigured(env),
@@ -307,7 +322,8 @@ async function handleApiTopics(env: Env): Promise<Response> {
 
 async function handleCalendarPage(url: URL, env: Env): Promise<Response> {
   const month = (url.searchParams.get('month') || '').trim();
-  const lang = parseLang(url.searchParams.get('lang'));
+  const settings = await readSettings(env);
+  const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
 
   try {
     const query = month ? `?month=${encodeURIComponent(month)}` : '';
@@ -328,6 +344,64 @@ async function handleCalendarPage(url: URL, env: Env): Promise<Response> {
       }),
       502,
     );
+  }
+}
+
+async function handleSettingsPage(url: URL, env: Env): Promise<Response> {
+  const settings = await readSettings(env);
+  return htmlResponse(
+    renderSettings({
+      settings,
+      ai: aiConfig(env),
+      aiConfigured: isAiConfigured(env),
+      notice: url.searchParams.get('notice'),
+      error: url.searchParams.get('error'),
+    }),
+  );
+}
+
+async function handleSettingsSave(request: Request, env: Env): Promise<Response> {
+  const form = await request.formData();
+  const action = String(form.get('action') || 'save');
+  const reset = action === 'reset';
+  const current = await readSettings(env);
+  const language = normalizeSummaryLanguage(
+    String(form.get('summary_language') || ''),
+    current.summaryLanguage,
+  );
+  const rawPrompt = reset ? '' : String(form.get('summary_prompt') ?? '');
+
+  const renderError = (message: string, status = 400) =>
+    htmlResponse(
+      renderSettings({
+        settings: {
+          summaryPrompt: reset ? current.summaryPrompt : rawPrompt,
+          summaryLanguage: language,
+        },
+        ai: aiConfig(env),
+        aiConfigured: isAiConfigured(env),
+        error: message,
+      }),
+      status,
+    );
+
+  let prompt: string;
+  try {
+    prompt = normalizeSummaryPrompt(rawPrompt);
+    validateSummaryPrompt(prompt);
+  } catch (error) {
+    return renderError(errorMessage(error));
+  }
+
+  try {
+    await doJson<StoredSettings>(env, '/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summaryPrompt: prompt, summaryLanguage: language }),
+    });
+    return redirect(`/settings?notice=${reset ? 'reset' : 'saved'}`);
+  } catch (error) {
+    return renderError(errorMessage(error), 502);
   }
 }
 
@@ -579,6 +653,15 @@ async function apiGuard(handler: () => Promise<Response>): Promise<Response> {
   }
 }
 
+/** Settings, with the env defaults when the Durable Object cannot answer. */
+async function readSettings(env: Env): Promise<StoredSettings> {
+  try {
+    return await doJson<StoredSettings>(env, '/settings');
+  } catch {
+    return { summaryPrompt: '', summaryLanguage: defaultSummaryLanguage(env) };
+  }
+}
+
 async function doJson<T>(env: Env, path: string, init?: RequestInit): Promise<T> {
   const stub = env.BOOKMARKS.get(env.BOOKMARKS.idFromName('library'));
   const response = await stub.fetch(`https://bookmarks.internal${path}`, init);
@@ -753,13 +836,9 @@ function parseListView(value: string | null): ArchiveView {
   return value === 'archived' || value === 'all' ? value : 'active';
 }
 
-function parseLang(value: string | null): 'tr' | 'en' {
-  return value === 'en' ? 'en' : 'tr';
-}
-
-/** The archive has a Turkish primary summary, so the English board is useful. */
-function isBilingual(env: Env): boolean {
-  return String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() !== 'en';
+function parseLang(value: string | null, fallback: SummaryLanguage = 'tr'): SummaryLanguage {
+  if (value === 'en' || value === 'tr') return value;
+  return fallback;
 }
 
 function secure(response: Response): Response {

@@ -216,6 +216,36 @@ export interface SummaryOptions {
   instruction?: string;
   previousSummary?: string;
   session?: string;
+  /** The owner's prompt from Settings. Empty means the built-in default. */
+  prompt?: string;
+}
+
+/**
+ * The built-in summary prompt. `{{language}}` is replaced with the summary
+ * language; a custom prompt without the placeholder gets a language line in
+ * front, so changing the language setting still changes the output.
+ */
+export const DEFAULT_SUMMARY_PROMPT =
+  'You are a perceptive analyst and explainer. The user saves posts and links because they want to understand what something is, the context around it, and why it matters. Write in {{language}}, like a smart colleague explaining it to them. ' +
+  'Start with one or two sentences: what this is and the situation or context. Then explain the central idea or argument in natural paragraphs, using concrete details and examples from the supplied content. Briefly explain jargon instead of repeating it. ' +
+  'If it is a GitHub repository, explain what the project actually does, who it is for, how it works, and its notable features or maturity. If it is an article, explain its thesis, the context it responds to, and its implications. If the post itself is just a comment on a link, connect the comment to the linked content. ' +
+  'Do not use headings such as "Özet", "Ana noktalar", or "Görsellerin katkısı". Do not produce a rigid bullet list or a section-by-section recap. Write 3-5 paragraphs, roughly 250-450 words, and end with one natural takeaway sentence. ' +
+  'Use only the supplied content. If some content could not be read or is incomplete, say so naturally. Do not invent facts. Return plain text, not Markdown.';
+
+/** Build the system message from the default or the settings override. */
+export function buildSummarySystemPrompt(options: {
+  prompt?: string;
+  language: string;
+  instruction?: string;
+}): string {
+  const prompt = String(options.prompt || '').trim() || DEFAULT_SUMMARY_PROMPT;
+  const withLanguage = prompt.includes('{{language}}')
+    ? prompt.replaceAll('{{language}}', options.language)
+    : `Write in ${options.language}. ${prompt}`;
+  const prefix = options.instruction
+    ? "You are writing a new version of an existing explanation because the reader asked for a different angle. The existing summary is context, not a template: do not repeat it or pad it. Answer the reader's request directly and concretely, and keep the same natural, non-robotic voice. "
+    : '';
+  return prefix + withLanguage;
 }
 
 export async function summarizePost(
@@ -268,15 +298,11 @@ export async function summarizePost(
       : [];
   const language = String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
 
-  const systemPrompt =
-          (options.instruction
-            ? `You are writing a new version of an existing explanation because the reader asked for a different angle. The existing summary is context, not a template: do not repeat it or pad it. Answer the reader's request directly and concretely, and keep the same natural, non-robotic voice. Write in ${language}. `
-            : '') +
-          `You are a perceptive analyst and explainer. The user saves posts and links because they want to understand what something is, the context around it, and why it matters. Write in ${language}, like a smart colleague explaining it to them. ` +
-          'Start with one or two sentences: what this is and the situation or context. Then explain the central idea or argument in natural paragraphs, using concrete details and examples from the supplied content. Briefly explain jargon instead of repeating it. ' +
-          'If it is a GitHub repository, explain what the project actually does, who it is for, how it works, and its notable features or maturity. If it is an article, explain its thesis, the context it responds to, and its implications. If the post itself is just a comment on a link, connect the comment to the linked content. ' +
-          'Do not use headings such as "Özet", "Ana noktalar", or "Görsellerin katkısı". Do not produce a rigid bullet list or a section-by-section recap. Write 3-5 paragraphs, roughly 250-450 words, and end with one natural takeaway sentence. ' +
-          'Use only the supplied content. If some content could not be read or is incomplete, say so naturally. Do not invent facts. Return plain text, not Markdown.';
+  const systemPrompt = buildSummarySystemPrompt({
+    prompt: options.prompt,
+    language,
+    instruction: options.instruction,
+  });
 
   const userText = buildPrompt(post, imageNotes, {
     instruction: options.instruction,

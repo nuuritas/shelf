@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderCalendar, renderPage } from '../src/render.ts';
+import { renderCalendar, renderPage, renderSettings } from '../src/render.ts';
 import { escapeHtml, linkifyText } from '../src/util.ts';
 
 test('escapes tweet text and links bare URLs', () => {
@@ -221,4 +221,57 @@ test('shows only one day and offers a way back to the calendar', () => {
   assert.match(html, /name="day" value="2026-11-10"/);
   assert.match(html, /Clear date/);
   assert.match(html, /href="\/calendar"/);
+});
+
+
+test('the settings page shows a custom prompt, escapes it, and marks it custom', () => {
+  const html = renderSettings({
+    settings: { summaryPrompt: '</textarea><script>alert(1)</script>', summaryLanguage: 'en' },
+    ai: { provider: 'custom', model: 'model-x', transport: 'http' },
+    aiConfigured: true,
+  });
+
+  assert.match(html, /Settings · Shelf/);
+  assert.match(html, /class="settings-badge is-custom"/);
+  assert.match(html, /&lt;\/textarea&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<\/textarea><script>/);
+  assert.match(html, /value="en" checked/);
+  assert.match(html, /OpenAI-compatible HTTP/);
+  assert.match(html, /model-x/);
+  assert.match(html, /Reset prompt to default/);
+});
+
+test('the settings page shows the built-in prompt until the owner saves a custom one', () => {
+  const html = renderSettings({
+    settings: { summaryPrompt: '', summaryLanguage: 'tr' },
+    ai: { provider: 'cloudflare', model: '@cf/model', transport: 'workers' },
+    aiConfigured: true,
+  });
+
+  assert.match(html, /Built-in/);
+  assert.doesNotMatch(html, /Reset prompt to default/);
+  assert.match(html, /Write in \{\{language\}\}/);
+  assert.match(html, /value="tr" checked/);
+  assert.match(html, /Workers AI binding/);
+  assert.match(html, /Notifications/);
+  assert.match(html, /Not yet/);
+});
+
+test('the settings page renders a save notice and an inline error', () => {
+  const saved = renderSettings({
+    settings: { summaryPrompt: '', summaryLanguage: 'en' },
+    ai: { provider: 'openai', model: 'gpt-4.1-mini', transport: 'http' },
+    aiConfigured: true,
+    notice: 'saved',
+  });
+  assert.match(saved, /Settings saved/);
+
+  const failed = renderSettings({
+    settings: { summaryPrompt: 'x'.repeat(20), summaryLanguage: 'en' },
+    ai: { provider: 'openai', model: 'gpt-4.1-mini', transport: 'http' },
+    aiConfigured: true,
+    error: 'The prompt is too long.',
+  });
+  assert.match(failed, /class="banner error"/);
+  assert.match(failed, /The prompt is too long\./);
 });
