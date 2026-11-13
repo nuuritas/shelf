@@ -43,7 +43,7 @@ test('renders a folder page with its synthesis and a way back to all folders', (
   assert.doesNotMatch(html, /class="folder-grid"/);
 });
 
-test('renders a folder index on the home page instead of a tweet list', () => {
+test('layout=folders renders the folder index instead of the save list', () => {
   const html = renderPage({
     bookmarks: [],
     total: 18,
@@ -58,6 +58,7 @@ test('renders a folder index on the home page instead of a tweet list', () => {
       },
       { slug: 'dogu-akdeniz', name: 'Doğu Akdeniz', description: '', count: 2, archivedCount: 0 },
     ],
+    layout: 'folders',
     notice: null,
     error: null,
     aiConfigured: true,
@@ -74,7 +75,7 @@ test('renders a folder index on the home page instead of a tweet list', () => {
   assert.doesNotMatch(html, /topic-tabs/);
 });
 
-test('layout=saves keeps the flat latest-first library', () => {
+test('home defaults to the flat latest-first library, with folders as an option', () => {
   const html = renderPage({
     bookmarks: [
       {
@@ -98,7 +99,6 @@ test('layout=saves keeps the flat latest-first library', () => {
     topics: [
       { slug: 'test', name: 'Test', count: 1, archivedCount: 0 },
     ],
-    layout: 'saves',
     activeTotal: 1,
     archivedTotal: 0,
     notice: null,
@@ -109,6 +109,8 @@ test('layout=saves keeps the flat latest-first library', () => {
   assert.match(html, /class="cards"/);
   assert.match(html, /A saved post\./);
   assert.match(html, /All saves<span>1<\/span>/);
+  assert.match(html, /href="\/\?layout=folders"/);
+  assert.match(html, /<h2>Latest saves<\/h2>/);
   assert.doesNotMatch(html, /class="folder-grid"/);
 });
 

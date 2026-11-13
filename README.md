@@ -51,9 +51,10 @@ commands.
 - **Summarize** — natural prose from Workers AI with no key, any
   OpenAI-compatible model, or Anthropic; images, articles and video transcripts
   are part of the input.
-- **Organize itself** — topics induced from what you actually save, a
-  folder-first library where each topic opens like a folder, per-topic
-  syntheses, full-text search, a calendar, archive and restore.
+- **Organize itself** — topics induced from what you actually save, a library
+  that still opens on every save, an optional folder view where each topic opens
+  like a folder, per-topic syntheses, full-text search, a calendar, archive and
+  restore.
 - **Tune it** — a Settings page (web and the Android app) for the summary
   prompt, language and notifications; new summaries pick up the change without
   a redeploy.

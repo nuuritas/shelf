@@ -53,7 +53,7 @@ export interface RenderPageOptions {
   aiConfigured?: boolean;
   view?: 'active' | 'archived';
   lang?: 'tr' | 'en';
-  /** `folders` is the default home; `saves` is the flat latest-first list. */
+  /** `saves` is the default home (flat latest-first); `folders` shows the topic grid. */
   layout?: 'folders' | 'saves';
   /** Platform filter; `all` (the default) shows every source. */
   source?: SourceFilter;
@@ -83,7 +83,7 @@ function libraryHref(
     day = null,
     view = 'active',
     lang = 'tr',
-    layout = 'folders',
+    layout = 'saves',
     source = 'all',
   }: {
     query?: string;
@@ -99,7 +99,7 @@ function libraryHref(
   if (day) params.set('day', day);
   if (view === 'archived') params.set('view', 'archived');
   if (lang === 'en') params.set('lang', 'en');
-  if (layout === 'saves') params.set('layout', 'saves');
+  if (layout === 'folders') params.set('layout', 'folders');
   if (source !== 'all') params.set('source', source);
   const search = params.toString();
   return search ? `${path}?${search}` : path;
@@ -117,7 +117,7 @@ export function renderPage({
   aiConfigured = false,
   view: viewOption = 'active',
   lang: langOption = 'tr',
-  layout: layoutOption = 'folders',
+  layout: layoutOption = 'saves',
   source: sourceOption = 'all',
   activeTotal = 0,
   archivedTotal = 0,
@@ -126,7 +126,7 @@ export function renderPage({
 }: RenderPageOptions): string {
   const view = viewOption === 'archived' ? 'archived' : 'active';
   const lang = langOption === 'en' ? 'en' : 'tr';
-  const layout = layoutOption === 'saves' ? 'saves' : 'folders';
+  const layout = layoutOption === 'folders' ? 'folders' : 'saves';
   const source = parseSource(sourceOption);
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(dayOption || '')) ? String(dayOption) : null;
   const pending = bookmarks.some(
@@ -140,7 +140,8 @@ export function renderPage({
   const currentDay = topic ? null : day;
   const activeCount = (topic ? topic.count : activeTotal) ?? 0;
   const archivedCount = (topic ? topic.archivedCount : archivedTotal) ?? 0;
-  const layoutParam = topic ? 'folders' : layout;
+  /** Topic pages never carry the folder layout, so their links stay clean. */
+  const layoutParam: 'folders' | 'saves' = topic ? 'saves' : layout;
   const returnTo = libraryHref(path, {
     query: currentQuery,
     day: currentDay,
@@ -258,7 +259,7 @@ export function renderPage({
           ${
             topic
               ? `<nav class="folder-crumbs" aria-label="Folders">
-                  <a href="${escapeHtml(libraryHref('/', { view, lang, source }))}">← All folders</a>
+                  <a href="${escapeHtml(libraryHref('/', { view, lang, layout: 'folders', source }))}">← All folders</a>
                 </nav>`
               : ''
           }
@@ -273,7 +274,7 @@ export function renderPage({
                 ${view === 'archived' ? '<input type="hidden" name="view" value="archived">' : ''}
                 ${lang === 'en' ? '<input type="hidden" name="lang" value="en">' : ''}
                 ${source !== 'all' ? `<input type="hidden" name="source" value="${source}">` : ''}
-                ${!topic && layout === 'saves' ? '<input type="hidden" name="layout" value="saves">' : ''}
+                ${!topic && layout === 'folders' ? '<input type="hidden" name="layout" value="folders">' : ''}
                 <label class="sr-only" for="q">Search bookmarks</label>
                 <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
                 <button type="submit">Search</button>
@@ -283,12 +284,12 @@ export function renderPage({
                 ${
                   !topic && topics.length
                     ? `<nav class="view-switch layout-switch" role="group" aria-label="Library layout">
-                        <a class="${showingList ? '' : 'active'}" href="${escapeHtml(
-                          libraryHref('/', { view, lang, layout: 'folders', source }),
-                        )}">Folders<span>${folderTopics.length}</span></a>
                         <a class="${showingList ? 'active' : ''}" href="${escapeHtml(
                           libraryHref('/', { view, lang, layout: 'saves', source }),
                         )}">All saves<span>${view === 'archived' ? archivedCount : activeCount}</span></a>
+                        <a class="${showingList ? '' : 'active'}" href="${escapeHtml(
+                          libraryHref('/', { view, lang, layout: 'folders', source }),
+                        )}">Folders<span>${folderTopics.length}</span></a>
                       </nav>`
                     : ''
                 }
@@ -1258,7 +1259,7 @@ function renderEmpty(
             ? 'Archive a bookmark from this folder to keep it here for later.'
             : 'Save a post and the filing step will put it in a folder that fits. You can also browse every save.'
         }</p>
-        <a class="small-button" href="${escapeHtml(libraryHref('/', { view }))}">Browse folders</a>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { view, layout: 'folders' }))}">Browse folders</a>
       </div>
     `;
   }
