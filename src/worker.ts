@@ -35,6 +35,7 @@ import {
   htmlResponse,
   jsonResponse,
   parseCookies,
+  parseSource,
   redirect,
   sha256Hex,
 } from './util.ts';
@@ -246,10 +247,12 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
   const settings = await readSettings(env);
   const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
   const layout = parseLayout(url.searchParams.get('layout'));
+  const source = parseSource(url.searchParams.get('source'));
   const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
   const params = new URLSearchParams({ limit: String(limit), view });
   if (query) params.set('q', query);
   if (day) params.set('day', day);
+  if (source !== 'all') params.set('source', source);
 
   try {
     const [data, topicData] = await Promise.all([
@@ -266,6 +269,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         view,
         lang,
         layout,
+        source,
         activeTotal: data.activeTotal,
         archivedTotal: data.archivedTotal,
         missingEnglish: data.missingEnglish,
@@ -286,6 +290,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         view,
         lang,
         layout,
+        source,
         activeTotal: 0,
         archivedTotal: 0,
         bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
@@ -304,6 +309,7 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
   }
 
   const view = parseView(url.searchParams.get('view'));
+  const source = parseSource(url.searchParams.get('source'));
   const settings = await readSettings(env);
   const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
 
@@ -311,7 +317,7 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
     const [data, topicData] = await Promise.all([
       doJson<TopicPageResult>(
         env,
-        `/topic?slug=${encodeURIComponent(slug)}&view=${encodeURIComponent(view)}`,
+        `/topic?slug=${encodeURIComponent(slug)}&view=${encodeURIComponent(view)}&source=${encodeURIComponent(source)}`,
       ),
       doJson<TopicListResult>(env, '/topics').catch((): TopicListResult => ({ topics: [] })),
     ]);
@@ -329,6 +335,7 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
         topic: data.topic,
         view,
         lang,
+        source,
         bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
@@ -556,6 +563,8 @@ async function handleApiList(url: URL, env: Env): Promise<Response> {
   const day = parseDay(url.searchParams.get('day'));
   if (day) params.set('day', day);
   params.set('view', parseListView(url.searchParams.get('view')));
+  const source = parseSource(url.searchParams.get('source'));
+  if (source !== 'all') params.set('source', source);
   params.set('limit', String(clampInteger(url.searchParams.get('limit'), 50, 1, 100)));
   params.set('offset', String(clampInteger(url.searchParams.get('offset'), 0, 0, 10_000)));
   return jsonResponse(await doJson<ListResult>(env, `/list?${params.toString()}`));

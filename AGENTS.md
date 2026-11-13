@@ -114,10 +114,10 @@ take the shortcut.
 Pages: `/` (folder index), `/t/:slug` (one folder), `/calendar`, `/settings`, `/login`,
 `/share` (PWA fallback). `/` is folder-first by default; `?layout=saves` renders
 the flat latest-first library, and a query or `day` always renders the flat list.
-The library and folder pages accept `view=active|archived` and `lang=tr|en`; the
-library also accepts `day=YYYY-MM-DD` for a single saved day (linked from
-`/calendar`). Forms carry a `returnTo` so a mutation keeps the current view,
-language, day, and layout. `/settings` also drives notification subscriptions.
+The library and folder pages accept `view=active|archived`,
+`source=x|linkedin|youtube` and `lang=tr|en`; the library also accepts
+`day=YYYY-MM-DD` for a single saved day (linked from `/calendar`). Forms carry
+a `returnTo` so a mutation keeps the current view, language, day, and layout. `/settings` also drives notification subscriptions.
 API: see `docs/PROGRESS.md` §3.
 
 ## Durable Object rules
@@ -253,9 +253,9 @@ API: see `docs/PROGRESS.md` §3.
   drop the old copy. Forgetting this makes new markup render unstyled.
 - Client JS (`public/app.js`) is progressive enhancement only: card expand,
   synthesis fold, copy-to-clipboard refs. No framework, no build.
-- Archive and day are presentation state: `view=archived` and `day=YYYY-MM-DD`
-  are query parameters, not stored columns. `archived_at` is the only archive
-  state (`NULL` = active). Keep them when adding a link or a form redirect.
+- Archive, day and source are presentation state: `view=archived`,
+  `day=YYYY-MM-DD` and `source=x|linkedin|youtube` are query parameters, not
+  stored columns. `archived_at` is the only archive state (`NULL` = active). Keep them when adding a link or a form redirect.
   Language has a stored default in `settings` (set on `/settings`); `lang=tr|en`
   stays a per-view override and is still kept on links and form redirects. Day
   grouping and the calendar use UTC, matching `formatDate`.
