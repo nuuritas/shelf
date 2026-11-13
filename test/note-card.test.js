@@ -76,7 +76,7 @@ test('a note with a source links to it and hides the duplicate H1', () => {
   assert.equal((html.match(/How agent memory works/g) || []).length, 1); // title only; the duplicate H1 is stripped
 });
 
-test('an HTML note renders in a sandboxed frame, never raw markup', () => {
+test('an HTML note keeps its document off the library card', () => {
   const html = renderPage({
     bookmarks: [
       note({
@@ -84,6 +84,7 @@ test('an HTML note renders in a sandboxed frame, never raw markup', () => {
         content: '<h1>Hi</h1><script>alert(1)</script>',
         text: 'Hi alert(1)',
         title: 'HTML note',
+        summary: 'The short version of the document.',
       }),
     ],
     total: 1,
@@ -91,11 +92,35 @@ test('an HTML note renders in a sandboxed frame, never raw markup', () => {
     layout: 'saves',
   });
   assert.doesNotMatch(html, /<script>alert/);
-  assert.match(html, /<iframe class="note-frame" src="\/p\/n0te1\/frame"/);
-  assert.match(html, /sandbox/);
-  assert.match(html, /referrerpolicy="no-referrer"/);
+  assert.doesNotMatch(html, /<iframe/);
+  assert.doesNotMatch(html, /\/p\/n0te1\/frame/);
+  assert.match(html, /The short version of the document\./);
+  assert.doesNotMatch(html, /Hi alert\(1\)/);
+  assert.match(html, /class="note-open-link" href="\/p\/n0te1"/);
+  assert.match(html, /Open full note/);
+  assert.match(html, /HTML document/);
 });
 
+
+test('an HTML note without an abstract falls back to a plain-text excerpt', () => {
+  const html = renderPage({
+    bookmarks: [
+      note({
+        format: 'html',
+        content: '<h1>Report</h1><p>The installed base grew.</p>',
+        text: 'The installed base grew.',
+        title: 'Report',
+        summary: null,
+        summaryStatus: 'disabled',
+      }),
+    ],
+    total: 1,
+    query: '',
+    layout: 'saves',
+  });
+  assert.doesNotMatch(html, /<iframe/);
+  assert.match(html, /class="note-excerpt">The installed base grew\.<\/p>/);
+});
 
 test('the full note page renders markdown and the HTML frame', () => {
   const markdown = renderNotePage({ bookmark: note() });
@@ -110,5 +135,6 @@ test('the full note page renders markdown and the HTML frame', () => {
   });
   assert.match(html, /<iframe class="note-frame note-frame-full" src="\/p\/n0te1\/frame"/);
   assert.match(html, /sandbox/);
+  assert.match(html, /Full document/);
   assert.doesNotMatch(html, /<script>alert/);
 });

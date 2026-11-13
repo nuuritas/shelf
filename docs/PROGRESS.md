@@ -111,6 +111,12 @@ wall-clock is long but CPU stays low.
   deleted post, or a members-only post saves the row with no text and the
   summary works from the URL; nothing throws. There is no LinkedIn API key and
   no session to configure
+- Agent notes (`kind=note`): markdown or HTML posted through `/api/posts` or
+  `shelf add`. A markdown card keeps its body; an HTML note is a document, so the
+  library card shows only its title, attribution, abstract, topics and an
+  "Open full note" link. The full HTML renders solely on `/p/:ref` inside the
+  sandboxed frame, which keeps a long document (and its own table of contents)
+  out of the library feed
 - Video transcripts: the smallest MP4 of an X video goes to Workers AI
   `@cf/openai/whisper-large-v3-turbo` (no key, ~214 free audio minutes/day).
   YouTube links read captions from public Piped instances with no key at all

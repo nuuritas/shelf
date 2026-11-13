@@ -633,6 +633,7 @@ export function renderNotePage({ bookmark }: { bookmark: Bookmark }): string {
               : ''
           }
 
+          ${bookmark.format === 'html' ? '<p class="note-document-label">Full document</p>' : ''}
           ${body}
         </article>
       </main>
@@ -905,7 +906,14 @@ function renderBookmark(
   `;
 }
 
-/** An agent-written note: title, attribution, markdown body, optional abstract. */
+/** "Open the full note": a page with an arrow leaving it. */
+const NOTE_OPEN_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
+
+/**
+ * An agent-written note on a library page: title, attribution, the abstract and
+ * a way into the note. An HTML note is a document, not card copy, so its body
+ * is never embedded here — only `/p/:ref` renders the full document.
+ */
 function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
   const agent = bookmark.agent;
   const attribution =
@@ -913,11 +921,19 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
   const archived = Boolean(bookmark.archivedAt);
   const sourceUrl = safeHttpUrl(bookmark.sourceUrl || '');
   const title = bookmark.title || 'Untitled note';
-  const body =
-    bookmark.format === 'markdown'
-      ? renderMarkdown(stripDuplicateHeading(bookmark.content || '', title))
-      : `<iframe class="note-frame" src="/p/${escapeHtml(bookmark.ref)}/frame" title="${escapeHtml(title)}" sandbox referrerpolicy="no-referrer" loading="lazy"></iframe>
-         <p class="note-format-note"><a href="/p/${escapeHtml(bookmark.ref)}">Open full note</a></p>`;
+  const isHtml = bookmark.format === 'html';
+  const href = `/p/${escapeHtml(bookmark.ref)}`;
+  const abstract = bookmark.summary
+    ? `<section class="note-abstract">
+              <span class="summary-label">Abstract (agent-written)</span>
+              ${renderParagraphs(bookmark.summary)}
+            </section>`
+    : '';
+  const preview = isHtml
+    ? !bookmark.summary && bookmark.text
+      ? `<p class="note-excerpt">${escapeHtml(truncate(bookmark.text, 260))}</p>`
+      : ''
+    : `<div class="note-body">${renderMarkdown(stripDuplicateHeading(bookmark.content || '', title))}</div>`;
 
   return `
     <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}">
@@ -926,7 +942,7 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
           <span class="avatar avatar-fallback note-avatar" aria-hidden="true">AI</span>
           <div class="author-text">
             <div class="author-line">
-              <strong>${escapeHtml(title)}</strong>
+              <strong><a class="note-title-link" href="${href}">${escapeHtml(title)}</a></strong>
               <span class="ai-badge" title="Written by an AI agent">AI-generated</span>
             </div>
             <div class="meta">
@@ -945,20 +961,12 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
         ${
           sourceUrl
             ? `<a class="x-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
-            : '<span class="x-link note-kind">Note</span>'
+            : `<span class="x-link note-kind">${isHtml ? 'HTML document' : 'Note'}</span>`
         }
       </header>
 
-      <div class="note-body">${body}</div>
-
-      ${
-        bookmark.summary
-          ? `<section class="note-abstract">
-              <span class="summary-label">Abstract (agent-written)</span>
-              ${renderParagraphs(bookmark.summary)}
-            </section>`
-          : ''
-      }
+      ${abstract}
+      ${preview}
 
       ${
         bookmark.topics?.length
@@ -974,7 +982,7 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
       <footer class="card-foot">
         <div class="metrics"></div>
         <div class="card-actions">
-          <a href="/p/${escapeHtml(bookmark.ref)}">Open note</a>
+          <a class="note-open-link" href="${href}">${NOTE_OPEN_ICON}<span>${isHtml ? 'Open full note' : 'Open note'}</span></a>
           <span class="dot">·</span>
           <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
           <span class="dot">·</span>
@@ -1425,7 +1433,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=15">
+  <link rel="stylesheet" href="/style.css?v=16">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1474,7 +1482,13 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-body th { background: var(--surface-soft); }
 .note-abstract { margin: 0 0 14px; padding: 12px 14px; border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; background: var(--accent-soft); }
 .note-abstract p { margin: 6px 0 0; }
-.note-format-note { margin: 8px 0 0; color: var(--faint); font-size: 12px; }
+.note-title-link { color: inherit; text-decoration: none; }
+.note-title-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.note-excerpt { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+.note-open-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 10px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--ink); font-size: 12px; font-weight: 600; }
+.note-open-link:hover { border-color: var(--ink); background: var(--surface-soft); color: var(--ink); }
+.note-open-link svg { flex: 0 0 auto; }
+.note-document-label { margin: 22px 0 8px; color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
 .note-frame { display: block; width: 100%; height: 420px; min-height: 320px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .note-frame-full { height: 80vh; }
 .post-shell { max-width: 820px; }
