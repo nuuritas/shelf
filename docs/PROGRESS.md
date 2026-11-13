@@ -116,8 +116,9 @@ wall-clock is long but CPU stays low.
   YouTube links read captions from public Piped instances with no key at all
   (two are tried by default), fall back to Supadata native captions when
   `SUPADATA_API_KEY` is set, and can also be filled by `shelf youtube` from the
-  Mac's residential IP (it runs `get-youtube-transcript` and posts through
-  `/api/bookmarks/:id/transcripts`).
+  Mac's residential IP (it runs the optional `out/yt/fetch.sh` yt-dlp wrapper,
+  which caches per video id, falls back to `get-youtube-transcript`, and posts
+  through `/api/bookmarks/:id/transcripts`).
   Results are stored in `bookmarks.transcripts_json`, fed to the summarizer, and
   shown in a fold. Two videos per bookmark, 20 MB each; a failure never blocks
   the summary
@@ -252,8 +253,10 @@ several others tested were down. `PIPED_API_URL` overrides the ladder, and
 A `TRANSCRIPT_API_URL` template is tried first, so any third-party or
 self-hosted caption source can be plugged in without touching the Worker: JSON
 (`text`, `transcript`, `content`), WebVTT, SRT, and plain text are all accepted.
-For a zero-cost path, `shelf youtube` runs `get-youtube-transcript` on this Mac's
-residential IP, then posts the result to `/api/bookmarks/:id/transcripts`. The
+For a zero-cost path, `shelf youtube` reads captions on this Mac's residential
+IP — through `out/yt/fetch.sh` (yt-dlp, no key or account, cached by video id)
+when that wrapper is installed, otherwise through `get-youtube-transcript` — and
+then posts the result to `/api/bookmarks/:id/transcripts`. The
 DO stores it and re-queues the summary. It is manual or scheduled, not part of
 the Worker request path. Without a key, captions, or a local sync, the summary
 uses the post and page text.

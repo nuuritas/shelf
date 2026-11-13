@@ -27,7 +27,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { collectYoutubeIds, youtubeVideoId } from '../src/transcript.ts';
+import { collectYoutubeIds, parseTranscriptBody, youtubeVideoId } from '../src/transcript.ts';
 import type {
   Bookmark,
   GetResult,
@@ -606,10 +606,12 @@ async function commandShow(args: ParsedArgs): Promise<void> {
 
 async function commandYoutube(args: ParsedArgs): Promise<void> {
   const limit = Math.max(1, Math.min(Number(args.flags.limit || 20) || 20, 100));
+  const gapSec = Math.max(1, Math.min(Number(args.flags.gap || 5) || 5, 60));
   const dryRun = Boolean(args.flags['dry-run']);
   const bookmarks = await fetchAllBookmarks({ view: 'all' });
   let processed = 0;
   let skipped = 0;
+  let halted = false;
 
   for (const bookmark of bookmarks) {
     if (processed >= limit) break;
@@ -667,10 +669,21 @@ async function commandYoutube(args: ParsedArgs): Promise<void> {
       } catch (error) {
         processed++;
         console.error(`  failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (isRateLimited(error)) {
+          halted = true;
+          console.error('  stopping this run so the rest of the batch does not burn into 429s.');
+        }
       }
+
+      if (halted) break;
+      if (processed < limit) await sleep(gapSec * 1000);
     }
+    if (halted) break;
   }
 
+  if (halted) {
+    console.log('\nStopped early: YouTube rate limited this IP. Re-run in about 90 seconds.');
+  }
   console.log(
     `\n${processed} transcript(s) ${dryRun ? 'would be fetched' : 'processed'}, ${skipped} already done.`,
   );
@@ -678,7 +691,92 @@ async function commandYoutube(args: ParsedArgs): Promise<void> {
 
 const execFileAsync = promisify(execFile);
 
+/** `out/yt/fetch.sh` exit code 2: YouTube answered 429 for this IP. */
+const RATE_LIMIT_EXIT = 2;
+
+/** The local yt-dlp wrapper; optional, so a bare checkout keeps working. */
+const YT_FETCH_SCRIPT =
+  process.env.SHELF_YT_SCRIPT ||
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'out', 'yt', 'fetch.sh');
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+function isRateLimited(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { rateLimited?: boolean }).rateLimited);
+}
+
+/** Last cue end in a WebVTT file, in whole seconds; null when it has no cues. */
+function vttDurationSec(raw: string): number | null {
+  const last = [...raw.matchAll(/-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/g)].at(-1);
+  if (!last) return null;
+
+  const seconds = Number(last[1]) * 3600 + Number(last[2]) * 60 + Number(last[3]) + Number(last[4]) / 1000;
+  return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : null;
+}
+
+/**
+ * Read captions through `out/yt/fetch.sh`, which caches by video id and needs no
+ * key or account. Returns null when the script is not installed, so the caller
+ * can fall back to the third-party tool.
+ */
+async function fetchTranscriptWithYtDlp(
+  videoId: string,
+): Promise<{ text: string; lang: string | null; durationSec: number | null } | null> {
+  if (!existsSync(YT_FETCH_SCRIPT)) return null;
+
+  let output: string;
+  try {
+    const { stdout } = await execFileAsync(YT_FETCH_SCRIPT, [videoId], {
+      timeout: 180_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    output = String(stdout);
+  } catch (error) {
+    if ((error as { code?: number | string }).code === RATE_LIMIT_EXIT) {
+      const limited = new Error('YouTube is rate limiting this IP.') as Error & { rateLimited: true };
+      limited.rateLimited = true;
+      throw limited;
+    }
+    throw error;
+  }
+
+  const file = output.trim().split('\n').filter(Boolean).at(-1);
+  if (!file) throw new Error('out/yt/fetch.sh printed no caption file.');
+
+  const raw = readFileSync(file, 'utf8');
+  const { text } = parseTranscriptBody(raw);
+  if (!text) throw new Error('No transcript text returned.');
+
+  return {
+    text,
+    lang: /\.([A-Za-z][A-Za-z-]*)\.vtt$/.exec(file)?.[1] ?? null,
+    durationSec: vttDurationSec(raw),
+  };
+}
+
 async function fetchLocalTranscript(
+  videoId: string,
+): Promise<{ text: string; lang: string | null; durationSec: number | null }> {
+  let localError: unknown = null;
+  try {
+    const viaYtDlp = await fetchTranscriptWithYtDlp(videoId);
+    if (viaYtDlp) return viaYtDlp;
+  } catch (error) {
+    // A 429 would fail the fallback the same way and only costs the cooldown.
+    if (isRateLimited(error)) throw error;
+    localError = error;
+  }
+
+  try {
+    return await fetchTranscriptWithTool(videoId);
+  } catch (error) {
+    throw localError ?? error;
+  }
+}
+
+async function fetchTranscriptWithTool(
   videoId: string,
 ): Promise<{ text: string; lang: string | null; durationSec: number | null }> {
   const { stdout } = await execFileAsync(
@@ -1209,7 +1307,7 @@ Usage:
   shelf topic <slug> [--limit 50] [--json]     one topic's synthesis + items
   shelf export [--dir ./dir]                   markdown + jsonl for local RAG
   shelf stats [--json]                         archive counts
-  shelf youtube [--limit 20] [--dry-run]       fetch missing YouTube transcripts locally
+  shelf youtube [--limit 20] [--gap 5] [--dry-run]  fetch missing YouTube transcripts locally
   shelf config [--password <pw>] [--url <u>]   show or write credentials
   shelf mcp                                    stdio MCP server for AI clients
 
