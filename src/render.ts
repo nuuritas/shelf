@@ -1,4 +1,5 @@
 import { DEFAULT_SUMMARY_PROMPT } from './ai.ts';
+import { renderMarkdown } from './markdown.ts';
 import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
 import type {
   Author,
@@ -737,6 +738,8 @@ function renderBookmark(
   lang: 'tr' | 'en' = 'tr',
   bilingual = false,
 ): string {
+  if (bookmark.kind === 'note') return renderNoteCard(bookmark, returnTo);
+
   const author: Partial<Author> = bookmark.author ?? {};
   const handle = author.username ? `@${author.username}` : '';
   const displayName = author.name || handle || 'Unknown';
@@ -833,6 +836,104 @@ function renderBookmark(
       </footer>
     </article>
   `;
+}
+
+/** An agent-written note: title, attribution, markdown body, optional abstract. */
+function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
+  const agent = bookmark.agent;
+  const attribution =
+    [agent?.name, agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const archived = Boolean(bookmark.archivedAt);
+  const sourceUrl = safeHttpUrl(bookmark.sourceUrl || '');
+  const title = bookmark.title || 'Untitled note';
+  const body =
+    bookmark.format === 'markdown'
+      ? renderMarkdown(stripDuplicateHeading(bookmark.content || '', title))
+      : `<div class="note-extracted">${renderParagraphs(bookmark.text)}</div>
+         <p class="note-format-note">HTML note · readable text shown. The sandboxed full view is coming in the next slice.</p>`;
+
+  return `
+    <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}">
+      <header class="card-head">
+        <div class="author">
+          <span class="avatar avatar-fallback note-avatar" aria-hidden="true">AI</span>
+          <div class="author-text">
+            <div class="author-line">
+              <strong>${escapeHtml(title)}</strong>
+              <span class="ai-badge" title="Written by an AI agent">AI-generated</span>
+            </div>
+            <div class="meta">
+              <span class="note-agent">${escapeHtml(attribution)}</span>
+              <span class="dot">·</span>
+              ${escapeHtml(formatDate(bookmark.savedAt))}
+              ${
+                bookmark.ref
+                  ? `<button class="ref-chip" type="button" data-copy="${escapeHtml(bookmark.ref)}" title="Copy bookmark id" aria-label="Bookmark id ${escapeHtml(bookmark.ref)}, click to copy">#${escapeHtml(bookmark.ref)}</button>`
+                  : ''
+              }
+              ${archived ? '<span class="archive-chip">Archived</span>' : ''}
+            </div>
+          </div>
+        </div>
+        ${
+          sourceUrl
+            ? `<a class="x-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
+            : '<span class="x-link note-kind">Note</span>'
+        }
+      </header>
+
+      <div class="note-body">${body}</div>
+
+      ${
+        bookmark.summary
+          ? `<section class="note-abstract">
+              <span class="summary-label">Abstract (agent-written)</span>
+              ${renderParagraphs(bookmark.summary)}
+            </section>`
+          : ''
+      }
+
+      ${
+        bookmark.topics?.length
+          ? `<div class="card-topics">${bookmark.topics
+              .map(
+                entry =>
+                  `<a class="card-topic" href="/t/${escapeHtml(entry.slug)}">${escapeHtml(entry.name)}</a>`,
+              )
+              .join('')}</div>`
+          : ''
+      }
+
+      <footer class="card-foot">
+        <div class="metrics"></div>
+        <div class="card-actions">
+          <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
+          <span class="dot">·</span>
+          <form method="post" action="/archive" class="inline-form">
+            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+            <input type="hidden" name="archived" value="${archived ? '0' : '1'}">
+            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+            <button class="link-button" type="submit">${archived ? 'Unarchive' : 'Archive'}</button>
+          </form>
+          <span class="dot">·</span>
+          <form method="post" action="/delete" class="inline-form">
+            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+            <button class="link-button danger" type="submit">Remove</button>
+          </form>
+        </div>
+      </footer>
+    </article>
+  `;
+}
+
+/** Avoid showing the title twice when the markdown opens with the same H1. */
+function stripDuplicateHeading(content: string, title: string): string {
+  const match = /^\s{0,3}#\s+(.+?)\s*$/m.exec(content);
+  if (!match) return content;
+  const heading = match[1].replace(/[*_`]/g, '').trim().toLowerCase();
+  if (heading !== title.trim().toLowerCase()) return content;
+  return content.replace(match[0], '');
 }
 
 function renderQuote(quote: Quote): string {
@@ -1255,15 +1356,46 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=13">
+  <link rel="stylesheet" href="/style.css?v=14">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
+    .card.is-collapsed .note-body,
     .card.is-collapsed .summary-text { display: block; overflow: visible; -webkit-line-clamp: unset; }
     .card.is-collapsed .media-grid,
     .card.is-collapsed .quote,
     .card.is-collapsed .link-stack,
-    .card.is-collapsed .linked-article { display: block; }
+    .card.is-collapsed .note-card .card-head { align-items: flex-start; }
+.note-avatar { background: var(--ink); color: var(--bg); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
+.ai-badge { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.note-kind { color: var(--muted); font-size: 12px; font-weight: 600; }
+.note-agent { color: var(--muted); font-weight: 600; }
+.note-body { margin: 6px 0 14px; font-size: 15px; line-height: 1.62; }
+.note-body > :first-child { margin-top: 0; }
+.note-body h1, .note-body h2, .note-body h3, .note-body h4 { margin: 18px 0 8px; line-height: 1.25; letter-spacing: -0.02em; }
+.note-body h1 { font-size: 26px; }
+.note-body h2 { font-size: 22px; }
+.note-body h3 { font-size: 18px; }
+.note-body h4 { font-size: 15px; }
+.note-body p, .note-body ul, .note-body ol, .note-body blockquote, .note-body pre, .note-body .table-wrap { margin: 0 0 12px; }
+.note-body ul, .note-body ol { padding-left: 22px; }
+.note-body li { margin: 4px 0; }
+.note-body a { color: var(--accent-ink); }
+.note-body code { padding: 1px 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+.note-body pre { padding: 14px 16px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.note-body pre code { padding: 0; border: 0; background: none; }
+.note-body blockquote { padding: 2px 0 2px 14px; border-left: 3px solid var(--line-strong); color: var(--muted); }
+.note-body img { display: block; max-width: 100%; height: auto; margin: 10px 0; border-radius: 12px; }
+.note-body hr { margin: 18px 0; border: 0; border-top: 1px solid var(--line); }
+.note-body .table-wrap { overflow-x: auto; }
+.note-body table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.note-body th, .note-body td { padding: 7px 10px; border: 1px solid var(--line); text-align: left; }
+.note-body th { background: var(--surface-soft); }
+.note-abstract { margin: 0 0 14px; padding: 12px 14px; border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; background: var(--accent-soft); }
+.note-abstract p { margin: 6px 0 0; }
+.note-format-note { color: var(--faint); font-size: 12px; }
+
+.linked-article { display: block; }
     .peek-meta, .expand-button { display: none; }
   </style></noscript>
   <script src="/app.js" defer></script>
