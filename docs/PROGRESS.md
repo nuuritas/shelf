@@ -171,7 +171,7 @@ wall-clock is long but CPU stays low.
 | Method | Route | Notes |
 |---|---|---|
 | `GET` | `/api/bookmarks?q=&topic=&day=&view=&source=&limit=&offset=` | list; `day=YYYY-MM-DD` limits to one saved day; `view=active|archived|all` (default active); `source=x|linkedin|youtube` (default `all`, unknown values fall back to `all`) filters on the canonical URL host; `q` terms are ANDed and match text, author, both summaries, links, and topic names |
-| `POST` | `/api/bookmarks` | `{ "url": ... }`; also accepts `SHARE_TOKEN` bearer |
+| `POST` | `/api/bookmarks` | `{ "url": ... }`; X, LinkedIn, YouTube, or any public http(s) page (`provider=web`, title and readable body stored in `article`); also accepts `SHARE_TOKEN` bearer |
 | `GET` | `/api/bookmarks/:id` | one bookmark by short ref (`k7f3`) or tweet id |
 | `DELETE` | `/api/bookmarks/:id` | delete by short ref or tweet id |
 | `POST` | `/api/bookmarks/:id/archive` | `{ "archived": true }` archives; `false` restores. Accepts a ref |

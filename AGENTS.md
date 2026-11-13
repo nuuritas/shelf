@@ -6,7 +6,8 @@ change things without breaking them.
 
 ## What this is
 
-Single-user bookmark archive for X, LinkedIn and YouTube posts. One Cloudflare Worker
+Single-user bookmark archive for X, LinkedIn and YouTube posts plus saved web
+pages. One Cloudflare Worker
 (`src/worker.ts`) plus one SQLite-backed Durable Object (`src/bookmarks-do.ts`).
 Server-rendered HTML, no client framework, no build step. TypeScript 7.0.2
 (native compiler), bundled by Wrangler.

@@ -1,9 +1,9 @@
 # Shelf
 
-Your own private reading archive for X, LinkedIn and YouTube, on your own
-Cloudflare account. Paste or share a post and it keeps the text, the quote, the
-full article, the images and the links, then writes a plain-language summary and
-files it into a folder. One Worker, one SQLite Durable Object, server-rendered
+Your own private reading archive for X, LinkedIn, YouTube and any web page, on
+your own Cloudflare account. Paste or share a link and it keeps the text, the
+quote, the full article, the images and the links, then writes a plain-language
+summary and files it into a folder. One Worker, one SQLite Durable Object, server-rendered
 HTML, no build step, no database to manage. The free plan is enough for personal
 use.
 

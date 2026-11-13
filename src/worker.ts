@@ -1,5 +1,6 @@
 import { aiConfig, isAiConfigured } from './ai.ts';
 import { Bookmarks } from './bookmarks-do.ts';
+import { parseWebUrl } from './links.ts';
 import { parseLinkedInUrl } from './linkedin.ts';
 import { parseYouTubeUrl } from './youtube.ts';
 import { CSS, renderCalendar, renderLogin, renderPage, renderSettings, renderSetup } from './render.ts';
@@ -465,9 +466,10 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
     return redirect('/?error=Could+not+read+the+shared+link');
   }
 
-  const parsed = extractXUrl(input) ?? parseLinkedInUrl(input) ?? parseYouTubeUrl(input);
+  const parsed =
+    extractXUrl(input) ?? parseLinkedInUrl(input) ?? parseYouTubeUrl(input) ?? parseWebUrl(input);
   if (!parsed) {
-    return redirect('/?error=That+does+not+look+like+an+X+or+LinkedIn+post+link');
+    return redirect('/?error=That+does+not+look+like+a+link');
   }
 
   try {
@@ -580,8 +582,14 @@ async function handleApiSave(request: Request, env: Env): Promise<Response> {
 
   const record = isRecord(body) ? body : {};
   const input = [record.url, record.text].filter(Boolean).join('\n');
-  const parsed = extractXUrl(input) ?? parseLinkedInUrl(input) ?? parseYouTubeUrl(input);
-  if (!parsed) return jsonResponse({ error: 'That does not look like an X, LinkedIn or YouTube post link.' }, 400);
+  const parsed =
+    extractXUrl(input) ?? parseLinkedInUrl(input) ?? parseYouTubeUrl(input) ?? parseWebUrl(input);
+  if (!parsed) {
+    return jsonResponse(
+      { error: 'That does not look like an X, LinkedIn, YouTube or web page link.' },
+      400,
+    );
+  }
 
   try {
     const result = await doJson<SaveResult>(env, '/save', {
