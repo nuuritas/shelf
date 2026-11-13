@@ -946,6 +946,58 @@ const MCP_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'create_post',
+    description:
+      'Save a finished research note as a first-class Shelf note. Call it only when the user asks to ' +
+      'save, publish or keep a result; prefer markdown unless the user asked for visuals. HTML must be ' +
+      'one complete, self-contained, script-free document with inline CSS/SVG, `https:` or `data:` ' +
+      'images, and no forms, external assets or navigation. Re-posting the same `clientId` updates ' +
+      'that note and keeps its id; a different one creates a second note. There is no delete tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        format: {
+          type: 'string',
+          enum: ['markdown', 'html'],
+          description: 'Source format of the note. Markdown for text research; HTML only for visuals.',
+        },
+        content: {
+          type: 'string',
+          description:
+            'The complete note source. Markdown: 256 KB max. HTML: 1 MB max, self-contained and script-free.',
+        },
+        title: {
+          type: 'string',
+          description: 'Card title (200 chars max). Defaults to the first heading or line.',
+        },
+        summary: {
+          type: 'string',
+          description: 'Optional 1-3 sentence abstract the agent writes (4,000 chars max).',
+        },
+        sourceUrl: {
+          type: 'string',
+          description: 'Optional primary source the research is about, http(s) only.',
+        },
+        clientId: {
+          type: 'string',
+          description: 'Optional stable id; re-posting the same value updates one note.',
+        },
+        agent: {
+          type: 'object',
+          description: 'Who wrote the note. Defaults to name "Shelf MCP" and tool "shelf-mcp".',
+          properties: {
+            name: { type: 'string', description: 'Agent or product name, e.g. "Claude Code".' },
+            model: { type: 'string', description: 'Model that wrote it, e.g. "claude-sonnet-4.5".' },
+            tool: { type: 'string', description: 'Tool that called this, e.g. "claude-code".' },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['format', 'content'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 const MCP_INSTRUCTIONS =
@@ -953,7 +1005,10 @@ const MCP_INSTRUCTIONS =
   'they saved or asks what they have read about a subject, call search_bookmarks first, then ' +
   'get_bookmark for the entries worth quoting. Prefer quoting the AI summary and original post text ' +
   'verbatim. Summaries have a Turkish primary (`summary`) and often an English translation (`summaryEn`); ' +
-  'archived items are still part of the archive and are included in search.';
+  'archived items are still part of the archive and are included in search. ' +
+  'When the user asks to save, publish or keep a finished research result, call create_post: ' +
+  'prefer markdown unless the user asked for visuals, keep HTML self-contained and script-free, ' +
+  'and report the returned note id and read URL.';
 
 async function callTool(name: string, input: Record<string, unknown>): Promise<string> {
   switch (name) {
@@ -1008,6 +1063,46 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
       if (topic.overview) parts.push('', '## Synthesis', '', topic.overview.trim());
       parts.push('', ...result.bookmarks.map((bookmark, index) => renderCard(bookmark, index + 1)));
       return parts.join('\n');
+    }
+
+    case 'create_post': {
+      const format = String(input.format || '');
+      if (format !== 'markdown' && format !== 'html') {
+        throw new Error('`format` must be "markdown" or "html".');
+      }
+      const content = String(input.content || '');
+      if (!content.trim()) throw new Error('`content` is required.');
+
+      const agentInput =
+        input.agent && typeof input.agent === 'object'
+          ? (input.agent as Record<string, unknown>)
+          : {};
+      const agentField = (value: unknown): string => (typeof value === 'string' ? value : '');
+      const result = await apiPost<SaveResult>('api/posts', {
+        format,
+        content,
+        title: typeof input.title === 'string' ? input.title : undefined,
+        summary: typeof input.summary === 'string' ? input.summary : undefined,
+        sourceUrl: typeof input.sourceUrl === 'string' ? input.sourceUrl : undefined,
+        clientId: typeof input.clientId === 'string' ? input.clientId : undefined,
+        agent: {
+          name: agentField(agentInput.name) || 'Shelf MCP',
+          model: agentField(agentInput.model),
+          tool: agentField(agentInput.tool) || 'shelf-mcp',
+        },
+      });
+
+      const bookmark = result.bookmark;
+      const size = `${(content.length / 1024).toFixed(1)} KB`;
+      const lines = [
+        `${result.created ? 'Added' : 'Updated'} note #${bookmark?.ref ?? '?'} (${format}, ${size}).`,
+      ];
+      if (bookmark?.title) lines.push(bookmark.title);
+      if (bookmark?.tweetId) {
+        lines.push(`id: ${bookmark.tweetId}`);
+        lines.push(`${loadConfig().url.replace(/\/$/, '')}/?layout=saves#bookmark-${bookmark.tweetId}`);
+      }
+      return lines.join('\n');
     }
 
     default:
