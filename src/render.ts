@@ -1435,7 +1435,19 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
     .card.is-collapsed .quote,
     .card.is-collapsed .link-stack,
     .card.is-collapsed .note-card .card-head { align-items: flex-start; }
-.note-avatar { background: var(--ink); color: var(--bg); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
+
+.linked-article { display: block; }
+    .peek-meta, .expand-button { display: none; }
+  </style></noscript>
+  <script src="/app.js" defer></script>
+</head>
+<body class="${escapeHtml(bodyClass)}">
+  ${body}
+</body>
+</html>`;
+}
+
+const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
 .ai-badge { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .note-kind { color: var(--muted); font-size: 12px; font-weight: 600; }
 .note-agent { color: var(--muted); font-weight: 600; }
@@ -1463,25 +1475,14 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
 .note-abstract { margin: 0 0 14px; padding: 12px 14px; border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; background: var(--accent-soft); }
 .note-abstract p { margin: 6px 0 0; }
 .note-format-note { color: var(--faint); font-size: 12px; }
-.note-frame { display: block; width: 100%; height: 70vh; min-height: 420px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.note-frame { display: block; width: 100%; height: 420px; min-height: 320px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .note-frame-full { height: 80vh; }
 .post-shell { max-width: 820px; }
 .note-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .note-title { margin: 0; font-size: 34px; line-height: 1.15; letter-spacing: -0.03em; }
 .post-meta { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
 .post-source { margin: 6px 0 0; font-size: 13px; }
-.note-body-full { margin: 20px 0 0; font-size: 16px; }
-
-.linked-article { display: block; }
-    .peek-meta, .expand-button { display: none; }
-  </style></noscript>
-  <script src="/app.js" defer></script>
-</head>
-<body class="${escapeHtml(bodyClass)}">
-  ${body}
-</body>
-</html>`;
-}
+.note-body-full { margin: 20px 0 0; font-size: 16px; }`;
 
 export const CSS: string = `:root {
   color-scheme: light dark;
@@ -3246,4 +3247,5 @@ h1, h2, h3, p { margin-top: 0; }
   .settings-card textarea { min-height: 220px; }
   .settings-actions { flex-direction: column; align-items: stretch; }
 }
+${NOTE_STYLES}
 `;
