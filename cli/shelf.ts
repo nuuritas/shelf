@@ -499,10 +499,13 @@ function inferNoteFormat(path: string): 'markdown' | 'html' | null {
 
 async function commandAdd(args: ParsedArgs): Promise<void> {
   const target = args.positional[0];
-  if (!target || args.flags.help || target === '--help') {
+  if (args.flags.help || target === '--help') {
     console.log(ADD_HELP);
-    if (!target) throw new Error('Usage: shelf add <file|-> [--format markdown|html] [--title "..."]');
     return;
+  }
+  if (!target) {
+    console.log(ADD_HELP);
+    throw new Error('Usage: shelf add <file|-> [--format markdown|html] [--title "..."]');
   }
 
   let content: string;
@@ -1328,6 +1331,10 @@ MCP examples:
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  if (args.flags.version) {
+    console.log(VERSION);
+    return;
+  }
   const command = args.positional.shift() || 'help';
 
   if (command === 'help' || command === '--help' || command === '-h') {
