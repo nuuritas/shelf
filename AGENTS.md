@@ -117,9 +117,10 @@ take the shortcut.
 `fetch` → session check (`isAuthorized`) or `SHARE_TOKEN` for
 `POST /api/bookmarks` → `doJson(env, path)` → DO stub (`library`) → JSON/HTML.
 
-Pages: `/` (folder index), `/t/:slug` (one folder), `/calendar`, `/settings`, `/login`,
-`/share` (PWA fallback). `/` is folder-first by default; `?layout=saves` renders
-the flat latest-first library, and a query or `day` always renders the flat list.
+Pages: `/` (all saves, latest first), `?layout=folders` (folder grid), `/t/:slug`
+(one folder), `/calendar`, `/settings`, `/login`, `/share` (PWA fallback). `/` is
+the flat latest-first library by default; folders are an opt-in view, and a query
+or `day` always renders the flat list.
 The library and folder pages accept `view=active|archived`,
 `source=x|linkedin|youtube` and `lang=tr|en`; the library also accepts
 `day=YYYY-MM-DD` for a single saved day (linked from `/calendar`). Forms carry

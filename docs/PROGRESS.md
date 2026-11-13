@@ -124,13 +124,13 @@ wall-clock is long but CPU stays low.
 - Topic induction + per-item filing + rolling per-topic synthesis
 - Summary versions: "New version" with an optional instruction; original is
   never overwritten
-- Folder-first library: `/` lists the AI topics as flat folder cards (name,
-  description, active/archived counts) instead of opening on a tweet feed.
-  Clicking a card opens `/t/:slug`; a breadcrumb returns to the folder index.
-  There is no horizontal tab strip. `?layout=saves` keeps the flat latest-first
-  list, and a search or day view always uses the list. Folders are the existing
-  topic model, so one bookmark can sit in more than one folder and a reindex can
-  rename or merge them
+- Folder view is one click away, not the landing page: `/` still lists every save
+  latest-first, and `?layout=folders` swaps in the AI topics as flat folder cards
+  (name, description, active/archived counts). Clicking a card opens `/t/:slug`
+  and a breadcrumb returns to the folder grid. There is no horizontal tab strip.
+  A search or day view always uses the save list. Folders are the existing topic
+  model, so one bookmark can sit in more than one folder and a reindex can rename
+  or merge them
 - Calendar (`/calendar`): a month grid with the number of saves on each day,
   previous/next month navigation, and a link from every non-empty day to
   `/?day=YYYY-MM-DD`. The day view reuses the normal cards, archive toggle,

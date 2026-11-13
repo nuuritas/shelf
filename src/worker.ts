@@ -502,7 +502,7 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: parsed.canonicalUrl }),
     });
-    return redirect(`/?layout=saves&notice=${result.created ? 'added' : 'exists'}`);
+    return redirect(`/?notice=${result.created ? 'added' : 'exists'}`);
   } catch (error) {
     return redirect(`/?error=${encodeURIComponent(errorMessage(error))}`);
   }
@@ -998,9 +998,9 @@ function parseView(value: string | null): 'active' | 'archived' {
   return value === 'archived' ? 'archived' : 'active';
 }
 
-/** Home is folder-first; `layout=saves` asks for the flat latest-first list. */
+/** Home is the flat latest-first list; `layout=folders` opens the topic grid. */
 function parseLayout(value: string | null): 'folders' | 'saves' {
-  return value === 'saves' ? 'saves' : 'folders';
+  return value === 'folders' ? 'folders' : 'saves';
 }
 
 /** `YYYY-MM-DD`, or null for anything that is not a real day. */
