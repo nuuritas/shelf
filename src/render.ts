@@ -8,6 +8,7 @@ import type {
   MediaItem,
   Metrics,
   Quote,
+  SourceFilter,
   StoredSettings,
   SummaryVersion,
   TopicSummary,
@@ -19,7 +20,9 @@ import {
   formatCount,
   formatDate,
   linkifyText,
+  parseSource,
   safeHttpUrl,
+  sourceOfUrl,
   truncate,
 } from './util.ts';
 
@@ -51,43 +54,43 @@ export interface RenderPageOptions {
   lang?: 'tr' | 'en';
   /** `folders` is the default home; `saves` is the flat latest-first list. */
   layout?: 'folders' | 'saves';
+  /** Platform filter; `all` (the default) shows every source. */
+  source?: SourceFilter;
   activeTotal?: number;
   archivedTotal?: number;
   missingEnglish?: number;
   bilingual?: boolean;
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  x: 'X',
+  linkedin: 'LinkedIn',
+  youtube: 'YouTube',
+  other: 'Post',
+};
+
 /** Short source name for a bookmark URL, used as the outbound link label. */
 function sourceName(url: string | null): string {
-  if (!url) return 'Post';
-  let host = '';
-  try {
-    host = new URL(url).hostname.toLowerCase();
-  } catch {
-    return 'Post';
-  }
-  if (host === 'linkedin.com' || host.endsWith('.linkedin.com')) return 'LinkedIn';
-  if (host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com')) return 'YouTube';
-  if (
-    host === 'x.com' ||
-    host.endsWith('.x.com') ||
-    host === 'twitter.com' ||
-    host.endsWith('.twitter.com')
-  ) {
-    return 'X';
-  }
-  return 'Post';
+  return SOURCE_LABELS[sourceOfUrl(url)] || 'Post';
 }
 
 /** Build a library/topic URL without empty or default parameters. */
 function libraryHref(
   path: string,
-  { query = '', day = null, view = 'active', lang = 'tr', layout = 'folders' }: {
+  {
+    query = '',
+    day = null,
+    view = 'active',
+    lang = 'tr',
+    layout = 'folders',
+    source = 'all',
+  }: {
     query?: string;
     day?: string | null;
     view?: 'active' | 'archived';
     lang?: 'tr' | 'en';
     layout?: 'folders' | 'saves';
+    source?: SourceFilter;
   } = {},
 ): string {
   const params = new URLSearchParams();
@@ -96,6 +99,7 @@ function libraryHref(
   if (view === 'archived') params.set('view', 'archived');
   if (lang === 'en') params.set('lang', 'en');
   if (layout === 'saves') params.set('layout', 'saves');
+  if (source !== 'all') params.set('source', source);
   const search = params.toString();
   return search ? `${path}?${search}` : path;
 }
@@ -113,6 +117,7 @@ export function renderPage({
   view: viewOption = 'active',
   lang: langOption = 'tr',
   layout: layoutOption = 'folders',
+  source: sourceOption = 'all',
   activeTotal = 0,
   archivedTotal = 0,
   missingEnglish = 0,
@@ -121,6 +126,7 @@ export function renderPage({
   const view = viewOption === 'archived' ? 'archived' : 'active';
   const lang = langOption === 'en' ? 'en' : 'tr';
   const layout = layoutOption === 'saves' ? 'saves' : 'folders';
+  const source = parseSource(sourceOption);
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(dayOption || '')) ? String(dayOption) : null;
   const pending = bookmarks.some(
     bookmark =>
@@ -140,7 +146,30 @@ export function renderPage({
     view,
     lang,
     layout: layoutParam,
+    source,
   });
+  const sourceChips = (
+    [
+      ['all', 'All'],
+      ['x', 'X'],
+      ['linkedin', 'LinkedIn'],
+      ['youtube', 'YouTube'],
+    ] as const
+  )
+    .map(
+      ([value, label]) =>
+        `<a class="${source === value ? 'active' : ''}" href="${escapeHtml(
+          libraryHref(path, {
+            query: currentQuery,
+            day: currentDay,
+            view,
+            lang,
+            layout: layoutParam,
+            source: value,
+          }),
+        )}">${label}</a>`,
+    )
+    .join('');
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
   const showTranslateBanner =
@@ -228,7 +257,7 @@ export function renderPage({
           ${
             topic
               ? `<nav class="folder-crumbs" aria-label="Folders">
-                  <a href="${escapeHtml(libraryHref('/', { view, lang }))}">← All folders</a>
+                  <a href="${escapeHtml(libraryHref('/', { view, lang, source }))}">← All folders</a>
                 </nav>`
               : ''
           }
@@ -242,41 +271,43 @@ export function renderPage({
                 ${currentDay ? `<input type="hidden" name="day" value="${escapeHtml(currentDay)}">` : ''}
                 ${view === 'archived' ? '<input type="hidden" name="view" value="archived">' : ''}
                 ${lang === 'en' ? '<input type="hidden" name="lang" value="en">' : ''}
+                ${source !== 'all' ? `<input type="hidden" name="source" value="${source}">` : ''}
                 ${!topic && layout === 'saves' ? '<input type="hidden" name="layout" value="saves">' : ''}
                 <label class="sr-only" for="q">Search bookmarks</label>
                 <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
                 <button type="submit">Search</button>
-                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, view, lang, layout: layoutParam }))}">Clear</a>` : ''}
+                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, view, lang, layout: layoutParam, source }))}">Clear</a>` : ''}
               </form>
               <div class="library-switches">
                 ${
                   !topic && topics.length
                     ? `<nav class="view-switch layout-switch" role="group" aria-label="Library layout">
                         <a class="${showingList ? '' : 'active'}" href="${escapeHtml(
-                          libraryHref('/', { view, lang, layout: 'folders' }),
+                          libraryHref('/', { view, lang, layout: 'folders', source }),
                         )}">Folders<span>${folderTopics.length}</span></a>
                         <a class="${showingList ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref('/', { view, lang, layout: 'saves' }),
+                          libraryHref('/', { view, lang, layout: 'saves', source }),
                         )}">All saves<span>${view === 'archived' ? archivedCount : activeCount}</span></a>
                       </nav>`
                     : ''
                 }
                 <nav class="view-switch" role="group" aria-label="Archive filter">
                   <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'active', lang, layout: layoutParam }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'active', lang, layout: layoutParam, source }),
                   )}">Active<span>${activeCount}</span></a>
                   <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'archived', lang, layout: layoutParam }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'archived', lang, layout: layoutParam, source }),
                   )}">Archived<span>${archivedCount}</span></a>
                 </nav>
+                <nav class="view-switch source-switch" role="group" aria-label="Source filter">${sourceChips}</nav>
                 ${
                   bilingual
                     ? `<nav class="lang-switch" role="group" aria-label="Summary language">
                         <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'tr', layout: layoutParam }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'tr', layout: layoutParam, source }),
                         )}">Türkçe</a>
                         <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'en', layout: layoutParam }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'en', layout: layoutParam, source }),
                         )}">English</a>
                       </nav>`
                     : ''
@@ -290,7 +321,7 @@ export function renderPage({
             currentDay
               ? `<div class="day-banner">
                   <span>Showing ${total} ${view === 'archived' ? 'archived' : 'active'} of ${activeCount + archivedCount} ${activeCount + archivedCount === 1 ? 'save' : 'saves'} from <strong>${escapeHtml(dayLabel)}</strong>.</span>
-                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, view, lang, layout: layoutParam }))}">Clear date</a>
+                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, view, lang, layout: layoutParam, source }))}">Clear date</a>
                 </div>`
               : ''
           }
@@ -330,7 +361,7 @@ export function renderPage({
 
           ${
             showFolders
-              ? renderFolderGrid(folderTopics, { view, lang })
+              ? renderFolderGrid(folderTopics, { view, lang, source })
               : layout === 'folders' && !topic && !currentQuery && !currentDay
                 ? `<p class="folder-hint">Folders form themselves once a few saves have been summarized. Until then, the latest saves are below.</p>`
                 : ''
@@ -510,7 +541,11 @@ export function renderCalendar({
 
 function renderFolderGrid(
   topics: TopicSummary[],
-  { view, lang }: { view: 'active' | 'archived'; lang: 'tr' | 'en' },
+  {
+    view,
+    lang,
+    source,
+  }: { view: 'active' | 'archived'; lang: 'tr' | 'en'; source: SourceFilter },
 ): string {
   return `<div class="folder-grid" aria-label="Folders">${topics
     .map(entry => {
@@ -521,7 +556,7 @@ function renderFolderGrid(
           ? `${count} archived`
           : `${count} ${count === 1 ? 'save' : 'saves'}${archived ? ` · ${archived} archived` : ''}`;
       return `
-        <a class="folder-card" href="${escapeHtml(libraryHref(`/t/${entry.slug}`, { view, lang }))}">
+        <a class="folder-card" href="${escapeHtml(libraryHref(`/t/${entry.slug}`, { view, lang, source }))}">
           <span class="folder-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
               <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/>
@@ -1214,7 +1249,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=11">
+  <link rel="stylesheet" href="/style.css?v=12">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,

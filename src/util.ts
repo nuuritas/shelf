@@ -1,3 +1,64 @@
+import type { BookmarkSource, SourceFilter } from './types.ts';
+
+/**
+ * Host of a `url` column, between `://` and the first `/`, in SQL. Kept in sync
+ * with `sourceOfUrl` so the UI label and the list query agree.
+ */
+const URL_HOST_SQL = `CASE
+  WHEN instr(lower(url), '://') > 0 THEN lower(substr(
+    lower(url),
+    instr(lower(url), '://') + 3,
+    coalesce(
+      nullif(instr(substr(lower(url), instr(lower(url), '://') + 3), '/'), 0),
+      length(substr(lower(url), instr(lower(url), '://') + 3)) + 1
+    ) - 1
+  ))
+  ELSE ''
+END`;
+
+/** The platform a bookmark URL points at; unknown hosts are `other`. */
+export function sourceOfUrl(value: unknown): BookmarkSource {
+  if (!value) return 'other';
+  let host = '';
+  try {
+    host = new URL(String(value)).hostname.toLowerCase();
+  } catch {
+    return 'other';
+  }
+  if (
+    host === 'x.com' ||
+    host.endsWith('.x.com') ||
+    host === 'twitter.com' ||
+    host.endsWith('.twitter.com')
+  ) {
+    return 'x';
+  }
+  if (host === 'linkedin.com' || host.endsWith('.linkedin.com')) return 'linkedin';
+  if (host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com')) {
+    return 'youtube';
+  }
+  return 'other';
+}
+
+/** `source` query value → a filter; anything unknown falls back to `all`. */
+export function parseSource(value: unknown): SourceFilter {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return raw === 'x' || raw === 'linkedin' || raw === 'youtube' ? raw : 'all';
+}
+
+/** SQL predicate over a `url` column for one source, matching `sourceOfUrl`. */
+export function sourceFilterSql(source: Exclude<SourceFilter, 'all'>): string {
+  const host = URL_HOST_SQL;
+  switch (source) {
+    case 'x':
+      return `(${host} = 'x.com' OR ${host} LIKE '%.x.com' OR ${host} = 'twitter.com' OR ${host} LIKE '%.twitter.com')`;
+    case 'linkedin':
+      return `(${host} = 'linkedin.com' OR ${host} LIKE '%.linkedin.com')`;
+    case 'youtube':
+      return `(${host} = 'youtu.be' OR ${host} = 'youtube.com' OR ${host} LIKE '%.youtube.com')`;
+  }
+}
+
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replaceAll('&', '&amp;')

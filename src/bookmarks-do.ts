@@ -24,7 +24,7 @@ import {
 } from './settings.ts';
 import { parseYouTubeUrl, readYouTubePost } from './youtube.ts';
 import { readTranscripts } from './transcript.ts';
-import { clampInteger, jsonResponse } from './util.ts';
+import { clampInteger, jsonResponse, parseSource, sourceFilterSql } from './util.ts';
 import { readPost } from './x.ts';
 import type {
   ArchiveResult,
@@ -45,6 +45,7 @@ import type {
   Quote,
   ReindexResult,
   SaveResult,
+  SourceFilter,
   StatsResult,
   StoreTranscriptsResult,
   StoredSettings,
@@ -643,7 +644,11 @@ export class Bookmarks extends DurableObject<Env> {
 
       if (request.method === 'GET' && url.pathname === '/topic') {
         return jsonResponse(
-          this.topic(url.searchParams.get('slug'), parseView(url.searchParams.get('view'))),
+          this.topic(
+            url.searchParams.get('slug'),
+            parseView(url.searchParams.get('view')),
+            parseSource(url.searchParams.get('source')),
+          ),
         );
       }
 
@@ -805,6 +810,7 @@ export class Bookmarks extends DurableObject<Env> {
     const topicSlug = (searchParams.get('topic') || '').trim();
     const day = normalizeDay(searchParams.get('day'));
     const view = parseView(searchParams.get('view'));
+    const source = parseSource(searchParams.get('source'));
     const limit = clampInteger(searchParams.get('limit'), 50, 1, 100);
     const offset = clampInteger(searchParams.get('offset'), 0, 0, 10_000);
 
@@ -820,6 +826,9 @@ export class Bookmarks extends DurableObject<Env> {
       filters.push('saved_at >= ? AND saved_at < ?');
       args.push(dayStart(day), nextDayStart(day));
     }
+
+    // Source is resolved from the canonical URL, not from `provider`.
+    if (source !== 'all') filters.push(sourceFilterSql(source));
 
     if (query) {
       // Every whitespace-separated term must match somewhere, so "claude code"
@@ -1022,7 +1031,7 @@ export class Bookmarks extends DurableObject<Env> {
       }));
   }
 
-  topic(slug: string | null, view: ArchiveView = 'active'): TopicPageResult {
+  topic(slug: string | null, view: ArchiveView = 'active', source: SourceFilter = 'all'): TopicPageResult {
     const clean = String(slug || '').trim();
     const row = clean
       ? this.sql.exec<TopicRow>('SELECT * FROM topics WHERE slug = ?', clean).toArray()[0]
@@ -1035,12 +1044,13 @@ export class Bookmarks extends DurableObject<Env> {
         : view === 'archived'
           ? 'AND b.archived_at IS NOT NULL'
           : '';
+    const sourceFilter = source === 'all' ? '' : `AND ${sourceFilterSql(source)}`;
 
     const bookmarks = this.sql
       .exec<BookmarkRow>(
         `SELECT b.* FROM bookmarks b
          JOIN item_topics it ON it.tweet_id = b.tweet_id
-         WHERE it.slug = ? ${archiveFilter}
+         WHERE it.slug = ? ${archiveFilter} ${sourceFilter}
          ORDER BY b.saved_at DESC
          LIMIT 100`,
         clean,
@@ -1057,7 +1067,7 @@ export class Bookmarks extends DurableObject<Env> {
            SUM(CASE WHEN b.archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived
          FROM item_topics it
          JOIN bookmarks b ON b.tweet_id = it.tweet_id
-         WHERE it.slug = ?`,
+         WHERE it.slug = ? ${sourceFilter}`,
         clean,
       )
       .toArray()[0];

@@ -338,6 +338,12 @@ export type BookmarkRow = {
  * Durable Object JSON responses.
  * ------------------------------------------------------------------ */
 
+/** Canonical platform of a saved bookmark, resolved from its URL. */
+export type BookmarkSource = 'x' | 'linkedin' | 'youtube' | 'other';
+
+/** The library/API source filter; `all` includes every platform. */
+export type SourceFilter = 'all' | Exclude<BookmarkSource, 'other'>;
+
 export interface ListResult {
   bookmarks: Bookmark[];
   total: number;
