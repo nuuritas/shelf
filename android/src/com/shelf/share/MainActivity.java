@@ -4,39 +4,57 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.PopupMenu;
 import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
 
 /**
- * The app window: the library in a WebView. Tapping the launcher icon lands
- * here, so the app opens as an app instead of bouncing to a browser. Links to
- * other sites are handed to the browser; the shelf itself stays in the app.
+ * The app window: the configured library in a WebView. The server is chosen at
+ * runtime in {@link SetupActivity}; nothing about it is compiled into the APK.
  */
 public class MainActivity extends Activity {
     static final String EXTRA_OPEN_URL = "open_url";
+    private static final int REQUEST_SETUP = 1;
 
+    private Prefs prefs;
     private WebView web;
     private ProgressBar progress;
+    private String baseUrl;
+    private String mode;
     private String siteHost;
     private boolean night;
+    private boolean recreating;
     private long pausedAt;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
 
-        Uri site = Uri.parse(Config.SITE_URL);
+        prefs = new Prefs(this);
+        if (!prefs.hasConfig()) {
+            openSetup();
+            return;
+        }
+
+        baseUrl = prefs.getBaseUrl();
+        mode = prefs.getMode();
+        Uri site = Uri.parse(baseUrl);
         siteHost = site.getHost() == null ? "" : site.getHost();
         night = (getResources().getConfiguration().uiMode
             & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
@@ -57,19 +75,13 @@ public class MainActivity extends Activity {
 
         web.setWebViewClient(new WebViewClient() {
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return openExternally(request.getUrl());
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                Uri target = Uri.parse(url);
-                String host = target.getHost() == null ? "" : target.getHost();
-                if (host.equals(siteHost)) {
-                    return false;
-                }
-                try {
-                    startActivity(new Intent(Intent.ACTION_VIEW, target));
-                } catch (Exception ignored) {
-                    // No browser installed: keep the link in the app.
-                    return false;
-                }
-                return true;
+                return openExternally(Uri.parse(url));
             }
 
             @Override
@@ -97,6 +109,30 @@ public class MainActivity extends Activity {
         spinner.gravity = Gravity.CENTER;
         root.addView(progress, spinner);
 
+        // The app theme has no action bar, so the settings entry is a small
+        // overflow button floating over the page.
+        TextView settingsButton = new TextView(this);
+        settingsButton.setText("\u22ee");
+        settingsButton.setTextSize(22);
+        settingsButton.setTextColor(Color.parseColor(night ? "#f4f0e8" : "#141311"));
+        settingsButton.setGravity(Gravity.CENTER);
+        settingsButton.setContentDescription("Server settings");
+        settingsButton.setAlpha(0.85f);
+        GradientDrawable settingsBackground = new GradientDrawable();
+        settingsBackground.setColor(Color.parseColor(night ? "#e62b2924" : "#e6ffffff"));
+        settingsBackground.setCornerRadius(dp(20));
+        settingsButton.setBackground(settingsBackground);
+        settingsButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showSettingsMenu(view);
+            }
+        });
+        FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(dp(40), dp(40));
+        settingsParams.gravity = Gravity.BOTTOM | Gravity.END;
+        settingsParams.setMargins(0, 0, dp(12), dp(20));
+        root.addView(settingsButton, settingsParams);
+
         setContentView(root);
 
         // Android 15 draws the app behind the system bars. Inset the page so
@@ -120,7 +156,7 @@ public class MainActivity extends Activity {
             web.restoreState(state);
             progress.setVisibility(View.GONE);
         } else {
-            web.loadUrl(startUrl(getIntent()));
+            signInThenLoad(getIntent());
         }
     }
 
@@ -129,15 +165,134 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         String path = intent.getStringExtra(EXTRA_OPEN_URL);
-        if (path != null && path.startsWith("/")) {
-            web.loadUrl(Config.SITE_URL + path);
+        if (path != null && path.startsWith("/") && baseUrl != null) {
+            web.loadUrl(baseUrl + path);
         }
     }
 
     /** A notification can ask for one bookmark; otherwise the library. */
     private String startUrl(Intent intent) {
         String path = intent == null ? null : intent.getStringExtra(EXTRA_OPEN_URL);
-        return path != null && path.startsWith("/") ? Config.SITE_URL + path : Config.SITE_URL;
+        return path != null && path.startsWith("/") ? baseUrl + path : baseUrl;
+    }
+
+    /** Hands a non-shelf link to the browser and keeps the library inside. */
+    private boolean openExternally(Uri target) {
+        String host = target.getHost() == null ? "" : target.getHost();
+        if (host.equals(siteHost)) {
+            return false;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, target));
+        } catch (Exception ignored) {
+            // No browser installed: keep the link in the app.
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Loads the library with a valid session. The Worker's cookie is obtained by
+     * POSTing the saved password to /login, exactly like the web form, so the
+     * user does not have to type it into the page. If that fails we still load
+     * the base URL: the site's own /login page remains usable.
+     */
+    private void signInThenLoad(Intent intent) {
+        final String base = baseUrl;
+        final String target = startUrl(intent);
+        final String currentMode = mode;
+        final String email = prefs.getEmail();
+        progress.setVisibility(View.VISIBLE);
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String cookie = null;
+                String error = null;
+                try {
+                    String existing = CookieManager.getInstance().getCookie(base);
+                    boolean valid = ApiClient.hasSessionCookie(existing)
+                        && ApiClient.sessionValid(base, existing);
+
+                    if (!valid) {
+                        boolean cloud = Prefs.MODE_CLOUD.equals(currentMode);
+                        String password = cloud ? prefs.getPassword() : prefs.getSecret();
+                        if (password.isEmpty()) {
+                            error = "Shelf is not set up. Open Server settings.";
+                        } else {
+                            ApiClient.LoginResult login = cloud
+                                ? ApiClient.loginCloud(base, email, password)
+                                : ApiClient.loginSelfHosted(base, password);
+                            if (login.ok) {
+                                cookie = login.cookie;
+                                if (cloud) {
+                                    // Refresh the token used by ShareActivity.
+                                    try {
+                                        prefs.updateSecret(login.token);
+                                    } catch (SecureStore.SecureStoreException ignored) {
+                                        // The web session still works; a later
+                                        // settings save can repair the token.
+                                    }
+                                }
+                            } else {
+                                error = login.message;
+                            }
+                        }
+                    }
+                } catch (SecureStore.SecureStoreException failure) {
+                    error = "Saved password can't be read. Open Server settings.";
+                } catch (Exception failure) {
+                    error = "Can't reach the server.";
+                }
+
+                final String sessionCookie = cookie;
+                final String message = error;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing()) return;
+                        if (sessionCookie != null) {
+                            CookieManager cookies = CookieManager.getInstance();
+                            cookies.setAcceptCookie(true);
+                            cookies.setCookie(base, sessionCookie);
+                            cookies.flush();
+                        }
+                        if (message != null) {
+                            Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                        }
+                        web.loadUrl(target);
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void openSetup() {
+        startActivity(new Intent(this, SetupActivity.class));
+        finish();
+    }
+
+    private void openSettings() {
+        Intent setup = new Intent(this, SetupActivity.class);
+        setup.putExtra(SetupActivity.EXTRA_RETURN_TO_CALLER, true);
+        startActivityForResult(setup, REQUEST_SETUP);
+    }
+
+    private void showSettingsMenu(View anchor) {
+        PopupMenu popup = new PopupMenu(this, anchor);
+        popup.getMenu().add("Server settings");
+        popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
+            @Override
+            public boolean onMenuItemClick(MenuItem item) {
+                openSettings();
+                return true;
+            }
+        });
+        popup.show();
+    }
+
+    private int dp(int value) {
+        return Math.round(getResources().getDisplayMetrics().density * value);
     }
 
     /** Dark status/navigation icons on a light page, light icons on a dark one. */
@@ -152,6 +307,15 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_SETUP && resultCode == RESULT_OK) {
+            recreating = true;
+            recreate();
+        }
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
         pausedAt = System.currentTimeMillis();
@@ -161,6 +325,20 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (web == null || recreating) return;
+
+        // The settings screen can change the server while this activity sits in
+        // the back stack; pick that up without keeping stale cookies.
+        Prefs current = new Prefs(this);
+        if (!current.hasConfig()) {
+            openSetup();
+            return;
+        }
+        if (!current.getBaseUrl().equals(baseUrl) || !current.getMode().equals(mode)) {
+            recreate();
+            return;
+        }
+
         // Coming back after a while should show what happened since, not a stale page.
         if (pausedAt > 0 && System.currentTimeMillis() - pausedAt > 60_000) {
             web.reload();
@@ -171,12 +349,18 @@ public class MainActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
-        web.saveState(out);
+        if (web != null) web.saveState(out);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (web != null) web.destroy();
+        super.onDestroy();
     }
 
     @Override
     public void onBackPressed() {
-        if (web.canGoBack()) {
+        if (web != null && web.canGoBack()) {
             web.goBack();
         } else {
             super.onBackPressed();
