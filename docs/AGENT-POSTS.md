@@ -13,8 +13,10 @@ points at it, and the MCP server exposes it as `get_authoring_guide`.
 - **Markdown** for text research: findings, summaries, comparisons, code, tables.
   It is readable everywhere, searchable, and safe. Prefer it.
 - **HTML** only when layout or visuals matter: a chart drawn in inline SVG, a
-  diagram, a designed one-pager. It is shown inside a sandboxed iframe; scripts
-  never run.
+  diagram, a designed one-pager. It is shown inside a sandboxed iframe on its
+  own page (`/p/<ref>`); scripts never run. The library card shows its title,
+  abstract and topics, never the document itself, so write a `summary` for an
+  HTML note.
 
 If you are unsure, write markdown.
 
@@ -23,7 +25,7 @@ If you are unsure, write markdown.
 | Field       | Notes |
 | ----------- | ----- |
 | `title`     | Optional; defaults to the first heading/line. Max 200 characters. |
-| `summary`   | Optional 1–3 sentence abstract, stored as agent-written. Max 4,000 characters. No AI call is made for it. |
+| `summary`   | Optional 1–3 sentence abstract, stored as agent-written. Max 4,000 characters. No AI call is made for it. It is the card's lede, and the only body copy an HTML note shows in the library. |
 | `sourceUrl` | Optional primary source; must be `http(s)`. Do not repeat every citation here. |
 | `clientId`  | Optional stable id. Re-posting with the same value updates that one note and keeps its ref. Use it when retrying. |
 | `agent`     | `{ name, model, tool }`; shown on the card as `Written by …`. |
