@@ -1,5 +1,5 @@
-import type { Env, LinkRead, ParsedGitHubUrl } from './types.ts';
-import { isAbortError } from './util.ts';
+import type { Env, LinkRead, ParsedGitHubUrl, XPost } from './types.ts';
+import { isAbortError, sha256Hex } from './util.ts';
 
 const SKIP_HOSTS = new Set([
   'x.com',
@@ -132,6 +132,152 @@ async function readLink(url: string, env: Partial<Env>): Promise<LinkRead | null
       error: error instanceof Error ? error.message.slice(0, 240) : 'Could not read this link.',
     };
   }
+}
+
+/** A readable page that failed in a way the caller can show to the user. */
+export class WebPageError extends Error {
+  status: number;
+
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = 'WebPageError';
+    this.status = status;
+  }
+}
+
+export interface ParsedWebUrl {
+  canonicalUrl: string;
+}
+
+const TRACKING_PARAM = /^(utm_.+|fbclid|gclid|msclkid|igshid|mc_cid|mc_eid|ref_src|ref_url)$/i;
+
+/** Hosts with their own reader; a URL on one of them is not a plain web page. */
+function isPlatformHost(host: string): boolean {
+  return (
+    host === 'x.com' ||
+    host.endsWith('.x.com') ||
+    host === 'twitter.com' ||
+    host.endsWith('.twitter.com') ||
+    host === 'linkedin.com' ||
+    host.endsWith('.linkedin.com') ||
+    host === 'youtu.be' ||
+    host === 'youtube.com' ||
+    host.endsWith('.youtube.com')
+  );
+}
+
+/**
+ * The first public http(s) URL in a shared text, unless a dedicated reader
+ * (X, LinkedIn, YouTube) owns its host.
+ */
+export function parseWebUrl(input: string): ParsedWebUrl | null {
+  const match = String(input || '').match(/https?:\/\/[^\s<>"']+/i);
+  if (!match) return null;
+  const value = match[0].replace(/[),.;:!?]+$/, '');
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (isPlatformHost(url.hostname.toLowerCase())) return null;
+  return { canonicalUrl: url.toString() };
+}
+
+/**
+ * Canonical form used for the bookmark id: lowercased host, no fragment, no
+ * tracking parameters, sorted query, no trailing slash on a path.
+ */
+export function canonicalWebUrl(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  url.hostname = url.hostname.toLowerCase();
+  url.hash = '';
+  const params = [...url.searchParams.entries()]
+    .filter(([key]) => !TRACKING_PARAM.test(key))
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+      leftKey === rightKey
+        ? leftValue.localeCompare(rightValue)
+        : leftKey.localeCompare(rightKey),
+    );
+  url.search = '';
+  for (const [key, value] of params) url.searchParams.append(key, value);
+  if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, '');
+  return url.toString();
+}
+
+/** Deterministic key for a page; re-saving the same canonical URL refreshes it. */
+export async function webBookmarkId(canonicalUrl: string): Promise<string> {
+  return `web-${(await sha256Hex(canonicalUrl)).slice(0, 16)}`;
+}
+
+/**
+ * Read a shared page into the same shape `save()` consumes for a post, with the
+ * page stored in `article` so the card and the summary have the title and body.
+ */
+export async function readWebPost(input: string, env: Partial<Env> = {}): Promise<XPost> {
+  const parsed = parseWebUrl(input);
+  if (!parsed) {
+    throw new WebPageError('That does not look like a web page link.', 400);
+  }
+  const requestedHost = hostnameOf(parsed.canonicalUrl);
+  if (isBlockedHost(requestedHost)) {
+    throw new WebPageError('This host is not allowed.', 400);
+  }
+
+  const read = await readLink(parsed.canonicalUrl, env);
+  if (!read) {
+    throw new WebPageError('That link cannot be saved as a page.', 400);
+  }
+  if (read.error) {
+    throw new WebPageError(read.error, 422);
+  }
+
+  const canonicalUrl = canonicalWebUrl(read.finalUrl || parsed.canonicalUrl);
+  const finalHost = canonicalUrl ? hostnameOf(canonicalUrl) : '';
+  if (!canonicalUrl || isBlockedHost(finalHost)) {
+    throw new WebPageError('This host is not allowed.', 400);
+  }
+
+  const title = read.title || finalHost;
+  const publishedAt = read.publishedAt || null;
+  const description = read.description || '';
+  const body = read.text || '';
+
+  return {
+    tweetId: await webBookmarkId(canonicalUrl),
+    url: canonicalUrl,
+    text: description || body.slice(0, 600),
+    createdAt: publishedAt,
+    lang: null,
+    isNoteTweet: false,
+    provider: 'web',
+    author: {
+      name: read.siteName || finalHost,
+      username: null,
+      avatarUrl: null,
+      verified: false,
+    },
+    metrics: { replies: null, reposts: null, likes: null, quotes: null, views: null, bookmarks: null },
+    quote: null,
+    media: [],
+    article: {
+      id: null,
+      title,
+      previewText: description,
+      createdAt: publishedAt,
+      modifiedAt: null,
+      url: canonicalUrl,
+      coverUrl: null,
+      text: body,
+    },
+  };
 }
 
 export function parseGitHubUrl(input: string): ParsedGitHubUrl | null {
@@ -303,7 +449,9 @@ async function readWebPage(url: string, env: Partial<Env>): Promise<LinkRead> {
     title: cleanTitle(title),
     siteName,
     description: description.slice(0, 500),
-    text: text.length >= 200 ? text : description.slice(0, MAX_TEXT),
+    // A short page is still readable text; only prefer the description over
+    // navigation-sized leftovers when there is one.
+    text: text.length >= 200 ? text : (description || text).slice(0, MAX_TEXT),
     publishedAt,
   };
 }

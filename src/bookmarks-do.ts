@@ -7,7 +7,7 @@ import {
   translateSummary,
   writeTopicOverview,
 } from './ai.ts';
-import { readExternalLinks } from './links.ts';
+import { parseWebUrl, readExternalLinks, readWebPost } from './links.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
 import {
   createVapidKeys,
@@ -715,7 +715,9 @@ export class Bookmarks extends DurableObject<Env> {
         ? await readLinkedInPost(input)
         : typeof input === 'string' && parseYouTubeUrl(input)
           ? await readYouTubePost(input, this.env)
-          : await readPost(input, this.env);
+          : typeof input === 'string' && parseWebUrl(input)
+            ? await readWebPost(input, this.env)
+            : await readPost(input, this.env);
     const existing: ExistingBookmarkRow | undefined = this.sql
       .exec<ExistingBookmarkRow>(
         `SELECT tweet_id, summary, summary_status, text, article_json

@@ -241,13 +241,13 @@ export function renderPage({
 
       <main class="shell">
         <details class="add-drawer">
-          <summary><span class="add-icon">+</span> Save a link from X, LinkedIn or YouTube</summary>
+          <summary><span class="add-icon">+</span> Save a link from X, LinkedIn, YouTube or any page</summary>
           <form class="add-form" method="post" action="/add">
             <label class="sr-only" for="url">Post URL</label>
-            <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/… · linkedin.com/posts/… · youtu.be/…" required value="${addValue}">
+            <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/… · linkedin.com/posts/… · youtu.be/… · example.com/blog/…" required value="${addValue}">
             <button type="submit">Save post</button>
           </form>
-          <p class="fine-print">On Android: <strong>Share → Shelf</strong> from X, LinkedIn or YouTube. The post, quote, article, links, video and images are read and summarized automatically.</p>
+          <p class="fine-print">On Android: <strong>Share → Shelf</strong> from X, LinkedIn, YouTube or any browser page. The post, page, quote, article, links, video and images are read and summarized automatically.</p>
         </details>
 
         ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
@@ -738,15 +738,20 @@ function renderBookmark(
   bilingual = false,
 ): string {
   const author: Partial<Author> = bookmark.author ?? {};
-  const handle = author.username ? `@${author.username}` : 'unknown';
+  const handle = author.username ? `@${author.username}` : '';
+  const displayName = author.name || handle || 'Unknown';
   const avatar = safeHttpUrl(author.avatarUrl);
   const initial = escapeHtml((author.name || author.username || '?').slice(0, 1).toUpperCase());
   const archived = Boolean(bookmark.archivedAt);
   const outboundUrl = safeHttpUrl(bookmark.url);
-  const source = sourceName(outboundUrl);
+  // A saved page is labelled by its site; a platform post by its platform.
+  const source =
+    bookmark.provider === 'web' && author.name
+      ? truncate(author.name, 32)
+      : sourceName(outboundUrl);
 
   const extras = [];
-  if (bookmark.article) extras.push('X Article');
+  if (bookmark.article) extras.push(bookmark.provider === 'web' ? 'Saved page' : 'X Article');
   const mediaCount = (bookmark.media ?? []).filter(item => safeHttpUrl(item.url)).length;
   if (mediaCount) extras.push(`${mediaCount} ${mediaCount === 1 ? 'image' : 'images'}`);
   if (bookmark.quote) extras.push('quoted post');
@@ -764,9 +769,9 @@ function renderBookmark(
           }
           <div class="author-text">
             <div class="author-line">
-              <strong>${escapeHtml(author.name || handle)}</strong>
+              <strong>${escapeHtml(displayName)}</strong>
               ${author.verified ? '<span class="verified" title="Verified">✓</span>' : ''}
-              <span class="handle">${escapeHtml(handle)}</span>
+              ${handle ? `<span class="handle">${escapeHtml(handle)}</span>` : ''}
             </div>
             <div class="meta">
               ${escapeHtml(formatDate(bookmark.createdAt))}
@@ -795,7 +800,7 @@ function renderBookmark(
           : ''
       }
 
-      ${bookmark.article ? renderArticle(bookmark.article) : ''}
+      ${bookmark.article ? renderArticle(bookmark.article, bookmark.provider === 'web') : ''}
       ${renderMedia(bookmark.media, 'main')}
       ${bookmark.quote ? renderQuote(bookmark.quote) : ''}
       ${bookmark.links?.length ? renderLinks(bookmark.links) : ''}
@@ -845,13 +850,14 @@ function renderQuote(quote: Quote): string {
   `;
 }
 
-function renderArticle(article: XArticle): string {
+function renderArticle(article: XArticle, savedPage = false): string {
   const url = safeHttpUrl(article.url);
-  const title = article.title || 'X Article';
+  const label = savedPage ? 'Saved page' : 'X Article';
+  const title = article.title || label;
   return `
     <section class="linked-article">
       <div class="linked-article-head">
-        <span class="quote-label">X Article</span>
+        <span class="quote-label">${label}</span>
         ${url ? `<a class="article-open" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}
       </div>
       <h3>${escapeHtml(title)}</h3>
@@ -1249,7 +1255,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=12">
+  <link rel="stylesheet" href="/style.css?v=13">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
