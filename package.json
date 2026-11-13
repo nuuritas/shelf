@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "A tiny Cloudflare-native bookmark archive for X and LinkedIn, with automatic AI summaries.",
+  "description": "Your own private X, LinkedIn and YouTube archive on Cloudflare, with AI summaries, folders and notifications.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nuuritas/shelf.git"
