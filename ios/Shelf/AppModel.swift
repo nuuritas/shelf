@@ -180,6 +180,11 @@ enum WebSession {
                 }
             }
         }
+        if let cookies = HTTPCookieStorage.shared.cookies {
+            for cookie in cookies {
+                HTTPCookieStorage.shared.deleteCookie(cookie)
+            }
+        }
         URLCache.shared.removeAllCachedResponses()
     }
 }

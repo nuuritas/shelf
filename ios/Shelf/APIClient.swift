@@ -109,6 +109,14 @@ struct APIClient {
     /// Shelf Cloud sign-in: JSON `{email,password}` in, `{token,user,tenant}`
     /// (and ideally `Set-Cookie`) out.
     func cloudLogin(baseURL: URL, email: String, password: String) async throws -> CloudSession {
+        // Start from a clean cookie jar so any cookie captured below belongs to
+        // this sign-in, not to a previous account on the same host.
+        if let existing = HTTPCookieStorage.shared.cookies(for: baseURL) {
+            for cookie in existing {
+                HTTPCookieStorage.shared.deleteCookie(cookie)
+            }
+        }
+
         var request = URLRequest(url: endpoint(baseURL, "api/auth/login"))
         request.httpMethod = "POST"
         request.timeoutInterval = 20
@@ -118,7 +126,10 @@ struct APIClient {
         request.httpBody = try encoder.encode(CloudLoginBody(email: email, password: password))
 
         let (data, response) = try await data(for: request)
-        let cookies = Self.cookies(from: response, fallbackURL: baseURL)
+        let cookies = Self.merge(
+            Self.cookies(from: response, fallbackURL: baseURL),
+            Self.storedCookies(for: baseURL)
+        )
 
         guard (200..<300).contains(response.statusCode) else {
             if response.statusCode == 401 {
@@ -222,6 +233,24 @@ struct APIClient {
             headers[key] = String(describing: value)
         }
         return HTTPCookie.cookies(withResponseHeaderFields: headers, for: response.url ?? fallbackURL)
+    }
+
+    /// `URLSession.shared` also stores `Set-Cookie` from redirect responses, so
+    /// pick those up for the WebView as well.
+    private static func storedCookies(for baseURL: URL) -> [HTTPCookie] {
+        HTTPCookieStorage.shared.cookies(for: baseURL) ?? []
+    }
+
+    private static func merge(_ primary: [HTTPCookie], _ secondary: [HTTPCookie]) -> [HTTPCookie] {
+        var seen = Set<String>()
+        var result: [HTTPCookie] = []
+        for cookie in primary + secondary {
+            let key = "\(cookie.name)|\(cookie.domain)|\(cookie.path)"
+            if seen.insert(key).inserted {
+                result.append(cookie)
+            }
+        }
+        return result
     }
 }
 
