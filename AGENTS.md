@@ -72,14 +72,19 @@ src/transcript.ts    video transcripts (Whisper for X, Piped by default for YouT
 src/render.ts        SSR HTML + the entire stylesheet as a template string
 src/util.ts          escaping, linkify, cookies, base64, slugs
 src/types.ts         shared domain types
-public/              static assets, PWA manifest/service worker, share APK
-android/             share target + WebView app, no-Gradle build script
+public/              static assets, PWA manifest/service worker
 cli/shelf.ts         Bun CLI + stdio MCP server (search/show/export/mcp)
 .github/workflows/   CI + maintainer push log
 test/                node:test unit tests
 docs/PROGRESS.md     long-form project knowledge
 docs/AGENT-POSTS.md  contract for agents that write notes (shelf guide)
 ```
+
+The Android and iOS clients are not in this repository, and their source is not
+public: they live in the maintainer's private `nuuritas/shelf-cloud` repository
+and are published as a signed APK and a TestFlight build. Both stay dual-mode,
+so one published build works against any self-hosted Worker as well. There is no
+link to point contributors at, so do not add one.
 
 ## Commands
 
@@ -92,7 +97,6 @@ bunx wrangler dev           # local Worker (needs .dev.vars)
 bun run deploy:personal     # deploy the maintainer instance (wrangler.personal.jsonc)
 bunx wrangler deploy        # deploy with the public wrangler.jsonc
 bunx wrangler tail          # production logs
-./android/build.sh          # rebuild public/ShelfShare.apk
 shelf add file.md --title "…"  # save an agent-written note
 shelf guide                    # the agent-post contract (docs/AGENT-POSTS.md)
 shelf search "claude code"  # CLI → ~/.local/bin/shelf symlink to cli/shelf.ts
@@ -101,12 +105,14 @@ shelf youtube [--limit 20]  # fetch missing YouTube transcripts from this Mac
 ```
 
 `.dev.vars` (gitignored): `APP_PASSWORD` is required and `APP_SECRET` signs the
-session cookie. `SHARE_TOKEN`, `SHARE_ENDPOINT`, and `KEYSTORE_PASS` are only
-needed to build the APK. `AI_API_KEY` is optional: without it, summaries run on
-the Workers AI binding. `OPENCODE_API_KEY` still works as an alias, and
-`SUPADATA_API_KEY` is optional and only enables YouTube captions. `PUSH_CONTACT`
-is the optional VAPID contact URI (defaults to the repository URL). The local
-OpenCode key is currently expired; production has a working secret.
+session cookie. `SHARE_TOKEN` is optional: it adds an add-only bearer token for
+`POST /api/bookmarks`, for scripts. The mobile apps do not use it; they sign in
+with `APP_PASSWORD` or a cloud token at first launch. `AI_API_KEY` is optional:
+without it, summaries run on the Workers AI binding. `OPENCODE_API_KEY` still
+works as an alias, and `SUPADATA_API_KEY` is optional and only enables YouTube
+captions. `PUSH_CONTACT` is the optional VAPID contact URI (defaults to the
+repository URL). The local OpenCode key is currently expired; production has a
+working secret.
 
 ## Maintainer project board (forks can ignore this)
 
@@ -280,10 +286,12 @@ API: see `docs/PROGRESS.md` §3.
 - `push_subscriptions` is capped at ten, `notifications` at fifty. A 404/410
   from a push endpoint removes that subscription. A notification row is claimed
   once (`delivered_at`), so a browser and the Android app do not both show it.
-- The Android WebView cannot receive Web Push. `NotificationJobService` uses
-  `JobScheduler` (15-minute periodic plus a one-off after a share/launch) to poll
-  the same endpoint with the WebView's session cookie and posts a system
-  notification. No Firebase, no Google services dependency.
+- The Android WebView cannot receive Web Push. `NotificationJobService` in
+  `nuuritas/shelf-cloud/apps/android` uses `JobScheduler` (15-minute periodic
+  plus a one-off after a share/launch) to poll the same endpoint with the
+  WebView's session cookie and posts a system notification. No Firebase, no
+  Google services dependency. The endpoint contract is the same for the iOS
+  app, so a change here needs the app checked too.
 - A finished summary queues one notification in `summarizeRow`; a failed push
   must never fail the summary (`notifySummaryReady` catches its own errors).
 - The Settings page's test button (`POST /api/notifications/test`) is the quick
@@ -313,10 +321,12 @@ API: see `docs/PROGRESS.md` §3.
 
 - Auth: cookie session signed with `APP_SECRET`/`APP_PASSWORD`, or
   `Authorization: Bearer <APP_PASSWORD>`.
-- The APK uses an add-only `SHARE_TOKEN` accepted only on `POST /api/bookmarks`.
-  It is embedded in `public/ShelfShare.apk`, which is why the APK is
-  gitignored and rebuilt by `android/build.sh` — never commit it.
-- Never commit `.dev.vars`, `android/*.keystore`, `.wrangler/`, or `out/`.
+- `SHARE_TOKEN` is an add-only bearer token accepted only on
+  `POST /api/bookmarks`, for scripts. The mobile apps do not use it: they sign
+  in with `APP_PASSWORD` or a cloud session at first launch. No password or
+  token is compiled into them; the only built-in host is the public Shelf Cloud
+  default, which the user replaces for a self-hosted instance.
+- Never commit `.dev.vars`, `.wrangler/`, or `out/`.
 - The CLI stores the vault password in `~/.config/shelf/config.json` (mode 0600,
   outside the repo). Rotating `APP_PASSWORD` on the Worker requires
   `shelf config --password <new>`; the CLI reports a stale password as a 401 hint.
@@ -334,7 +344,7 @@ API: see `docs/PROGRESS.md` §3.
    the resulting text, not just the HTTP status.
 6. If notifications changed: send the Settings test in a browser, and run
    `adb shell cmd jobscheduler run -f com.shelf.share 7401` after queueing one
-   for the APK.
+   for the Android app (built from `nuuritas/shelf-cloud/apps/android`).
 7. Deliver through the issue → branch → PR → merge loop above. One feature per
    issue and PR, imperative commit subject. Do not push to `main` directly.
 
@@ -344,8 +354,12 @@ API: see `docs/PROGRESS.md` §3.
 - `tsc` hang from duplicate DO storage types (see above).
 - `/tmp` is wiped periodically on this machine. Put anything durable in
   `out/` (gitignored) or the repo, not `/tmp`.
-- Brave installs the PWA as a shortcut, so its share target never appears;
-  the APK is the supported share path.
+- Brave installs the PWA as a shortcut, so its share target never appears; the
+  published Android app is the supported share path.
+- The mobile apps are not here. `android/` and `ios/` moved to
+  `nuuritas/shelf-cloud/apps` on 2026-11-13; this repository ships the web app
+  and the PWA only. Do not re-add a build script or an APK to `public/` — the
+  footer links the published download instead.
 - Keep `workers_dev: true`. Removing it makes the workers.dev URL return 404.
 - The maintainer instance is `https://shelf.nuritas.tr`; an earlier host was
   retired on 2026-11-13. If the deployment moves again, keep both routes

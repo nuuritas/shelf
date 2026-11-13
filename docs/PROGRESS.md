@@ -28,12 +28,12 @@ now exist (§7).
 ## 2. Architecture
 
 ```
-Android share sheet
-      │  ACTION_SEND (text/plain)
+Android share sheet / iOS share sheet
+      │  ACTION_SEND / NSExtension
       ▼
-ShelfShare.apk  ──POST /api/bookmarks (Bearer SHARE_TOKEN)──┐
-                                                               │
-Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄─────┘
+Shelf app ──POST /api/bookmarks (session cookie or bearer token)──┐
+(Android + iOS, published build)                                  │
+Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄────────┘
                                       │
                                       │ env.BOOKMARKS
                                       ▼
@@ -100,7 +100,7 @@ wall-clock is long but CPU stays low.
 
 ## 3. Features that exist
 
-- Silent Android share (APK, translucent activity, Toast, auto-finish)
+- Silent Android share (translucent activity, Toast, auto-finish)
 - PWA shell with service worker (share target works on Chrome, not Brave)
 - AI summary: natural Turkish prose, 3–5 paragraphs; reads images as base64,
   X Article bodies, quoted posts, up to two external links, and video transcripts
@@ -230,6 +230,7 @@ wall-clock is long but CPU stays low.
 | Nov 11 | Android app follows the system theme and keeps the session | The WebView forced `Theme.Light`, so the site rendered light on a dark phone, and the launch window drew under the status bar. A `values`/`values-night` theme pair fixes the scheme, window insets keep the header clear, and the cookie jar is flushed after login and on pause |
 | Nov 11 | Share saves silently again: one toast, no card | The card that replaced the toast was too heavy for a share action. The share keeps its own task affinity (so the library does not pop up), extracts any link, expands t.co, and reports with a single toast |
 | Nov 11 | YouTube links save as bookmarks | Pasting `youtu.be/...?si=` failed because the save path only knew X and LinkedIn. `src/youtube.ts` reads oEmbed plus the watch page (title, channel, description, thumbnail) and stores `provider = 'youtube'`; the existing transcript ladder then feeds the summary |
+| Nov 13 | Native apps moved to `nuuritas/shelf-cloud`; this repository ships published builds only | The maintainer signs and distributes every build, so the app trees, the keystore and the release workflow belong with the service that ships them; an MIT repository should not license the app source by accident. The clients stay dual-mode, so one published APK or TestFlight build still works against any self-hosted Worker |
 
 ### Video transcripts
 
@@ -339,9 +340,10 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - Topic syntheses are still Turkish-only; the English board translates bookmark
   summaries, not the rolling topic syntheses.
 - Summary versions remain Turkish-only; only the primary summary is translated.
-- iOS share extension. iPhone users can install the PWA but cannot share into it;
-  only the Android APK exists today. Plan is a small share extension that posts
-  to the same `POST /api/bookmarks` endpoint with `SHARE_TOKEN`.
+- iOS share extension: shipped. The app and the Android client live in the
+  maintainer's private `nuuritas/shelf-cloud/apps` and are distributed as signed
+  builds, so iPhone users share into **Shelf** exactly like Android users do.
+  Both post to the same `POST /api/bookmarks` endpoint.
 
 ## 8. Repo conventions
 
@@ -349,8 +351,8 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - One feature per issue and PR, imperative commit subject, tests and
   `bun run typecheck` before pushing. The PR body starts with `Closes #N`; direct
   pushes to `main` are emergency-only.
-- Never commit `.dev.vars`, the keystore, or `public/ShelfShare.apk`
-  (it embeds `SHARE_TOKEN`).
+- Never commit `.dev.vars`, `.wrangler/`, or `out/`. Mobile builds and their
+  signing material live in `nuuritas/shelf-cloud/apps`.
 - The README stays short and leads with the agent install prompt; install
   details live in `INSTALL.md`, which must stay executable by an agent (exact
   commands, per-step acceptance checks).

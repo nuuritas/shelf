@@ -18,14 +18,12 @@ Set up Shelf for me: https://github.com/nuuritas/shelf
 Read https://raw.githubusercontent.com/nuuritas/shelf/main/INSTALL.md
 and follow it exactly.
 
-Ask me three things first:
+Ask me two things first:
 1. Which AI provider should write the summaries? Cloudflare needs no key and is
    fine to start with.
 2. A custom domain, or the free workers.dev URL?
-3. Build the Android share APK too?
 
-Never commit .dev.vars, the keystore, or the APK. If a step needs a paid plan,
-stop and ask me.
+Never commit .dev.vars. If a step needs a paid plan, stop and ask me.
 
 When the deployment is verified, tell me the app URL, the password, and where
 the files are.
@@ -82,10 +80,13 @@ Nothing, for a personal archive:
 
 ## Optional pieces
 
-- **Android share APK** — a share target that saves in the background, a
-  launcher icon that opens the library in the app, and a background check that
-  posts a notification when a summary is ready. Built without Gradle. No iOS
-  app yet; iOS is planned, and the web app works as a PWA on iPhone until then.
+- **Mobile apps** — an Android share target that saves in the background and
+  posts a notification when a summary is ready, and an iOS app with a share
+  extension. Both are dual-mode: enter your Worker URL and password, or sign in
+  to Shelf Cloud. They are published as a signed build, so there is nothing to
+  compile here. The client source is **private** and lives with the hosted
+  service; it is not published for reuse. The web app still works as a PWA on
+  both platforms.
 - **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`.
 - **Custom domain** — a workers.dev URL works; a domain is three lines in
   `wrangler.jsonc`.

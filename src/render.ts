@@ -27,6 +27,14 @@ import {
   truncate,
 } from './util.ts';
 
+/**
+ * Published mobile build. The client is dual-mode, so this one APK works
+ * against any self-hosted Worker; it is built and signed in
+ * `nuuritas/shelf-cloud`, not here. A fork that ships its own APK should point
+ * this at its own download URL.
+ */
+const ANDROID_APP_URL = 'https://shelfcloud.nuritas.tr/download/ShelfShare.apk';
+
 const NOTICES: Record<string, string> = {
   shared: 'Saved from the Android share sheet.',
   added: 'Saved. The summary is running in the background.',
@@ -392,7 +400,7 @@ export function renderPage({
         <span class="dot">·</span>
         <span>Summaries by OpenCode</span>
         <span class="dot">·</span>
-        <a href="/ShelfShare.apk">Android share app</a>
+        <a href="${ANDROID_APP_URL}">Android app</a>
       </footer>
     `,
   });
