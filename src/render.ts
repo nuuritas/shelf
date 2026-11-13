@@ -30,10 +30,14 @@ import {
 /**
  * Published mobile build. The client is dual-mode, so this one APK works
  * against any self-hosted Worker; it is built and signed in
- * `nuuritas/shelf-cloud`, not here. A fork that ships its own APK should point
- * this at its own download URL.
+ * `nuuritas/shelf-cloud` and published as a GitHub release asset in the public
+ * `nuuritas/shelfcloud-apk` repository, because a release in the private source
+ * repository answers 404 to anyone who is not signed in. The asset keeps the
+ * name `ShelfShare.apk`, so this URL is stable across versions. A fork that
+ * ships its own APK should point this at its own download URL.
  */
-const ANDROID_APP_URL = 'https://shelfcloud.nuritas.tr/download/ShelfShare.apk';
+const ANDROID_APP_URL =
+  'https://github.com/nuuritas/shelfcloud-apk/releases/latest/download/ShelfShare.apk';
 
 const NOTICES: Record<string, string> = {
   shared: 'Saved from the Android share sheet.',
