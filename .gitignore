@@ -4,8 +4,8 @@ node_modules/
 .env
 .DS_Store
 *.log
-android/build/
-android/*.keystore
+# Mobile apps are built and signed in `nuuritas/shelf-cloud`. Keep a stray
+# local build or downloaded APK out of this repository.
 public/ShelfShare.apk
 out/
 

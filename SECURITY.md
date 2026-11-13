@@ -20,6 +20,8 @@ problem and what an attacker gains. Expect a first reply within a week.
 
 - No rate limit on `/login`, or a shared password model — see above.
 - `POST /api/reindex` replacing the topic taxonomy; it is destructive by design.
-- The Android APK containing `SHARE_TOKEN`. That token is add-only by design: it
+- The mobile apps shipping a `SHARE_TOKEN`. They do not embed one: the published
+  build signs in with the account password (or a cloud session) at first launch.
+  `SHARE_TOKEN` stays a server-side, add-only token for scripts, and even then it
   can save a bookmarked link and nothing else.
 - Summaries quoting the post they summarize, including any links or text in it.

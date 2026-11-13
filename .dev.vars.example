@@ -33,13 +33,8 @@ AI_API_KEY=
 # Read-only GitHub token. Optional: raises the API rate limit for link reading.
 # GITHUB_TOKEN=
 
-# Required only for rebuilding the Android APK.
-# Use a long random value; the same value must be set as the Worker secret.
+# Optional. Add-only bearer token for scripts and automation on
+# POST /api/bookmarks. The mobile apps sign in with the password instead, so
+# they do not need it. Use a long random value; the same value must be set as
+# the Worker secret.
 SHARE_TOKEN=
-
-# Full URL the share APK posts to, e.g.
-# https://your-worker.workers.dev/api/bookmarks
-SHARE_ENDPOINT=
-
-# Password for the local APK signing keystore.
-KEYSTORE_PASS=
