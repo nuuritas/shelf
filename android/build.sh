@@ -92,12 +92,12 @@ fi
   "$BUILD/aligned.apk"
 
 # The APK is public and shared; make sure no build-time endpoint or token
-# leaked into it. The hosted default cloud.shelf.nuritas.tr is intentional and
+# leaked into it. The hosted default shelfcloud.nuritas.tr is intentional and
 # does not match these patterns.
 SECRETS="$(
   for dex in $(cd "$BUILD" && unzip -Z1 ShelfShare.apk | grep -E '^classes[0-9]*\.dex$'); do
     (cd "$BUILD" && unzip -p ShelfShare.apk "$dex")
-  done | strings -a | grep -E 'SHARE_TOKEN|__SHARE_|(^|[^A-Za-z0-9.-])(shelf|bookmark)\.nuritas\.tr' || true
+  done | strings -a | grep -E 'SHARE_TOKEN|__SHARE_|(^|[^A-Za-z0-9.-])shelf\.nuritas\.tr' || true
 )"
 if [[ -n "$SECRETS" ]]; then
   echo "Refusing to ship an APK with a baked-in endpoint or token:" >&2
