@@ -200,7 +200,7 @@ config) and repeat step 6 against the new hostname.
 ## Mobile apps (optional)
 
 There is nothing to build. Install the published Android app
-(`https://github.com/nuuritas/shelfcloud-apk/releases/latest/download/ShelfShare.apk`),
+(`https://github.com/nuuritas/shelfcloud-apk/releases/latest/download/Shelf.apk`),
 or the iOS app from TestFlight once it is public, and choose **Self-hosted** at
 first launch:
 

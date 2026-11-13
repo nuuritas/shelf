@@ -37,7 +37,7 @@ import {
  * ships its own APK should point this at its own download URL.
  */
 const ANDROID_APP_URL =
-  'https://github.com/nuuritas/shelfcloud-apk/releases/latest/download/ShelfShare.apk';
+  'https://github.com/nuuritas/shelfcloud-apk/releases/latest/download/Shelf.apk';
 
 const NOTICES: Record<string, string> = {
   shared: 'Saved from the Android share sheet.',
