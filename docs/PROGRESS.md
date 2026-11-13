@@ -1,6 +1,6 @@
 # Project knowledge — Shelf
 
-Last updated: 2026-11-11
+Last updated: 2026-11-13
 Repository: <https://github.com/nuuritas/shelf>
 
 This document describes the maintainer's deployment. Domain names, provider
@@ -18,8 +18,12 @@ Over time the archive organizes itself into topics and writes its own rolling
 syntheses, so it behaves less like a list of bookmarks and more like a small
 knowledge base.
 
-Non-goals: multi-user accounts and public sharing. A native iOS share extension
-is not built yet, but is planned (see §7).
+The maintainer instance is served at <https://shelf.nuritas.tr>. The former
+`bookmark.nuritas.tr` host was retired on 2026-11-13; old links are not
+redirected any more, so clients and PWAs must use the shelf host.
+
+Non-goals: multi-user accounts and public sharing. The iOS app and Android v2
+now exist (§7).
 
 ## 2. Architecture
 

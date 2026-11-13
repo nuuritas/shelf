@@ -75,8 +75,8 @@ The script:
   API 36;
 - builds version code `10`, version name `2.0`;
 - signs with the keystore and verifies the signature;
-- checks the dex for `SHARE_TOKEN`, `__SHARE_`, and the maintainer hosts
-  (`shelf.nuritas.tr`, `bookmark.nuritas.tr`);
+- checks the dex for `SHARE_TOKEN`, `__SHARE_`, and the maintainer host
+  (`shelf.nuritas.tr`);
 - writes `android/build/ShelfShare.apk` and copies it to
   `public/ShelfShare.apk`.
 
