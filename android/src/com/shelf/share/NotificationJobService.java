@@ -43,11 +43,25 @@ public class NotificationJobService extends JobService {
     }
 
     private static void poll(Context context) throws Exception {
-        String cookie = CookieManager.getInstance().getCookie(Config.SITE_URL);
-        if (cookie == null || cookie.isEmpty()) return;
+        Prefs prefs = new Prefs(context);
+        String base = prefs.getBaseUrl();
+        if (base.isEmpty()) return;
+
+        String cookie = CookieManager.getInstance().getCookie(base);
+        if (cookie == null || cookie.isEmpty()) {
+            // The WebView has not flushed a cookie yet; sign in with the saved
+            // password just for this poll.
+            ApiClient.LoginResult login = prefs.isCloud()
+                ? ApiClient.loginCloud(base, prefs.getEmail(), prefs.getPassword())
+                : ApiClient.loginSelfHosted(base, prefs.getSecret());
+            if (!login.ok) return;
+            CookieManager.getInstance().setCookie(base, login.cookie);
+            CookieManager.getInstance().flush();
+            cookie = login.cookie;
+        }
 
         HttpURLConnection connection = (HttpURLConnection) new URL(
-            Config.SITE_URL + "/api/notifications/next"
+            base + "/api/notifications/next"
         ).openConnection();
         try {
             connection.setRequestMethod("GET");

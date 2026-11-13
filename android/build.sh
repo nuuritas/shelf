@@ -16,20 +16,11 @@ read_setting() {
   printf '%s' "$value"
 }
 
-TOKEN="$(read_setting SHARE_TOKEN)"
-ENDPOINT="$(read_setting SHARE_ENDPOINT)"
-
 PASS="$(read_setting KEYSTORE_PASS)"
 
-if [[ -z "$ENDPOINT" ]]; then
-  echo "SHARE_ENDPOINT is required: the full URL the APK should post to," >&2
-  echo "for example https://your-worker.workers.dev/api/bookmarks" >&2
-  echo "Set it in the environment or in .dev.vars." >&2
-  exit 1
-fi
-
-if [[ -z "$TOKEN" || -z "$PASS" ]]; then
-  echo "SHARE_TOKEN and KEYSTORE_PASS are required (env or .dev.vars)." >&2
+if [[ -z "$PASS" ]]; then
+  echo "KEYSTORE_PASS is required (environment or .dev.vars) to sign the APK." >&2
+  echo "The server URL and password are entered in the app on first launch." >&2
   exit 1
 fi
 
@@ -42,21 +33,11 @@ if [[ ! -x "$BUILD_TOOLS/aapt2" || ! -f "$PLATFORM_JAR" ]]; then
 fi
 
 rm -rf "$BUILD"
-mkdir -p "$BUILD/classes" "$BUILD/dex" "$BUILD/res"
+mkdir -p "$BUILD/classes" "$BUILD/dex"
 
-# The token is injected into a temporary source file, never the tracked source.
-for source in Config MainActivity ShareActivity Notifications NotificationJobService; do
-  sed -e "s|__SHARE_TOKEN__|$TOKEN|g" \
-    -e "s|__SHARE_ENDPOINT__|$ENDPOINT|g" \
-    "$ANDROID_DIR/src/com/shelf/share/$source.java" \
-    > "$BUILD/$source.java"
-done
-
-javac --release 11 \
-  -classpath "$PLATFORM_JAR" \
-  -d "$BUILD/classes" \
-  "$BUILD"/Config.java "$BUILD"/MainActivity.java "$BUILD"/ShareActivity.java \
-  "$BUILD"/Notifications.java "$BUILD"/NotificationJobService.java
+# No Gradle and no dependencies: javac against android.jar, then d8.
+find "$ANDROID_DIR/src" -name '*.java' -print0 |
+  xargs -0 javac --release 11 -classpath "$PLATFORM_JAR" -d "$BUILD/classes"
 
 "$BUILD_TOOLS/d8" \
   --min-api 23 \
@@ -75,14 +56,14 @@ javac --release 11 \
   --min-sdk-version 23 \
   --target-sdk-version 36 \
   --version-code 10 \
-  --version-name 1.9 \
+  --version-name 2.0 \
   -R "$BUILD/res.zip" \
   --auto-add-overlay
 
 (
   cd "$BUILD"
-  cp dex/classes.dex classes.dex
-  zip -q unsigned.apk classes.dex
+  cp dex/*.dex .
+  zip -q unsigned.apk ./*.dex
 )
 
 if [[ ! -f "$KEYSTORE" ]]; then
@@ -109,6 +90,20 @@ fi
   --key-pass "pass:$PASS" \
   --out "$BUILD/ShelfShare.apk" \
   "$BUILD/aligned.apk"
+
+# The APK is public and shared; make sure no build-time endpoint or token
+# leaked into it. The hosted default cloud.shelf.nuritas.tr is intentional and
+# does not match these patterns.
+SECRETS="$(
+  for dex in $(cd "$BUILD" && unzip -Z1 ShelfShare.apk | grep -E '^classes[0-9]*\.dex$'); do
+    (cd "$BUILD" && unzip -p ShelfShare.apk "$dex")
+  done | strings -a | grep -E 'SHARE_TOKEN|__SHARE_|(^|[^A-Za-z0-9.-])(shelf|bookmark)\.nuritas\.tr' || true
+)"
+if [[ -n "$SECRETS" ]]; then
+  echo "Refusing to ship an APK with a baked-in endpoint or token:" >&2
+  printf '%s\n' "$SECRETS" >&2
+  exit 1
+fi
 
 "$BUILD_TOOLS/apksigner" verify "$BUILD/ShelfShare.apk"
 cp "$BUILD/ShelfShare.apk" "$ROOT/public/ShelfShare.apk"
