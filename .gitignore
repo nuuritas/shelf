@@ -1,4 +1,5 @@
 node_modules/
+.cloudflare/
 .wrangler/
 .dev.vars
 .env
@@ -9,6 +10,6 @@ node_modules/
 public/ShelfShare.apk
 out/
 
-# Local deployment config: keeps your worker name, domain, and model settings
-# out of the public repository. Copy wrangler.personal.example.jsonc to start.
-wrangler.personal.jsonc
+# Local deployment config: keeps your domains and provider settings out of the
+# public repository. Copy cloudflare.personal.example.json to start.
+cloudflare.personal.json

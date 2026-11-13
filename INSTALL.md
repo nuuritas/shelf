@@ -10,7 +10,7 @@ install is finished until step 6 has passed.
 
 ## Rules
 
-1. Never commit or copy `.dev.vars`, `.wrangler/`, or `out/`. They hold
+1. Never commit or copy `.dev.vars`, `.cloudflare/`, or `out/`. They hold
    secrets.
 2. The free plan is enough. If something says Workers Paid, stop and ask the
    user instead of upgrading anything.
@@ -38,13 +38,14 @@ work without one.
 ## 1. Toolchain
 
 ```bash
-bun --version && git --version
+bun --version && node --version && git --version
 ```
 
 Bun missing: `curl -fsSL https://bun.sh/install | bash`, then reopen the shell.
-Node 22+ is only needed for the tests, not the deploy.
+Node must be 22.18 or newer: every `cf` command loads `cloudflare.config.ts` with
+Node, and Bun cannot do that.
 
-**Done when:** both commands print a version.
+**Done when:** all three commands print a version, and Node is 22.18+.
 
 ## 2. Clone and install
 
@@ -59,10 +60,10 @@ bun install
 ## 3. Cloudflare login
 
 ```bash
-bunx wrangler whoami
+bunx cf auth whoami
 ```
 
-If it is not logged in, run `bunx wrangler login` and ask the user to approve the
+If it is not logged in, run `bunx cf auth login` and ask the user to approve the
 browser prompt. On a headless machine, ask the user for a Cloudflare API token
 with the *Edit Cloudflare Workers* template and use:
 
@@ -71,7 +72,7 @@ export CLOUDFLARE_API_TOKEN=...
 export CLOUDFLARE_ACCOUNT_ID=...
 ```
 
-**Done when:** `whoami` prints the account name.
+**Done when:** `cf auth whoami` prints the account name.
 
 ## 4. Password (and key)
 
@@ -98,12 +99,17 @@ When the chosen provider needs a key, append it:
 printf 'AI_API_KEY=%s\n' '<key>' >> .dev.vars
 ```
 
-For `custom`, also add to `wrangler.jsonc` inside `"vars"`:
+For `custom`, also add these to the `"vars"` object in `cloudflare.personal.json`
+(create it from `cloudflare.personal.example.json` if it does not exist):
 
-```jsonc
-"AI_PROVIDER": "custom",
-"AI_BASE_URL": "https://api.example.com/v1",
-"AI_MODEL": "the-model-id"
+```json
+{
+  "vars": {
+    "AI_PROVIDER": "custom",
+    "AI_BASE_URL": "https://api.example.com/v1",
+    "AI_MODEL": "the-model-id"
+  }
+}
 ```
 
 `setup` writes `AI_PROVIDER` itself; the two `AI_*` extras are yours to add.
@@ -120,14 +126,14 @@ bun run setup --provider cloudflare
 Use the chosen id in place of `cloudflare`. Without `--provider` the script asks
 a menu question, which an agent should avoid. The run:
 
-- writes `AI_PROVIDER` into `wrangler.jsonc` (or `wrangler.personal.jsonc` when
-  that file exists),
+- writes `AI_PROVIDER` into the gitignored `cloudflare.personal.json`, creating
+  that file if it does not exist,
 - fills in `APP_SECRET` and `SHARE_TOKEN` in `.dev.vars`,
-- uploads the secrets with `wrangler secret bulk`,
-- deploys and prints the `https://…workers.dev` URL.
+- runs `cf deploy --mode personal --secrets-file …`, which uploads the code and
+  the secrets in one step and prints the `https://…workers.dev` URL.
 
-Copy that URL. If the output scrolled away, `bunx wrangler deploy` again is safe
-and idempotent.
+Copy that URL. If the output scrolled away, `bun run deploy:personal` again is
+safe and idempotent; it does not touch the secrets.
 
 **Done when:** the deploy succeeds and you have the URL.
 
@@ -186,16 +192,22 @@ non-empty text.
 
 ## Custom domain (optional)
 
-Add the route to the tracked `wrangler.jsonc` (or to a gitignored
-`wrangler.personal.jsonc` copied from `wrangler.personal.example.jsonc` if the
-domain must stay out of git):
+The domain must already be on the same Cloudflare account. Add it to the
+gitignored `cloudflare.personal.json` (create it from
+`cloudflare.personal.example.json` if needed):
 
-```jsonc
-"routes": [{ "pattern": "bookmarks.example.com", "custom_domain": true }]
+```json
+{ "domains": ["bookmarks.example.com"] }
 ```
 
-Then `bunx wrangler deploy` (or `bun run deploy:personal` when using the personal
-config) and repeat step 6 against the new hostname.
+Then deploy again and repeat step 6 against the new hostname:
+
+```bash
+bun run deploy:personal
+```
+
+Keep `workersDev: true` in `cloudflare.config.ts`: the workers.dev host stays as
+the fallback when a domain's DNS record is wrong.
 
 ## Mobile apps (optional)
 
@@ -246,8 +258,18 @@ nothing to do. Only touch this after the install works:
 | Any other service | `TRANSCRIPT_API_URL` + `TRANSCRIPT_API_KEY` | Template with `{videoId}` or `{url}`; add `TRANSCRIPT_API_HEADER=x-api-key` when needed. |
 | Readings from the user's own IP | `shelf youtube` | Residential connection; not part of the Worker. |
 
-Set secrets with `printf '%s' '<value>' | bunx wrangler secret put SUPADATA_API_KEY`
-and vars in `wrangler.jsonc`, then redeploy.
+Keys and vars are read by the Worker at runtime, so they have to be set on the
+deployment. For a key, add it to `.dev.vars` and re-run `bun run setup --provider
+<the id you used>`, or send just that key with a deploy:
+
+```bash
+printf '{"SUPADATA_API_KEY":"%s"}' "$KEY" > /tmp/shelf-secret.json
+bun run deploy:personal -- --secrets-file /tmp/shelf-secret.json
+rm /tmp/shelf-secret.json
+```
+
+Vars such as `PIPED_API_URL` go in the `"vars"` object of
+`cloudflare.personal.json`, followed by `bun run deploy:personal`.
 
 ## CLI and MCP (optional)
 
@@ -263,9 +285,10 @@ shelf search "anything"
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `wrangler whoami` fails | Not logged in: `bunx wrangler login`, or set `CLOUDFLARE_API_TOKEN`. |
-| `workers.dev` returns 404 | Wrong account or a removed route. Keep `workers_dev: true` in `wrangler.jsonc` and deploy again. |
-| `Authentication required.` | Password mismatch. Set `APP_PASSWORD` in `.dev.vars`, `printf '%s' "$PASS" \| bunx wrangler secret put APP_PASSWORD`, retry. |
+| `cf auth whoami` fails | Not logged in: `bunx cf auth login`, or set `CLOUDFLARE_API_TOKEN`. |
+| `cloudflare.config.ts loading is not supported on Bun` | `cf` was started by Bun. Run it through `bun run` / `bunx`, on Node 22.18+. |
+| `workers.dev` returns 404 | Wrong account or a removed route. Keep `workersDev: true` in `cloudflare.config.ts` and deploy again. |
+| `Authentication required.` | Password mismatch. Set `APP_PASSWORD` in `.dev.vars`, then `bun run setup --provider <id>` to upload it with a deploy, and retry. |
 | Summary fails immediately | Missing or bad `AI_API_KEY` for the chosen provider, or Workers AI not enabled on the account. |
 | Summary fails after a few saves | Free AI quota for the day is spent (10,000 neurons, resets 00:00 UTC). Add a key or wait. |
 | `bun install` fails | Bun missing or outdated; reinstall Bun. |

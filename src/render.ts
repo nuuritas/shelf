@@ -1422,7 +1422,7 @@ export function renderSetup(): string {
           <p class="eyebrow">One more step</p>
           <h1>Set a password</h1>
           <p class="lede">This app is locked until an <code>APP_PASSWORD</code> secret is set.</p>
-          <pre>wrangler secret put APP_PASSWORD</pre>
+          <pre>bun run setup</pre>
           <p class="fine-print">Then reload this page.</p>
         </div>
       </main>

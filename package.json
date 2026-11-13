@@ -11,15 +11,16 @@
   },
   "scripts": {
     "setup": "bun scripts/setup.ts",
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "deploy:personal": "wrangler deploy --config wrangler.personal.jsonc",
+    "dev": "cf dev",
+    "deploy": "cf deploy",
+    "deploy:personal": "cf deploy --mode personal",
     "test": "node --test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261106.1",
+    "cf": "^1.0.0-beta.32",
     "typescript": "7.0.2",
-    "wrangler": "^4.160.0"
+    "wrangler": "^4.162.0"
   }
 }

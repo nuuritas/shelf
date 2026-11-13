@@ -148,7 +148,7 @@ function requireKey(env: Partial<Env>, config: AiConfig): string {
   const key = aiApiKey(env);
   if (!key) {
     throw new Error(
-      `AI_PROVIDER=${config.provider} needs AI_API_KEY. Set it with \`wrangler secret put AI_API_KEY\`.`,
+      `AI_PROVIDER=${config.provider} needs AI_API_KEY. Add it to .dev.vars and redeploy, or set it as a Worker secret.`,
     );
   }
   return key;

@@ -4,7 +4,7 @@
  *
  *   bun run setup                          # choose a provider, secrets, deploy
  *   bun run setup -- --provider claude     # skip the provider question
- *   bun run setup -- --no-deploy           # secrets only
+ *   bun run setup -- --no-deploy           # write .dev.vars and the config only
  *
  * It never overwrites a value that already exists in `.dev.vars`, so re-running
  * it is safe. Secrets are printed nowhere; the file is written with mode 0600.
@@ -20,11 +20,21 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const VARS_PATH = join(ROOT, '.dev.vars');
+const PERSONAL_PATH = join(ROOT, 'cloudflare.personal.json');
+const PERSONAL_EXAMPLE = join(ROOT, 'cloudflare.personal.example.json');
 const argv = process.argv.slice(2);
 const deploy = !argv.includes('--no-deploy');
 
 /** Secrets the Worker reads at runtime. Everything else stays local. */
-const WORKER_SECRETS = ['APP_PASSWORD', 'APP_SECRET', 'SHARE_TOKEN', 'AI_API_KEY', 'SUPADATA_API_KEY', 'GITHUB_TOKEN'];
+const WORKER_SECRETS = [
+  'APP_PASSWORD',
+  'APP_SECRET',
+  'SHARE_TOKEN',
+  'AI_API_KEY',
+  'OPENCODE_API_KEY',
+  'SUPADATA_API_KEY',
+  'GITHUB_TOKEN',
+];
 
 /** Generated on first run if missing. */
 const GENERATED = ['APP_PASSWORD', 'APP_SECRET', 'SHARE_TOKEN'];
@@ -89,27 +99,33 @@ function resolveProvider(name: string): ProviderChoice {
   return provider;
 }
 
-/** Patch the AI_PROVIDER var without disturbing the rest of the file. */
+/** Patch the AI_PROVIDER var in the gitignored personal config, creating it. */
 function writeProvider(provider: string): string {
-  const personal = join(ROOT, 'wrangler.personal.jsonc');
-  const target = existsSync(personal) ? personal : join(ROOT, 'wrangler.jsonc');
-  const text = readFileSync(target, 'utf8');
+  const base = existsSync(PERSONAL_PATH)
+    ? readFileSync(PERSONAL_PATH, 'utf8')
+    : existsSync(PERSONAL_EXAMPLE)
+      ? readFileSync(PERSONAL_EXAMPLE, 'utf8')
+      : '{}\n';
 
-  const existing = /"AI_PROVIDER"\s*:\s*"[^"]*"/;
-  let next: string;
-  if (existing.test(text)) {
-    next = text.replace(existing, `"AI_PROVIDER": "${provider}"`);
-  } else {
-    const varsBlock = /"vars"\s*:\s*\{/;
-    if (!varsBlock.test(text)) {
-      console.error(`\nCould not find a "vars" block in ${target}. Add "AI_PROVIDER": "${provider}" by hand.`);
-      return target;
-    }
-    next = text.replace(varsBlock, match => `${match}\n    "AI_PROVIDER": "${provider}",`);
+  let document: Record<string, unknown>;
+  try {
+    document = JSON.parse(base) as Record<string, unknown>;
+  } catch {
+    console.error(`\n${PERSONAL_PATH} is not valid JSON. Fix it, or delete it and re-run.`);
+    process.exit(1);
   }
 
-  if (next !== text) writeFileSync(target, next);
-  return target;
+  // The example ships a "//" placeholder; the real file does not need it.
+  delete document['//'];
+  const vars =
+    typeof document.vars === 'object' && document.vars !== null
+      ? (document.vars as Record<string, string>)
+      : {};
+  vars.AI_PROVIDER = provider;
+  document.vars = vars;
+
+  writeFileSync(PERSONAL_PATH, `${JSON.stringify(document, null, 2)}\n`);
+  return PERSONAL_PATH;
 }
 
 function randomSecret(): string {
@@ -138,21 +154,20 @@ function serialize(vars: Map<string, string>): string {
   return `${HEADER}${body}${extra.length ? `\n\n# Kept from your previous file\n${extra.join('\n')}` : ''}\n`;
 }
 
-function wrangler(args: string[], input?: string) {
-  const local = join(ROOT, 'node_modules', '.bin', 'wrangler');
-  const [command, commandArgs] = existsSync(local) ? [local, args] : ['bunx', ['wrangler', ...args]];
-  return spawnSync(command, commandArgs, {
-    cwd: ROOT,
-    input,
-    stdio: [input === undefined ? 'inherit' : 'pipe', 'inherit', 'inherit'],
-  });
+/**
+ * `cf` loads cloudflare.config.ts with Node, so it must run on Node, not Bun.
+ * The local install is preferred so CI and a fresh clone use the same version.
+ */
+function cf(args: string[]) {
+  const local = join(ROOT, 'node_modules', '.bin', 'cf');
+  const [command, commandArgs] = existsSync(local) ? [local, args] : ['bunx', ['cf', ...args]];
+  return spawnSync(command, commandArgs, { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'] });
 }
 
 async function main(): Promise<void> {
   const provider = await chooseProvider();
   const configFile = writeProvider(provider.id);
-  const configName = configFile.slice(ROOT.length + 1);
-  console.log(`\nProvider: ${provider.label} (${provider.id}) → ${configName}`);
+  console.log(`\nProvider: ${provider.label} (${provider.id}) → ${configFile.slice(ROOT.length + 1)}`);
 
   const existing = existsSync(VARS_PATH) ? parseVars(readFileSync(VARS_PATH, 'utf8')) : new Map<string, string>();
   const vars = new Map(existing);
@@ -184,14 +199,19 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const deployArgs = configName === 'wrangler.personal.jsonc'
-    ? ['deploy', '--config', 'wrangler.personal.jsonc']
-    : ['deploy'];
+  const keyMissing = provider.needsKey && !vars.get('AI_API_KEY') && !vars.get('OPENCODE_API_KEY');
+  const configText = readFileSync(configFile, 'utf8');
+  const customIncomplete = provider.id === 'custom' && !/"AI_BASE_URL"\s*:/.test(configText);
 
-  console.log('\nChecking Wrangler login...');
-  const whoami = wrangler(['whoami']);
-  if (whoami.status !== 0) {
-    console.error('\nWrangler is not logged in. Run `bunx wrangler login` first, then re-run `bun run setup`.');
+  if (!deploy) {
+    console.log('\nSecrets stay in .dev.vars. Deploy when ready:\n  bun run setup');
+    if (keyMissing) console.log(`\nSummaries need a key for ${provider.label}: edit .dev.vars first.`);
+    return;
+  }
+
+  console.log('\nChecking Cloudflare login...');
+  if (cf(['auth', 'whoami']).status !== 0) {
+    console.error('\nNot logged in. Run `cf auth login` first, then re-run `bun run setup`.');
     process.exit(1);
   }
 
@@ -201,65 +221,22 @@ async function main(): Promise<void> {
     if (value) secrets[key] = value;
   }
 
-  const bulkPath = join(tmpdir(), `shelf-secrets-${process.pid}.json`);
-  writeFileSync(bulkPath, JSON.stringify(secrets), { mode: 0o600 });
-  console.log(`\nUploading ${Object.keys(secrets).join(', ')} as Worker secrets...`);
+  const secretsPath = join(tmpdir(), `shelf-secrets-${process.pid}.json`);
+  writeFileSync(secretsPath, JSON.stringify(secrets), { mode: 0o600 });
+  console.log(`\nDeploying with ${Object.keys(secrets).join(', ')} as Worker secrets...`);
 
-  let uploaded = wrangler(['secret', 'bulk', bulkPath]);
-  let deployedAlready = false;
-
-  // `secret bulk` cannot target a Worker that does not exist yet, which is the
-  // normal first-run case: create it with a deploy, then retry.
-  if (uploaded.status !== 0) {
-    console.log('\nThe Worker does not exist yet, so deploying it first...');
-    const first = wrangler(deployArgs);
-    if (first.status !== 0) {
-      console.error('\nDeploy failed. Fix the error above and re-run `bun run setup`.');
-      process.exit(1);
-    }
-    deployedAlready = true;
-    uploaded = wrangler(['secret', 'bulk', bulkPath]);
-  }
+  // One deploy carries both the code and the secrets, which also covers the
+  // first run, when the Worker does not exist yet.
+  const deployed = cf(['deploy', '--mode', 'personal', '--secrets-file', secretsPath]);
 
   try {
-    unlinkSync(bulkPath);
+    unlinkSync(secretsPath);
   } catch {
     // The temp file is only readable by this user; leaving it is not fatal.
   }
 
-  if (uploaded.status !== 0) {
-    console.error(
-      [
-        '',
-        'Uploading secrets failed. Set them by hand with:',
-        ...Object.keys(secrets).map((key) => `  bunx wrangler secret put ${key}`),
-        '',
-        'The values are in .dev.vars.',
-      ].join('\n'),
-    );
-    process.exit(1);
-  }
-
-  const deployCommand = ['bunx', 'wrangler', ...deployArgs].join(' ');
-  const keyMissing = provider.needsKey && !vars.get('AI_API_KEY');
-  const configText = readFileSync(configFile, 'utf8');
-  const customIncomplete = provider.id === 'custom' && !/"AI_BASE_URL"\s*:/.test(configText);
-
-  if (!deploy || deployedAlready) {
-    if (deployedAlready) console.log('\nSecrets set. They apply immediately, no redeploy needed.');
-    else console.log(`\nSecrets set. Deploy when ready:\n  ${deployCommand}`);
-    if (keyMissing && !deployedAlready) {
-      console.log(`\nSummaries need a ${provider.label} key before they will work:`);
-      console.log('  bunx wrangler secret put AI_API_KEY');
-    }
-    if (deployedAlready) printNextSteps(provider, keyMissing, customIncomplete);
-    return;
-  }
-
-  console.log('\nDeploying...');
-  const deployed = wrangler(deployArgs);
   if (deployed.status !== 0) {
-    console.error(`\nDeploy failed. Fix the error above and re-run \`${deployCommand}\`.`);
+    console.error('\nDeploy failed. Fix the error above and re-run `bun run setup`.');
     process.exit(1);
   }
 
@@ -275,20 +252,20 @@ function printNextSteps(provider: ProviderChoice, keyMissing: boolean, customInc
 
   if (keyMissing) {
     lines.push(
-      `  2. Summaries need a ${provider.label} key:`,
-      '     bunx wrangler secret put AI_API_KEY',
+      `  2. Summaries need a key for ${provider.label}:`,
+      '     add AI_API_KEY to .dev.vars, then run `bun run setup` again.',
     );
   }
   if (customIncomplete) {
     lines.push(
-      '     Custom provider: also add "AI_BASE_URL" and "AI_MODEL" to the config file.',
+      '     Custom provider: also add "AI_BASE_URL" and "AI_MODEL" to cloudflare.personal.json.',
     );
   }
 
   lines.push(
     keyMissing || customIncomplete ? '  3.' : '  2.',
-    '     Optional: add a custom domain in the Cloudflare dashboard, or set "routes"',
-    '     in wrangler.jsonc.',
+    '     Optional: add your own domain to "domains" in cloudflare.personal.json,',
+    '     then run `bun run deploy:personal` again.',
     '',
     'The Android and iOS apps are published builds: install one and enter this',
     'server URL plus APP_PASSWORD. Their source lives in nuuritas/shelf-cloud.',

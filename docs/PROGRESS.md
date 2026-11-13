@@ -62,8 +62,8 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
   `opencode`, `claude` (Anthropic Messages), `openai`, `cloudflare`, or
   `custom`; `AI_BASE_URL` and `AI_MODEL` override the preset. With no provider
   named, a key means OpenAI-compatible HTTP and no key means the `AI` binding,
-  which runs `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The public
-  `wrangler.jsonc` names no provider, so a fresh clone uses Workers AI. That
+  which runs `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The base
+  `cloudflare.config.ts` names no provider, so a fresh clone uses Workers AI. That
   path is text-only (images go only over HTTP, up to four) and shares the 10,000
   free neurons/day with Whisper transcription. Subscriptions are not API access:
   Claude Max and ChatGPT Plus tokens from their CLIs cannot be used here.
@@ -302,7 +302,7 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
   (GBs of RAM). Derive them from the base class instead
   (`ConstructorParameters<typeof DurableObject<Env>>`).
 - **Local OpenCode key is expired**; the production secret still works. Local
-  `wrangler dev` summaries fail while that expired key is set, because a set key
+  `cf dev` summaries fail while that expired key is set, because a set key
   selects the HTTP path; unset it and the `AI` binding takes over.
 - **Topic singletons**: some topics hold one item, so their "synthesis" is a
   restatement. Candidate fix: merge or suppress single-item syntheses.
@@ -347,11 +347,12 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 
 ## 8. Repo conventions
 
-- TypeScript strict, `.ts` import specifiers, no build step; Wrangler bundles.
+- TypeScript strict, `.ts` import specifiers, no build step; `cf deploy` bundles
+  (through Wrangler) and uploads.
 - One feature per issue and PR, imperative commit subject, tests and
   `bun run typecheck` before pushing. The PR body starts with `Closes #N`; direct
   pushes to `main` are emergency-only.
-- Never commit `.dev.vars`, `.wrangler/`, or `out/`. Mobile builds and their
+- Never commit `.dev.vars`, `.cloudflare/`, or `out/`. Mobile builds and their
   signing material live in `nuuritas/shelf-cloud/apps`.
 - The README stays short and leads with the agent install prompt; install
   details live in `INSTALL.md`, which must stay executable by an agent (exact
