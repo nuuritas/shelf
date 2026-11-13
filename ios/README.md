@@ -42,7 +42,7 @@ stored in the App Group's `UserDefaults`.
 
 1. Enter the email and password.
 2. The app posts JSON `{email, password}` to `POST /api/auth/login` on the
-   cloud base URL. The default is `https://cloud.shelf.nuritas.tr`; change it
+   cloud base URL. The default is `https://shelfcloud.nuritas.tr`; change it
    in the onboarding **Advanced** section or override the `ShelfCloudBaseURL`
    key in `Shelf/Info.plist`.
 3. The response is expected to contain `{token, user, tenant}` and, ideally,

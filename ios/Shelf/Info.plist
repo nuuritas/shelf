@@ -43,7 +43,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Shelf connects to your self-hosted server on your local network.</string>
 	<key>ShelfCloudBaseURL</key>
-	<string>https://cloud.shelf.nuritas.tr</string>
+	<string>https://shelfcloud.nuritas.tr</string>
 	<key>ShelfKeychainAccessGroup</key>
 	<string>$(AppIdentifierPrefix)group.tr.nuritas.shelf</string>
 	<key>UILaunchScreen</key>

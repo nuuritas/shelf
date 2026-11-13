@@ -47,7 +47,7 @@ struct ServerConfig: Codable, Equatable {
                 return trimmed
             }
         }
-        return "https://cloud.shelf.nuritas.tr"
+        return "https://shelfcloud.nuritas.tr"
     }
 
     /// Trim, add a scheme when missing, require HTTPS except on loopback, and

@@ -162,7 +162,7 @@ enum WebSession {
         let host = (baseURL.host ?? "").lowercased()
         guard !host.isEmpty else { return false }
         return await allCookies().contains { cookie in
-            guard cookie.name == "shelf_session" else { return false }
+            guard cookie.name == "shelf_session" || cookie.name == "shelf_cloud_session" else { return false }
             let domain = cookie.domain.lowercased()
             if domain == host { return true }
             let bare = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
