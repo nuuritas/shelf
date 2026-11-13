@@ -338,7 +338,7 @@ API: see `docs/PROGRESS.md` §3.
 
 ## Autonomous agent (superagent)
 
-This repository has its own `dsh-superagent` instance (`bookmark`, panel `http://192.168.1.102:3083`).
+This repository has its own `dsh-superagent` instance (`shelf`, panel `http://192.168.1.102:3083`).
 It is not a chat bot you invoke: any issue opened on this repository by an allowed account
 (`nuuritas`) is a work order — no mention and no label are required.
 
