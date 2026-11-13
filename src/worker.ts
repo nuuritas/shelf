@@ -40,6 +40,7 @@ import type {
   VideoTranscript,
 } from './types.ts';
 import {
+  canonicalRedirectUrl,
   clampInteger,
   escapeHtml,
   htmlResponse,
@@ -69,6 +70,11 @@ const worker: ExportedHandler<Env> = {
 
     if (url.pathname === '/healthz') {
       return secure(jsonResponse({ ok: true }));
+    }
+
+    const canonical = canonicalRedirectUrl(url, env.CANONICAL_HOST, env.REDIRECT_HOSTS);
+    if (canonical) {
+      return secure(redirect(canonical, 308));
     }
 
     if (url.pathname === '/style.css') {

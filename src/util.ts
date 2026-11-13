@@ -41,6 +41,28 @@ export function sourceOfUrl(value: unknown): BookmarkSource {
 }
 
 /** `source` query value → a filter; anything unknown falls back to `all`. */
+/**
+ * When a deployment serves the same instance on more than one custom domain,
+ * move the legacy hosts to the canonical one. Returns the absolute target, or
+ * null when no redirect applies. Both hosts stay attached; this only redirects.
+ */
+export function canonicalRedirectUrl(
+  url: URL,
+  canonicalHost: unknown,
+  legacyHosts: unknown,
+): string | null {
+  const canonical = String(canonicalHost || '').trim().toLowerCase();
+  if (!canonical) return null;
+  const current = url.hostname.toLowerCase();
+  if (current === canonical) return null;
+  const legacy = String(legacyHosts || '')
+    .split(',')
+    .map(host => host.trim().toLowerCase())
+    .filter(Boolean);
+  if (!legacy.includes(current)) return null;
+  return `https://${canonical}${url.pathname}${url.search}`;
+}
+
 export function parseSource(value: unknown): SourceFilter {
   const raw = String(value ?? '').trim().toLowerCase();
   return raw === 'x' || raw === 'linkedin' || raw === 'youtube' ? raw : 'all';

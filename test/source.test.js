@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import { parseSource, sourceFilterSql, sourceOfUrl } from '../src/util.ts';
+import { canonicalRedirectUrl, parseSource, sourceFilterSql, sourceOfUrl } from '../src/util.ts';
 
 const urls = [
   'https://x.com/nuuritas/status/123',
@@ -57,4 +57,22 @@ test('the SQL filter agrees with sourceOfUrl', () => {
   }
 
   db.close();
+});
+
+
+test('legacy hosts move to the canonical host, others are untouched', () => {
+  const url = new URL('https://bookmark.example.com/t/ai?source=youtube');
+  assert.equal(
+    canonicalRedirectUrl(url, 'shelf.example.com', 'bookmark.example.com, old.example.com'),
+    'https://shelf.example.com/t/ai?source=youtube',
+  );
+  assert.equal(
+    canonicalRedirectUrl(new URL('https://shelf.example.com/x'), 'shelf.example.com', 'bookmark.example.com'),
+    null,
+  );
+  assert.equal(
+    canonicalRedirectUrl(new URL('https://unrelated.example/x'), 'shelf.example.com', 'bookmark.example.com'),
+    null,
+  );
+  assert.equal(canonicalRedirectUrl(url, '', 'bookmark.example.com'), null);
 });

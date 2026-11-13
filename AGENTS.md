@@ -305,6 +305,9 @@ API: see `docs/PROGRESS.md` §3.
 - Brave installs the PWA as a shortcut, so its share target never appears;
   the APK is the supported share path.
 - Keep `workers_dev: true`. Removing it makes the workers.dev URL return 404.
+- Renaming a custom domain: keep both routes attached, set `CANONICAL_HOST` to
+  the new host and `REDIRECT_HOSTS` to the comma-separated old hosts. Anything
+  else 308-redirects to the canonical host; `/healthz` answers on both.
 - A custom domain lives in `wrangler.personal.jsonc`, not the tracked
   `wrangler.jsonc`. Deploying with the wrong config detaches the custom domain;
   use `bun run deploy:personal` for the maintainer instance.
