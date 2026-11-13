@@ -88,8 +88,8 @@ Nothing, for a personal archive:
   service; it is not published for reuse. The web app still works as a PWA on
   both platforms.
 - **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`.
-- **Custom domain** — a workers.dev URL works; a domain is three lines in
-  `wrangler.jsonc`.
+- **Custom domain** — a workers.dev URL works; a domain is one key in
+  `cloudflare.personal.json`.
 - **Transcript services** — `SUPADATA_API_KEY`, `TRANSCRIPT_API_URL`, or your own
   Piped instance. Details in [INSTALL.md](INSTALL.md#transcripts-optional).
 

@@ -10,12 +10,12 @@ Single-user bookmark archive for X, LinkedIn and YouTube posts plus saved web
 pages. One Cloudflare Worker
 (`src/worker.ts`) plus one SQLite-backed Durable Object (`src/bookmarks-do.ts`).
 Server-rendered HTML, no client framework, no build step. TypeScript 7.0.2
-(native compiler), bundled by Wrangler.
+(native compiler), bundled by Wrangler and deployed with the `cf` CLI.
 
 The repository is public; `main` deploys the maintainer's own instance, whose
-domain and provider live in a gitignored `wrangler.personal.jsonc`. There is no
-hosted demo: every deployment is password-gated, so a shared instance would only
-show a login page. Anyone else deploys their own copy with `bun run setup`.
+domains and provider live in a gitignored `cloudflare.personal.json`. There is
+no hosted demo: every deployment is password-gated, so a shared instance would
+only show a login page. Anyone else deploys their own copy with `bun run setup`.
 
 ## Agent harnesses
 
@@ -93,16 +93,24 @@ bun install                 # package manager is bun; npm is not installed
 bun run typecheck           # tsc --noEmit (TS 7.0.2, ~0.1 s)
 node --test                 # unit tests, .ts directly on Node 26
 bun run setup               # fresh deploy: write .dev.vars, push secrets, deploy
-bunx wrangler dev           # local Worker (needs .dev.vars)
-bun run deploy:personal     # deploy the maintainer instance (wrangler.personal.jsonc)
-bunx wrangler deploy        # deploy with the public wrangler.jsonc
-bunx wrangler tail          # production logs
+bun run dev                 # local Worker (cf dev, needs .dev.vars)
+bun run deploy:personal     # deploy the maintainer instance (cloudflare.personal.json)
+bun run deploy              # deploy the public shape (workers.dev, English)
+bun run deploy -- --dry-run # build and check without uploading (CI runs this)
+cf o11y telemetry live-tail --script-id shelf  # production logs
 shelf add file.md --title "…"  # save an agent-written note
 shelf guide                    # the agent-post contract (docs/AGENT-POSTS.md)
 shelf search "claude code"  # CLI → ~/.local/bin/shelf symlink to cli/shelf.ts
 shelf mcp                   # stdio MCP server for Claude/Codex/Cursor
 shelf youtube [--limit 20]  # fetch missing YouTube transcripts from this Mac
 ```
+
+All Cloudflare work goes through `cf` (1.0.0-beta), not Wrangler: deploy, dev,
+secrets, logs and resources. Wrangler stays as a devDependency because `cf`
+delegates bundling to it, and `wrangler.config.ts` is the file that names
+`public/` as the asset directory. `cf` also loads `cloudflare.config.ts` with
+Node, so it needs Node 22.18 or newer — run it through `bun run`, never as a Bun
+script, and do not call `cf` from a Worker.
 
 `.dev.vars` (gitignored): `APP_PASSWORD` is required and `APP_SECRET` signs the
 session cookie. `SHARE_TOKEN` is optional: it adds an add-only bearer token for
@@ -174,6 +182,13 @@ API: see `docs/PROGRESS.md` §3.
 ## Durable Object rules
 
 - There is exactly one instance: `env.BOOKMARKS.idFromName('library')`.
+- The class is declared once, in `cloudflare.config.ts`:
+  `exports: { Bookmarks: exports.durableObject({ storage: 'sqlite' }) }`, with
+  the `BOOKMARKS` binding pointing at the same Worker. That replaces the old
+  Wrangler `migrations` array. A Worker may use `exports` or `migrations`, never
+  both, and once it has deployed with `exports` it cannot go back. Add a class
+  by adding it to `exports`; never delete or rename the `Bookmarks` entry, which
+  would drop every saved bookmark.
 - Schema changes must be idempotent. Add `CREATE TABLE IF NOT EXISTS` and wrap
   `ALTER TABLE` in `try/catch`, because the constructor runs on every wake.
 - **Never import `SqlStorage` or `DurableObjectState` from
@@ -326,7 +341,7 @@ API: see `docs/PROGRESS.md` §3.
   in with `APP_PASSWORD` or a cloud session at first launch. No password or
   token is compiled into them; the only built-in host is the public Shelf Cloud
   default, which the user replaces for a self-hosted instance.
-- Never commit `.dev.vars`, `.wrangler/`, or `out/`.
+- Never commit `.dev.vars`, `.cloudflare/`, or `out/`.
 - The CLI stores the vault password in `~/.config/shelf/config.json` (mode 0600,
   outside the repo). Rotating `APP_PASSWORD` on the Worker requires
   `shelf config --password <new>`; the CLI reports a stale password as a 401 hint.
@@ -338,8 +353,9 @@ API: see `docs/PROGRESS.md` §3.
 1. `bun run typecheck` — must be clean.
 2. `node --test` — must pass.
 3. If CSS/markup changed: bump `?v=` and check the page with a session cookie.
-4. If Worker code changed: `bun run deploy:personal -- --dry-run` on the branch, then
-   deploy from `main` after the merge.
+4. If Worker code changed: `bun run deploy:personal -- --dry-run` on the branch,
+   then deploy from `main` after the merge (`bun run deploy:personal`; secrets
+   come from `bun run setup`, which passes `.dev.vars` with the deploy).
 5. If AI behaviour changed: run one real save/reindex in production and inspect
    the resulting text, not just the HTTP status.
 6. If notifications changed: send the Settings test in a browser, and run
@@ -360,15 +376,16 @@ API: see `docs/PROGRESS.md` §3.
   `nuuritas/shelf-cloud/apps` on 2026-11-13; this repository ships the web app
   and the PWA only. Do not re-add a build script or an APK to `public/` — the
   footer links the published download instead.
-- Keep `workers_dev: true`. Removing it makes the workers.dev URL return 404.
+- Keep `workersDev: true`. Removing it makes the workers.dev URL return 404.
 - The maintainer instance is `https://shelf.nuritas.tr`; an earlier host was
   retired on 2026-11-13. If the deployment moves again, keep both routes
   attached and set `CANONICAL_HOST` to the new host plus `REDIRECT_HOSTS` to the
   comma-separated old hosts: every other host 308-redirects, and `/healthz`
   answers on both.
-- A custom domain lives in `wrangler.personal.jsonc`, not the tracked
-  `wrangler.jsonc`. Deploying with the wrong config detaches the custom domain;
-  use `bun run deploy:personal` for the maintainer instance.
+- Custom domains live in the gitignored `cloudflare.personal.json`, not in the
+  tracked `cloudflare.config.ts`. A deploy without `--mode personal` publishes
+  the public shape and takes the maintainer's domains down; use
+  `bun run deploy:personal` for the maintainer instance.
 - Summary rows can contain "Özet:" prefixes from older prompts; that is data,
   not a rendering bug.
 - English translations are a second AI call; a failure must not change

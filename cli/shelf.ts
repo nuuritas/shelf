@@ -39,7 +39,7 @@ import type {
 } from '../src/types.ts';
 
 const VERSION = '0.1.0';
-/** Last-resort default: a local `wrangler dev` server. */
+/** Last-resort default: a local `bun run dev` server. */
 const DEFAULT_URL = 'http://127.0.0.1:8787';
 
 // ---------------------------------------------------------------------------

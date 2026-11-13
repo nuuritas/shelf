@@ -8,7 +8,7 @@ Closes #
 
 - [ ] `bun run typecheck`
 - [ ] `node --test`
-- [ ] `bunx wrangler deploy --dry-run` (Worker code changed)
+- [ ] `bun run deploy -- --dry-run` (Worker code changed)
 - [ ] Production check with a session cookie (CSS, markup, or AI behaviour changed)
 
 ## Gates not run

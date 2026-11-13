@@ -1,0 +1,10 @@
+{
+  "//": "Copy to cloudflare.personal.json (gitignored) to deploy your own instance with `cf deploy --mode personal`. Every key is optional; what you leave out keeps the public default.",
+  "domains": ["shelf.example.com"],
+  "vars": {
+    "SUMMARY_LANGUAGE": "en",
+    "AI_PROVIDER": "opencode",
+    "AI_BASE_URL": "https://opencode.ai/inference/go/openai/v1",
+    "AI_MODEL": "deepseek-v4.1-flash"
+  }
+}
