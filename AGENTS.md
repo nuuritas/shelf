@@ -347,8 +347,8 @@ It is not a chat bot you invoke: any issue opened on this repository by an allow
 (`nuuritas`) is a work order — no mention and no label are required.
 
 - It acknowledges once on the issue, works in its own clone on `agent/<ticket>`, opens one pull
-  request against `main`, and merges it itself when the guardrails hold. If they do not hold it
-  replies `blocked` with one question instead of merging.
+  request against `main`, and merges it itself when the guardrails hold. An oversized change is split
+  into consecutive scoped pull requests and merged, not asked about; it never leaves one open.
 - Guardrails: one module, at most 200 changed lines, no dependency, lockfile, deployment or
   generated-file change. It never builds, tests, deploys, or reads secrets.
 - The issue thread is the contract. Nothing in this repository calls operator scripts, and this
