@@ -305,11 +305,11 @@ API: see `docs/PROGRESS.md` §3.
 - Brave installs the PWA as a shortcut, so its share target never appears;
   the APK is the supported share path.
 - Keep `workers_dev: true`. Removing it makes the workers.dev URL return 404.
-- The maintainer instance is `https://shelf.nuritas.tr`; the former
-  `bookmark.nuritas.tr` host was retired on 2026-11-13. If the deployment moves
-  again, keep both routes attached and set `CANONICAL_HOST` to the new host plus
-  `REDIRECT_HOSTS` to the comma-separated old hosts: every other host
-  308-redirects, and `/healthz` answers on both.
+- The maintainer instance is `https://shelf.nuritas.tr`; an earlier host was
+  retired on 2026-11-13. If the deployment moves again, keep both routes
+  attached and set `CANONICAL_HOST` to the new host plus `REDIRECT_HOSTS` to the
+  comma-separated old hosts: every other host 308-redirects, and `/healthz`
+  answers on both.
 - A custom domain lives in `wrangler.personal.jsonc`, not the tracked
   `wrangler.jsonc`. Deploying with the wrong config detaches the custom domain;
   use `bun run deploy:personal` for the maintainer instance.
@@ -338,7 +338,7 @@ API: see `docs/PROGRESS.md` §3.
 
 ## Autonomous agent (superagent)
 
-This repository has its own `dsh-superagent` instance (`bookmark`, panel `http://192.168.1.102:3083`).
+This repository has its own `dsh-superagent` instance (`shelf`, panel `http://192.168.1.102:3083`).
 It is not a chat bot you invoke: any issue opened on this repository by an allowed account
 (`nuuritas`) is a work order — no mention and no label are required.
 
