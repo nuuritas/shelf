@@ -23,6 +23,10 @@ export interface Env {
   SUMMARY_LANGUAGE?: string;
   /** Contact URI for VAPID; defaults to the public repository URL. */
   PUSH_CONTACT?: string;
+  /** Canonical host; legacy hosts in `REDIRECT_HOSTS` 308-redirect here. */
+  CANONICAL_HOST?: string;
+  /** Comma-separated hosts that should move to `CANONICAL_HOST`. */
+  REDIRECT_HOSTS?: string;
   X_BEARER_TOKEN?: string;
   X_PROVIDER?: string;
   BOOKMARKS: DurableObjectNamespace;
