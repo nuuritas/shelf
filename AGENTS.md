@@ -41,6 +41,7 @@ cli/shelf.ts         Bun CLI + stdio MCP server (search/show/export/mcp)
 .github/workflows/   CI + maintainer push log
 test/                node:test unit tests
 docs/PROGRESS.md     long-form project knowledge
+docs/AGENT-POSTS.md  contract for agents that write notes (shelf guide)
 ```
 
 ## Commands
@@ -56,6 +57,7 @@ bunx wrangler deploy        # deploy with the public wrangler.jsonc
 bunx wrangler tail          # production logs
 ./android/build.sh          # rebuild public/ShelfShare.apk
 shelf add file.md --title "…"  # save an agent-written note
+shelf guide                    # the agent-post contract (docs/AGENT-POSTS.md)
 shelf search "claude code"  # CLI → ~/.local/bin/shelf symlink to cli/shelf.ts
 shelf mcp                   # stdio MCP server for Claude/Codex/Cursor
 shelf youtube [--limit 20]  # fetch missing YouTube transcripts from this Mac

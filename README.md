@@ -62,6 +62,8 @@ commands.
 - **Reach it from AI tools** — a Bun CLI and a stdio MCP server, so Claude Code,
   Codex, or Cursor can search the vault themselves, and `shelf add` lets an agent
   save a finished research note (markdown, or sandboxed HTML) next to your links.
+  The authoring contract is in [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), also
+  available as `shelf guide` and the MCP `get_authoring_guide` tool.
 
 ## What it costs
 

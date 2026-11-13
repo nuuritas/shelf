@@ -27,6 +27,30 @@ export class NoteInputError extends Error {
   }
 }
 
+const DANGEROUS_ELEMENTS =
+  /<\s*(script|iframe|object|embed|applet|template|frameset|frame|noscript)\b[\s\S]*?<\s*\/\s*\1\s*>/gi;
+const DANGEROUS_TAGS =
+  /<\s*\/?\s*(form|input|button|select|optgroup|option|textarea|base|link|meta)\b[^>]*>/gi;
+const EVENT_ATTRIBUTE = /\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const DANGEROUS_ATTRIBUTE = /\s+(?:srcdoc|ping)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const SCRIPT_PROTOCOL_ATTRIBUTE =
+  /\s+(?:href|src|xlink:href|action|formaction|poster)\s*=\s*(?:"[^"]*(?:javascript|vbscript|data:text\/html)[^"]*"|'[^']*(?:javascript|vbscript|data:text\/html)[^']*'|(?:javascript|vbscript|data:text\/html)[^\s>]*)/gi;
+
+/**
+ * Best-effort sanitation for an untrusted HTML note. The sandboxed iframe and
+ * its CSP are the real boundary; this keeps obviously dangerous markup out of
+ * the stored row and out of the frame document.
+ */
+export function sanitizeNoteHtml(html: string): string {
+  return String(html ?? '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(DANGEROUS_ELEMENTS, '')
+    .replace(DANGEROUS_TAGS, '')
+    .replace(EVENT_ATTRIBUTE, '')
+    .replace(DANGEROUS_ATTRIBUTE, '')
+    .replace(SCRIPT_PROTOCOL_ATTRIBUTE, '');
+}
+
 export function parseNoteFormat(value: unknown): NoteFormat | null {
   return value === 'markdown' || value === 'html' ? value : null;
 }
@@ -66,17 +90,18 @@ export function normalizeNoteInput(raw: unknown): NoteInput {
     throw new NoteInputError('format must be "markdown" or "html".');
   }
 
-  const content = typeof record.content === 'string' ? record.content : '';
-  if (!content.trim()) {
+  const rawContent = typeof record.content === 'string' ? record.content : '';
+  if (!rawContent.trim()) {
     throw new NoteInputError('content is required.');
   }
-  const bytes = new TextEncoder().encode(content).length;
+  const bytes = new TextEncoder().encode(rawContent).length;
   const limit = NOTE_LIMITS[format];
   if (bytes > limit) {
     throw new NoteInputError(
       `${format} content is limited to ${Math.round(limit / 1024)} KB (got ${Math.round(bytes / 1024)} KB).`,
     );
   }
+  const content = format === 'html' ? sanitizeNoteHtml(rawContent) : rawContent;
 
   const summary = optionalString(record.summary, NOTE_LIMITS.summary, 'summary');
   const sourceUrlRaw = optionalString(record.sourceUrl, NOTE_LIMITS.sourceUrl, 'sourceUrl');

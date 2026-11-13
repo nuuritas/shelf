@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderPage } from '../src/render.ts';
+import { renderNotePage, renderPage } from '../src/render.ts';
 
 function note(overrides = {}) {
   return {
@@ -76,7 +76,7 @@ test('a note with a source links to it and hides the duplicate H1', () => {
   assert.equal((html.match(/How agent memory works/g) || []).length, 1); // title only; the duplicate H1 is stripped
 });
 
-test('an HTML note renders its extracted text, never raw markup', () => {
+test('an HTML note renders in a sandboxed frame, never raw markup', () => {
   const html = renderPage({
     bookmarks: [
       note({
@@ -91,5 +91,24 @@ test('an HTML note renders its extracted text, never raw markup', () => {
     layout: 'saves',
   });
   assert.doesNotMatch(html, /<script>alert/);
-  assert.match(html, /HTML note · readable text shown/);
+  assert.match(html, /<iframe class="note-frame" src="\/p\/n0te1\/frame"/);
+  assert.match(html, /sandbox/);
+  assert.match(html, /referrerpolicy="no-referrer"/);
+});
+
+
+test('the full note page renders markdown and the HTML frame', () => {
+  const markdown = renderNotePage({ bookmark: note() });
+  assert.match(markdown, /<h1 class="note-title">How agent memory works<\/h1>/);
+  assert.match(markdown, /AI-generated/);
+  assert.match(markdown, /Claude Code · claude-sonnet-4\.5/);
+  assert.match(markdown, /<h2>Memory<\/h2>/);
+  assert.match(markdown, /Abstract \(agent-written\)/);
+
+  const html = renderNotePage({
+    bookmark: note({ format: 'html', content: '<h1>Doc</h1><script>alert(1)</script>', title: 'Doc' }),
+  });
+  assert.match(html, /<iframe class="note-frame note-frame-full" src="\/p\/n0te1\/frame"/);
+  assert.match(html, /sandbox/);
+  assert.doesNotMatch(html, /<script>alert/);
 });

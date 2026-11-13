@@ -7,6 +7,7 @@ import {
   notePlainText,
   noteTitle,
   normalizeNoteInput,
+  sanitizeNoteHtml,
 } from '../src/notes.ts';
 
 test('accepts a markdown note and fills the title from the first heading', () => {
@@ -63,4 +64,32 @@ test('an HTML note takes its title from title or h1, stripped of tags', () => {
   assert.equal(noteTitle(null, 'html', '<h1>Hello <em>there</em></h1>'), 'Hello there');
   assert.equal(noteTitle('  ', 'markdown', 'no heading'), 'no heading');
   assert.equal(noteTitle(null, 'markdown', '   '), 'Untitled note');
+});
+
+
+test('sanitises dangerous HTML but keeps styles, SVG and https images', () => {
+  const html = sanitizeNoteHtml(`<script>alert(1)</script>
+    <img src="https://example.com/a.png" onerror="alert(1)">
+    <a href="javascript:alert(1)">bad</a>
+    <form action="/steal"><input name="x"></form>
+    <meta http-equiv="refresh" content="0;url=//evil">
+    <iframe src="//evil"></iframe>
+    <object data="x"></object>
+    <style>body { color: red; }</style>
+    <svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>`);
+
+  assert.doesNotMatch(html, /<script|<iframe|<object|<form|<input|<meta/i);
+  assert.doesNotMatch(html, /onerror|javascript:/i);
+  assert.match(html, /<style>body \{ color: red; \}<\/style>/);
+  assert.match(html, /<svg viewBox="0 0 10 10">/);
+  assert.match(html, /src="https:\/\/example\.com\/a\.png"/);
+});
+
+test('the API path stores sanitised HTML content', () => {
+  const note = normalizeNoteInput({
+    format: 'html',
+    content: '<h1>Hi</h1><script>alert(1)</script><p onclick="x()">Body</p>',
+  });
+  assert.doesNotMatch(note.content, /<script|onclick/);
+  assert.match(note.content, /<h1>Hi<\/h1>/);
 });
