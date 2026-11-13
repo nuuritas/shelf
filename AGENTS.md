@@ -17,6 +17,43 @@ domain and provider live in a gitignored `wrangler.personal.jsonc`. There is no
 hosted demo: every deployment is password-gated, so a shared instance would only
 show a login page. Anyone else deploys their own copy with `bun run setup`.
 
+## Agent harnesses
+
+Two harnesses work on this repository. They do different jobs, and the split is
+deliberate.
+
+**T3 Code is the main harness.** Work a person starts happens in a T3 thread:
+one thread, one worktree, one branch, one pull request. A thread can link and
+watch its pull request, so failed CI wakes the same session that wrote the code,
+and it runs the gates in the change checklist before the pull request opens.
+
+**`dsh-superagent` is the unattended lane.** It watches this repository's issues
+and turns each one into a clone, a branch and one pull request, then merges it
+when its guardrails hold. It has its own GitHub account (`nuuritas-agent`) and
+runs on the operator's Mac under launchd, with no window to close. See
+**Autonomous agent (superagent)** below.
+
+A person starts work in T3; an issue starts work in the superagent. Neither
+waits for the other, so these rules keep one change from being done twice:
+
+- Before a T3 thread starts, check for a live ticket: `gh issue list --state
+  open` and `gh pr list`. An issue that already carries the agent's
+  acknowledgement belongs to the superagent — review its pull request instead of
+  opening a second one.
+- A T3 thread never files an issue for something it is about to do itself. On
+  this repository an issue is a work order, not a discussion channel.
+- Changes to the agent contract itself — this file, the delivery rules, the
+  superagent's scope — skip the issue step, because opening one would queue the
+  same edit for the superagent. Ship them as a branch and a pull request whose
+  body says why there is no `Closes #N`.
+- Branches: `agent/<ticket>` belongs to the superagent. A T3 thread pushes to
+  `<type>/<slug>`. Taking over an agent branch is a handoff: say so on the pull
+  request and keep working on that same branch.
+- One pull request per change. Two open pull requests for the same acceptance
+  check is a bug in the process, not extra progress.
+- Gates belong to T3. A superagent pull request states the gates it did not run;
+  run them in the review thread before merging, or hand the branch to T3 to fix.
+
 ## Layout
 
 ```
@@ -95,7 +132,8 @@ Public contributors follow `CONTRIBUTING.md` (fork → branch → PR). The
 maintainer's own changes, including docs and chores, follow this loop:
 
 1. Open an issue in `nuuritas/shelf` with the goal and an acceptance
-   check.
+   check. The one exception is a change to the agent contract itself; see
+   **Agent harnesses** above before filing.
 2. Add the issue to **All work** (project 1), set Workstream `XB`, and move it to
    `Todo`/`In Progress` when work starts. The project's Auto-add workflow is not
    enabled for this repository, so add the item explicitly.
@@ -339,12 +377,19 @@ API: see `docs/PROGRESS.md` §3.
   same 429/`LOGIN_REQUIRED`; backbone ports sometimes refuse connections. Do not
   retry datacenter egress for YouTube; only a residential IP or a managed API
   works.
+- Filing an issue to describe a change is the same as handing it to the
+  superagent. Work on the agent contract itself goes straight to a branch and a
+  pull request (see **Agent harnesses**), or two agents edit the same file.
 
 ## Autonomous agent (superagent)
 
 This repository has its own `dsh-superagent` instance (`shelf`, panel `http://192.168.1.102:3083`).
 It is not a chat bot you invoke: any issue opened on this repository by an allowed account
 (`nuuritas`) is a work order — no mention and no label are required.
+
+It stays active and stays the only thing that picks up an issue, whether or not a T3 window is
+open. T3 Code is the harness for work that needs a person in the loop and for the gates; the two
+lanes are peers. **Agent harnesses** above is the contract for keeping them apart.
 
 - It acknowledges once on the issue, works in its own clone on `agent/<ticket>`, opens one pull
   request against `main`, and merges it itself when the guardrails hold. An oversized change is split
