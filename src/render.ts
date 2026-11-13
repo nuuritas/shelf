@@ -575,6 +575,70 @@ function renderFolderGrid(
     .join('')}</div>`;
 }
 
+/** Full reading view for an agent note (`/p/:ref`). */
+export function renderNotePage({ bookmark }: { bookmark: Bookmark }): string {
+  const title = bookmark.title || 'Untitled note';
+  const agent = bookmark.agent;
+  const attribution = [agent?.name, agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const sourceUrl = safeHttpUrl(bookmark.sourceUrl || '');
+  const body =
+    bookmark.format === 'markdown'
+      ? `<div class="note-body note-body-full">${renderMarkdown(
+          stripDuplicateHeading(bookmark.content || '', title),
+        )}</div>`
+      : `<iframe class="note-frame note-frame-full" src="/p/${escapeHtml(bookmark.ref)}/frame" title="${escapeHtml(
+          title,
+        )}" sandbox referrerpolicy="no-referrer"></iframe>`;
+
+  return pageShell({
+    title: `${title} · Shelf`,
+    bodyClass: 'post',
+    head: '',
+    body: `
+      <header class="topbar">
+        <a class="brand" href="/">
+          <span class="brand-mark">S</span>
+          <span>Shelf</span>
+        </a>
+        <div class="top-actions">
+          <a class="calendar-link" href="/?layout=saves">Library</a>
+        </div>
+      </header>
+
+      <main class="shell post-shell">
+        <nav class="folder-crumbs" aria-label="Library">
+          <a href="/?layout=saves">← All saves</a>
+          ${bookmark.topics?.length ? bookmark.topics.map(entry => `<a href="/t/${escapeHtml(entry.slug)}">${escapeHtml(entry.name)}</a>`).join('') : ''}
+        </nav>
+
+        <article class="post">
+          <div class="note-title-row">
+            <h1 class="note-title">${escapeHtml(title)}</h1>
+            <span class="ai-badge" title="Written by an AI agent">AI-generated</span>
+          </div>
+          <p class="post-meta">
+            ${escapeHtml(attribution)}
+            <span class="dot">·</span>
+            ${escapeHtml(formatDate(bookmark.savedAt))}
+            ${bookmark.ref ? `<span class="dot">·</span> #${escapeHtml(bookmark.ref)}` : ''}
+          </p>
+          ${sourceUrl ? `<p class="post-source"><a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a></p>` : ''}
+
+          ${
+            bookmark.summary
+              ? `<section class="note-abstract"><span class="summary-label">Abstract (agent-written)</span>${renderParagraphs(
+                  bookmark.summary,
+                )}</section>`
+              : ''
+          }
+
+          ${body}
+        </article>
+      </main>
+    `,
+  });
+}
+
 export interface RenderSettingsOptions {
   settings: StoredSettings;
   ai: { provider: string; model: string; transport: string };
@@ -816,6 +880,8 @@ function renderBookmark(
         <div class="card-actions">
           <button class="expand-button" type="button" data-expand aria-expanded="false">Read more</button>
           <span class="dot">·</span>
+          <a href="/p/${escapeHtml(bookmark.ref)}">Open note</a>
+          <span class="dot">·</span>
           <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
           <span class="dot">·</span>
           <a href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer">Open on ${escapeHtml(source)}</a>
@@ -849,8 +915,8 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
   const body =
     bookmark.format === 'markdown'
       ? renderMarkdown(stripDuplicateHeading(bookmark.content || '', title))
-      : `<div class="note-extracted">${renderParagraphs(bookmark.text)}</div>
-         <p class="note-format-note">HTML note · readable text shown. The sandboxed full view is coming in the next slice.</p>`;
+      : `<iframe class="note-frame" src="/p/${escapeHtml(bookmark.ref)}/frame" title="${escapeHtml(title)}" sandbox referrerpolicy="no-referrer" loading="lazy"></iframe>
+         <p class="note-format-note"><a href="/p/${escapeHtml(bookmark.ref)}">Open full note</a></p>`;
 
   return `
     <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}">
@@ -907,6 +973,8 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
       <footer class="card-foot">
         <div class="metrics"></div>
         <div class="card-actions">
+          <a href="/p/${escapeHtml(bookmark.ref)}">Open note</a>
+          <span class="dot">·</span>
           <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
           <span class="dot">·</span>
           <form method="post" action="/archive" class="inline-form">
@@ -1356,7 +1424,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=14">
+  <link rel="stylesheet" href="/style.css?v=15">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1394,6 +1462,14 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
 .note-abstract { margin: 0 0 14px; padding: 12px 14px; border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; background: var(--accent-soft); }
 .note-abstract p { margin: 6px 0 0; }
 .note-format-note { color: var(--faint); font-size: 12px; }
+.note-frame { display: block; width: 100%; height: 70vh; min-height: 420px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.note-frame-full { height: 80vh; }
+.post-shell { max-width: 820px; }
+.note-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.note-title { margin: 0; font-size: 34px; line-height: 1.15; letter-spacing: -0.03em; }
+.post-meta { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.post-source { margin: 6px 0 0; font-size: 13px; }
+.note-body-full { margin: 20px 0 0; font-size: 16px; }
 
 .linked-article { display: block; }
     .peek-meta, .expand-button { display: none; }

@@ -4,7 +4,15 @@ import { parseWebUrl } from './links.ts';
 import { normalizeNoteInput } from './notes.ts';
 import { parseLinkedInUrl } from './linkedin.ts';
 import { parseYouTubeUrl } from './youtube.ts';
-import { CSS, renderCalendar, renderLogin, renderPage, renderSettings, renderSetup } from './render.ts';
+import {
+  CSS,
+  renderCalendar,
+  renderLogin,
+  renderNotePage,
+  renderPage,
+  renderSettings,
+  renderSetup,
+} from './render.ts';
 import {
   defaultSummaryLanguage,
   normalizeSummaryLanguage,
@@ -123,6 +131,11 @@ const worker: ExportedHandler<Env> = {
 
     if (request.method === 'GET' && url.pathname === '/calendar') {
       return secure(await handleCalendarPage(url, env));
+    }
+
+    const notePageMatch = url.pathname.match(/^\/p\/([A-Za-z0-9_-]{1,30})(\/frame)?$/);
+    if (notePageMatch && request.method === 'GET') {
+      return await handleNotePage(notePageMatch[1], Boolean(notePageMatch[2]), env);
     }
 
     if (url.pathname === '/settings') {
@@ -606,6 +619,37 @@ async function handleApiSave(request: Request, env: Env): Promise<Response> {
   } catch (error) {
     return jsonResponse({ error: errorMessage(error) }, errorStatus(error, 502));
   }
+}
+
+const NOTE_FRAME_HEADERS: Record<string, string> = {
+  'Content-Type': 'text/html; charset=utf-8',
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy':
+    "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+};
+
+/** `/p/:ref` is the note reading page; `/p/:ref/frame` is its sandboxed HTML. */
+async function handleNotePage(ref: string, frame: boolean, env: Env): Promise<Response> {
+  const result = await doJson<GetResult>(env, `/get?id=${encodeURIComponent(ref)}`).catch(
+    (): GetResult | null => null,
+  );
+  const bookmark = result?.bookmark;
+  if (!bookmark || bookmark.kind !== 'note') {
+    return secure(htmlResponse('<h1>Note not found</h1><p><a href="/">Go home</a></p>', 404));
+  }
+
+  if (frame) {
+    // Deliberately not passed through secure(): X-Frame-Options: DENY would
+    // block the same-origin iframe that renders this document.
+    if (bookmark.format !== 'html') {
+      return new Response('Not an HTML note.', { status: 404, headers: NOTE_FRAME_HEADERS });
+    }
+    return new Response(bookmark.content || '', { status: 200, headers: NOTE_FRAME_HEADERS });
+  }
+
+  return secure(htmlResponse(renderNotePage({ bookmark })));
 }
 
 async function handleApiCreatePost(request: Request, env: Env): Promise<Response> {

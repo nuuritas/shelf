@@ -443,6 +443,23 @@ function clampLimit(value: string | boolean | undefined, fallback: number, max: 
   return Math.min(Math.floor(number), max);
 }
 
+function authoringGuide(): string {
+  try {
+    const path = fileURLToPath(new URL('../docs/AGENT-POSTS.md', import.meta.url));
+    return readFileSync(path, 'utf8');
+  } catch {
+    return [
+      'Shelf agent posts',
+      '',
+      'Use markdown for text research; HTML only for visuals and only as a',
+      'self-contained, script-free document. POST /api/posts with',
+      '{ format, content, title?, summary?, sourceUrl?, clientId?, agent? }.',
+      'Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.',
+      'HTML is rendered in a sandboxed iframe; scripts never run.',
+    ].join('\n');
+  }
+}
+
 const ADD_HELP = `shelf add - save an AI-written research note
 
 Usage:
@@ -771,6 +788,11 @@ function frontMatter(bookmark: Bookmark): string {
 }
 
 function exportFileName(bookmark: Bookmark): string {
+  if (bookmark.kind === 'note') {
+    const slug = slugify(bookmark.title || 'untitled-note');
+    const extension = bookmark.format === 'html' ? 'html' : 'md';
+    return `${isoDay(bookmark.savedAt)}-note-${slug}.${extension}`;
+  }
   const username = slugify(bookmark.author?.username || bookmark.author?.name || 'unknown');
   return `${isoDay(bookmark.savedAt)}-${username}-${bookmark.tweetId}.md`;
 }
@@ -784,7 +806,11 @@ async function commandExport(args: ParsedArgs): Promise<void> {
   mkdirSync(dir, { recursive: true });
 
   for (const bookmark of bookmarks) {
-    const body = `${frontMatter(bookmark)}\n\n${renderBookmark(bookmark)}\n`;
+    // An HTML note is already a complete document; do not wrap it in markdown.
+    const body =
+      bookmark.kind === 'note' && bookmark.format === 'html'
+        ? String(bookmark.content || '')
+        : `${frontMatter(bookmark)}\n\n${renderBookmark(bookmark)}\n`;
     writeFileSync(join(dir, exportFileName(bookmark)), body, 'utf8');
   }
 
@@ -792,6 +818,10 @@ async function commandExport(args: ParsedArgs): Promise<void> {
     .map(bookmark =>
       JSON.stringify({
         id: bookmark.tweetId,
+        kind: bookmark.kind,
+        format: bookmark.format,
+        title: bookmark.title,
+        agent: bookmark.agent,
         url: bookmark.url,
         author: authorLabel(bookmark),
         savedAt: bookmark.savedAt,
@@ -946,6 +976,34 @@ const MCP_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'create_post',
+    description:
+      'Save an AI-written research note to the user\'s private Shelf archive. Use only when the user ' +
+      'asks to save, publish or keep a research result (not for saving someone else\'s URL). Prefer ' +
+      'markdown; HTML only for visuals. Read get_authoring_guide first for the HTML contract and limits. ' +
+      'Re-posting with the same clientId updates that one note.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        format: { type: 'string', enum: ['markdown', 'html'] },
+        content: { type: 'string', description: 'The full note body (markdown or a self-contained HTML document).' },
+        title: { type: 'string', description: 'Title, max 200 characters.' },
+        summary: { type: 'string', description: 'Optional 1-3 sentence abstract, max 4,000 characters.' },
+        sourceUrl: { type: 'string', description: 'Optional primary source URL (http/https).' },
+        clientId: { type: 'string', description: 'Stable id so a retry updates the same note.' },
+      },
+      required: ['format', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_authoring_guide',
+    description:
+      'Return the Shelf agent-post guide: when to write a note, markdown vs HTML, metadata, limits, ' +
+      'the HTML security contract, and examples. Call this before create_post.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
 ];
 
 const MCP_INSTRUCTIONS =
@@ -953,10 +1011,37 @@ const MCP_INSTRUCTIONS =
   'they saved or asks what they have read about a subject, call search_bookmarks first, then ' +
   'get_bookmark for the entries worth quoting. Prefer quoting the AI summary and original post text ' +
   'verbatim. Summaries have a Turkish primary (`summary`) and often an English translation (`summaryEn`); ' +
-  'archived items are still part of the archive and are included in search.';
+  'archived items are still part of the archive and are included in search. ' +
+  'To keep a research result, call get_authoring_guide and then create_post; only do that when the ' +
+  'user asks to save, publish or keep it. Prefer markdown; HTML must be self-contained, script-free ' +
+  'and is rendered sandboxed.';
 
 async function callTool(name: string, input: Record<string, unknown>): Promise<string> {
   switch (name) {
+    case 'create_post': {
+      const content = String(input.content || '');
+      if (!content.trim()) throw new Error('`content` is required.');
+      const result = await apiPost<SaveResult>('api/posts', {
+        format: String(input.format || 'markdown'),
+        content,
+        title: input.title,
+        summary: input.summary,
+        sourceUrl: input.sourceUrl,
+        clientId: input.clientId,
+        agent: { name: 'Shelf MCP', model: '', tool: 'shelf-mcp' },
+      });
+      const bookmark = result.bookmark;
+      return [
+        `${result.created ? 'Saved' : 'Updated'} note #${bookmark?.ref ?? '?'} (${bookmark?.format ?? input.format})`,
+        bookmark?.title ? `Title: ${bookmark.title}` : '',
+        `Id: ${bookmark?.tweetId ?? ''}`,
+        `Read it at ${loadConfig().url.replace(/\/$/, '')}/p/${bookmark?.ref ?? ''}`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+    case 'get_authoring_guide':
+      return authoringGuide();
     case 'search_bookmarks': {
       const query = String(input.query || '').trim();
       if (!query) throw new Error('`query` is required.');
@@ -1116,6 +1201,7 @@ const HELP = `shelf ${VERSION} — read your Shelf archive from the terminal or 
 
 Usage:
   shelf add <file|-> [--format md|html]        save an AI-written research note
+  shelf guide                                  print the agent-post authoring guide
   shelf search <words> [--limit 10] [--json]   search text, summaries, authors, topics
   shelf show <id|URL> [--json]                 one bookmark (short id, post id, or URL)
   shelf recent [--limit 10] [--json]           newest bookmarks
@@ -1159,6 +1245,9 @@ async function main(): Promise<void> {
   switch (command) {
     case 'add':
       return commandAdd(args);
+    case 'guide':
+      console.log(authoringGuide());
+      return;
     case 'search':
       return commandSearch(args);
     case 'recent':
