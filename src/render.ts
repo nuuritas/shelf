@@ -1474,7 +1474,7 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-body th { background: var(--surface-soft); }
 .note-abstract { margin: 0 0 14px; padding: 12px 14px; border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; background: var(--accent-soft); }
 .note-abstract p { margin: 6px 0 0; }
-.note-format-note { color: var(--faint); font-size: 12px; }
+.note-format-note { margin: 8px 0 0; color: var(--faint); font-size: 12px; }
 .note-frame { display: block; width: 100%; height: 420px; min-height: 320px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .note-frame-full { height: 80vh; }
 .post-shell { max-width: 820px; }
