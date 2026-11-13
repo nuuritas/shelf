@@ -208,9 +208,12 @@ API: see `docs/PROGRESS.md` §3.
   the only parser. Keep it forgiving: it is the integration point for any
   third-party or self-hosted caption source.
 - YouTube is additionally reachable through `POST /api/bookmarks/:id/transcripts`
-  and `shelf youtube`, which runs `get-youtube-transcript` on the Mac's residential
-  IP and re-queues the summary. This is the free path when no Supadata key is
-  set; it is not part of the Worker request path.
+  and `shelf youtube`, which reads captions on the Mac's residential IP and
+  re-queues the summary. It prefers the optional `out/yt/fetch.sh` wrapper
+  (yt-dlp, cached by video id, no key or account) and falls back to
+  `get-youtube-transcript` when that wrapper is absent; pacing is `--gap`, and a
+  429 stops the run. This is the free path when no Supadata key is set; it is
+  not part of the Worker request path.
 - `SUMMARY_LANGUAGE` is the **initial default** for the main summary language
   (Turkish in production). The Settings page stores an override in the
   `settings` table, and the DO passes it to every AI helper through `aiEnv()`,
