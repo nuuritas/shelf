@@ -27,6 +27,8 @@ src/settings.ts      stored-preference validation and env fallbacks
 src/push.ts          VAPID signing, endpoint validation, summary notification text
 src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
+src/markdown.ts      dependency-free markdown renderer for agent notes
+src/notes.ts         agent-note validation, ids, limits, extracted text
 src/linkedin.ts      public LinkedIn post reader (guest page meta tags)
 src/youtube.ts       public YouTube video reader (oEmbed + watch page meta tags)
 src/transcript.ts    video transcripts (Whisper for X, Piped by default for YouTube)
@@ -53,6 +55,7 @@ bun run deploy:personal     # deploy the maintainer instance (wrangler.personal.
 bunx wrangler deploy        # deploy with the public wrangler.jsonc
 bunx wrangler tail          # production logs
 ./android/build.sh          # rebuild public/ShelfShare.apk
+shelf add file.md --title "…"  # save an agent-written note
 shelf search "claude code"  # CLI → ~/.local/bin/shelf symlink to cli/shelf.ts
 shelf mcp                   # stdio MCP server for Claude/Codex/Cursor
 shelf youtube [--limit 20]  # fetch missing YouTube transcripts from this Mac

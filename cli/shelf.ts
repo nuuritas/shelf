@@ -32,6 +32,7 @@ import type {
   Bookmark,
   GetResult,
   ListResult,
+  SaveResult,
   StoreTranscriptsResult,
   SummaryVersion,
   TopicListResult,
@@ -317,6 +318,8 @@ function renderVersions(versions: SummaryVersion[]): string {
 }
 
 function renderBookmark(bookmark: Bookmark): string {
+  if (bookmark.kind === 'note') return renderNote(bookmark);
+
   const lines: string[] = [];
 
   lines.push(`# ${authorLabel(bookmark)} — ${isoDay(bookmark.createdAt || bookmark.savedAt)}`);
@@ -382,6 +385,40 @@ function renderBookmark(bookmark: Bookmark): string {
   return lines.join('\n');
 }
 
+function renderNote(bookmark: Bookmark): string {
+  const agent = bookmark.agent;
+  const attribution = [agent?.name, agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const lines = [
+    `# ${bookmark.title || 'Untitled note'}`,
+    '',
+    `_Written by ${attribution} · AI-generated_`,
+  ];
+  if (bookmark.sourceUrl) lines.push('', `Source: ${bookmark.sourceUrl}`);
+  const meta = [`Saved ${isoDay(bookmark.savedAt)}`];
+  if (bookmark.topics?.length) meta.push(`Topics: ${topicNames(bookmark)}`);
+  if (bookmark.archivedAt) meta.push('Archived');
+  if (bookmark.ref) meta.push(`id: ${bookmark.ref}`);
+  meta.push(`note: ${bookmark.tweetId}`);
+  lines.push('', meta.join(' · '));
+
+  if (bookmark.summary) {
+    lines.push('', '## Abstract (agent-written)', '', bookmark.summary.trim());
+  }
+
+  let body = bookmark.format === 'html' ? bookmark.text.trim() : String(bookmark.content || bookmark.text);
+  if (bookmark.format === 'markdown' && bookmark.title) {
+    const heading = /^\s{0,3}#\s+(.+?)\s*\n?/.exec(body);
+    if (heading && heading[1].trim().toLowerCase() === bookmark.title.trim().toLowerCase()) {
+      body = body.replace(heading[0], '');
+    }
+  }
+  lines.push('', body.trim());
+  if (bookmark.format === 'html') {
+    lines.push('', '_HTML note: extracted text shown; open the web view for the full document._');
+  }
+  return lines.join('\n');
+}
+
 function renderTopics(data: TopicListResult): string {
   if (!data.topics.length) return 'No topics yet — save a few more bookmarks.';
   return data.topics
@@ -404,6 +441,95 @@ function clampLimit(value: string | boolean | undefined, fallback: number, max: 
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return fallback;
   return Math.min(Math.floor(number), max);
+}
+
+const ADD_HELP = `shelf add - save an AI-written research note
+
+Usage:
+  shelf add <file|-> [flags]
+
+Input:
+  <file>        path to a .md, .markdown, .html or .htm file
+  -             read from stdin
+
+Flags:
+  --format <f>        markdown | html (default: from the extension, else markdown)
+  --title <text>      title shown on the card (default: first heading, else first line)
+  --agent <name>      who wrote it (default: "Shelf CLI")
+  --model <name>      model that wrote it (optional)
+  --tool <name>       tool that wrote it (default: "shelf-cli")
+  --summary <text>    optional 1-3 sentence abstract, stored as agent-written
+  --source-url <url>  optional primary source, http(s) only
+  --client-id <id>    stable id: re-posting the same value updates one note
+  --json              print the full API result
+
+Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.
+
+HTML rules: a complete document with inline CSS/SVG, no scripts, forms or
+external assets. HTML is stored untrusted and rendered sandboxed.
+
+Examples:
+  shelf add ./research.md --title "How agent memory works" --agent "Claude Code"
+  cat note.md | shelf add - --title "Notes" --client-id daily-2026-11-13
+`;
+
+function inferNoteFormat(path: string): 'markdown' | 'html' | null {
+  const lower = path.toLowerCase();
+  if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.txt')) return 'markdown';
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+  return null;
+}
+
+async function commandAdd(args: ParsedArgs): Promise<void> {
+  const target = args.positional[0];
+  if (!target || args.flags.help || target === '--help') {
+    console.log(ADD_HELP);
+    if (!target) throw new Error('Usage: shelf add <file|-> [--format markdown|html] [--title "..."]');
+    return;
+  }
+
+  let content: string;
+  try {
+    content = target === '-' ? readFileSync(0, 'utf8') : readFileSync(resolve(target), 'utf8');
+  } catch (error) {
+    throw new Error(`Could not read ${target}: ${(error as Error).message}`);
+  }
+  if (!content.trim()) throw new Error('The note is empty.');
+
+  const requested = typeof args.flags.format === 'string' ? args.flags.format.toLowerCase() : '';
+  const format = requested || inferNoteFormat(target) || 'markdown';
+  if (format !== 'markdown' && format !== 'html') {
+    throw new Error('--format must be "markdown" or "html".');
+  }
+
+  const payload = {
+    format,
+    content,
+    title: typeof args.flags.title === 'string' ? args.flags.title : undefined,
+    summary: typeof args.flags.summary === 'string' ? args.flags.summary : undefined,
+    sourceUrl: typeof args.flags['source-url'] === 'string' ? args.flags['source-url'] : undefined,
+    clientId: typeof args.flags['client-id'] === 'string' ? args.flags['client-id'] : undefined,
+    agent: {
+      name: typeof args.flags.agent === 'string' ? args.flags.agent : 'Shelf CLI',
+      model: typeof args.flags.model === 'string' ? args.flags.model : '',
+      tool: typeof args.flags.tool === 'string' ? args.flags.tool : 'shelf-cli',
+    },
+  };
+
+  const result = await apiPost<SaveResult>('api/posts', payload);
+  if (args.flags.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  const bookmark = result.bookmark;
+  const size = `${(content.length / 1024).toFixed(1)} KB`;
+  console.log(
+    `${result.created ? 'Added' : 'Updated'} #${bookmark?.ref ?? '?'} ${bookmark?.tweetId ?? ''} (${format}, ${size})`,
+  );
+  if (bookmark?.title) console.log(`  ${bookmark.title}`);
+  const config = loadConfig();
+  console.log(`  ${config.url.replace(/\/$/, '')}/?layout=saves#bookmark-${bookmark?.tweetId ?? ''}`);
 }
 
 async function commandSearch(args: ParsedArgs): Promise<void> {
@@ -989,6 +1115,7 @@ async function runMcp(): Promise<void> {
 const HELP = `shelf ${VERSION} — read your Shelf archive from the terminal or an AI client.
 
 Usage:
+  shelf add <file|-> [--format md|html]        save an AI-written research note
   shelf search <words> [--limit 10] [--json]   search text, summaries, authors, topics
   shelf show <id|URL> [--json]                 one bookmark (short id, post id, or URL)
   shelf recent [--limit 10] [--json]           newest bookmarks
@@ -1030,6 +1157,8 @@ async function main(): Promise<void> {
   }
 
   switch (command) {
+    case 'add':
+      return commandAdd(args);
     case 'search':
       return commandSearch(args);
     case 'recent':

@@ -9,6 +9,7 @@ import {
 } from './ai.ts';
 import { parseWebUrl, readExternalLinks, readWebPost } from './links.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
+import { noteIdFor, notePlainText } from './notes.ts';
 import {
   createVapidKeys,
   parsePushSubscription,
@@ -39,6 +40,8 @@ import type {
   ListResult,
   MediaItem,
   Metrics,
+  NoteAgent,
+  NoteInput,
   ParsedXUrl,
   PushNotification,
   PushSubscriptionRecord,
@@ -350,6 +353,11 @@ export class Bookmarks extends DurableObject<Env> {
       'ALTER TABLE bookmarks ADD COLUMN summary_en_at TEXT',
       'ALTER TABLE bookmarks ADD COLUMN summary_attempts INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE bookmarks ADD COLUMN summary_retry_at INTEGER',
+      "ALTER TABLE bookmarks ADD COLUMN kind TEXT NOT NULL DEFAULT 'post'",
+      "ALTER TABLE bookmarks ADD COLUMN format TEXT NOT NULL DEFAULT 'text'",
+      'ALTER TABLE bookmarks ADD COLUMN title TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN content TEXT',
+      "ALTER TABLE bookmarks ADD COLUMN agent_json TEXT NOT NULL DEFAULT 'null'",
     ]) {
       try {
         this.sql.exec(statement);
@@ -630,6 +638,10 @@ export class Bookmarks extends DurableObject<Env> {
         return jsonResponse(await this.testNotification());
       }
 
+      if (request.method === 'POST' && url.pathname === '/notes') {
+        return jsonResponse(await this.createNote((await request.json()) as NoteInput));
+      }
+
       if (request.method === 'GET' && url.pathname === '/list') {
         return jsonResponse(this.list(url.searchParams));
       }
@@ -707,6 +719,71 @@ export class Bookmarks extends DurableObject<Env> {
         status,
       );
     }
+  }
+
+  /** Create or refresh an agent note; no fetching, no AI summary job. */
+  async createNote(input: NoteInput): Promise<SaveResult> {
+    const tweetId = await noteIdFor(input.clientId);
+    const now = new Date().toISOString();
+    const text = notePlainText(input.format, input.content);
+    const summary = input.summary;
+    const summaryStatus = summary ? 'done' : 'disabled';
+    const url = input.sourceUrl || '';
+    const agentJson = JSON.stringify(input.agent ?? null);
+
+    const existing = this.sql
+      .exec<{ tweet_id: string }>('SELECT tweet_id FROM bookmarks WHERE tweet_id = ?', tweetId)
+      .toArray()[0];
+
+    if (existing) {
+      this.sql.exec(
+        `UPDATE bookmarks SET
+          url = ?, text = ?, saved_at = ?, provider = 'note', kind = 'note',
+          format = ?, title = ?, content = ?, agent_json = ?,
+          summary = ?, summary_status = ?, summary_error = NULL, summarized_at = ?,
+          summary_en = NULL, summary_en_status = NULL, summary_en_error = NULL,
+          archived_at = NULL
+        WHERE tweet_id = ?`,
+        url,
+        text,
+        now,
+        input.format,
+        input.title,
+        input.content,
+        agentJson,
+        summary,
+        summaryStatus,
+        summary ? now : null,
+        tweetId,
+      );
+    } else {
+      this.sql.exec(
+        `INSERT INTO bookmarks (
+          tweet_id, ref, url, text, saved_at, provider, kind, format, title, content,
+          agent_json, summary, summary_status, summarized_at
+        ) VALUES (?, ?, ?, ?, ?, 'note', 'note', ?, ?, ?, ?, ?, ?, ?)`,
+        tweetId,
+        this.uniqueRef(),
+        url,
+        text,
+        now,
+        input.format,
+        input.title,
+        input.content,
+        agentJson,
+        summary,
+        summaryStatus,
+        summary ? now : null,
+      );
+    }
+
+    this.sql.exec(
+      `UPDATE bookmarks SET topics_status = 'pending', topics_at = NULL WHERE tweet_id = ?`,
+      tweetId,
+    );
+    await this.ctx.storage.setAlarm(Date.now() + 250);
+
+    return { created: !existing, bookmark: this.get(tweetId) };
   }
 
   async save(input: string | ParsedXUrl): Promise<SaveResult> {
@@ -845,6 +922,8 @@ export class Bookmarks extends DurableObject<Env> {
           OR instr(lower(COALESCE(summary_en, '')), lower(?)) > 0
           OR instr(lower(COALESCE(links_json, '')), lower(?)) > 0
           OR instr(lower(COALESCE(article_json, '')), lower(?)) > 0
+          OR instr(lower(COALESCE(title, '')), lower(?)) > 0
+          OR instr(lower(COALESCE(agent_json, '')), lower(?)) > 0
           OR tweet_id IN (
             SELECT it.tweet_id
             FROM item_topics it
@@ -853,7 +932,7 @@ export class Bookmarks extends DurableObject<Env> {
                OR instr(lower(t.slug), lower(?)) > 0
           )
         )`);
-        args.push(term, term, term, term, term, term, term, term, term);
+        args.push(term, term, term, term, term, term, term, term, term, term, term);
       }
     }
 
@@ -2030,6 +2109,12 @@ function rowToBookmark(row: BookmarkRow): Bookmark {
     tweetId: row.tweet_id,
     url: row.url,
     text: row.text,
+    kind: row.kind === 'note' ? 'note' : 'post',
+    format: row.format === 'markdown' || row.format === 'html' ? row.format : 'text',
+    title: row.title ?? null,
+    content: row.content ?? null,
+    agent: parseJson<NoteAgent | null>(row.agent_json ?? 'null', null),
+    sourceUrl: row.url || null,
     createdAt: row.created_at,
     savedAt: row.saved_at,
     provider: row.provider,

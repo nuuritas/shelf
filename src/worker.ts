@@ -1,6 +1,7 @@
 import { aiConfig, isAiConfigured } from './ai.ts';
 import { Bookmarks } from './bookmarks-do.ts';
 import { parseWebUrl } from './links.ts';
+import { normalizeNoteInput } from './notes.ts';
 import { parseLinkedInUrl } from './linkedin.ts';
 import { parseYouTubeUrl } from './youtube.ts';
 import { CSS, renderCalendar, renderLogin, renderPage, renderSettings, renderSetup } from './render.ts';
@@ -152,6 +153,10 @@ const worker: ExportedHandler<Env> = {
 
     if (request.method === 'POST' && url.pathname === '/summarize') {
       return secure(await handleSummarizeForm(request, env));
+    }
+
+    if (url.pathname === '/api/posts' && request.method === 'POST') {
+      return secure(await handleApiCreatePost(request, env));
     }
 
     if (url.pathname === '/api/bookmarks') {
@@ -596,6 +601,27 @@ async function handleApiSave(request: Request, env: Env): Promise<Response> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: parsed.canonicalUrl }),
+    });
+    return jsonResponse(result, result.created ? 201 : 200);
+  } catch (error) {
+    return jsonResponse({ error: errorMessage(error) }, errorStatus(error, 502));
+  }
+}
+
+async function handleApiCreatePost(request: Request, env: Env): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Body must be JSON.' }, 400);
+  }
+
+  try {
+    const note = normalizeNoteInput(body);
+    const result = await doJson<SaveResult>(env, '/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(note),
     });
     return jsonResponse(result, result.created ? 201 : 200);
   } catch (error) {

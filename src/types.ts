@@ -259,12 +259,44 @@ export interface SummaryVersion {
   createdAt: string;
 }
 
+export type BookmarkKind = 'post' | 'note';
+
+export type NoteFormat = 'markdown' | 'html';
+
+/** Who wrote an agent note; stored as JSON on the row. */
+export interface NoteAgent {
+  name: string;
+  model: string;
+  tool: string;
+}
+
+/** A validated agent note on its way to the Durable Object. */
+export interface NoteInput {
+  format: NoteFormat;
+  content: string;
+  title: string;
+  summary: string | null;
+  sourceUrl: string | null;
+  clientId: string | null;
+  agent: NoteAgent | null;
+}
+
 export interface Bookmark {
   /** Short, human-friendly handle used to refer to the bookmark (e.g. "k7f3"). */
   ref: string;
   tweetId: string;
   url: string;
   text: string;
+  /** `post` for a saved URL, `note` for content written by an AI agent. */
+  kind: BookmarkKind;
+  /** Source format of a note; `text` for saved URLs. */
+  format: 'text' | NoteFormat;
+  title: string | null;
+  /** Authored markdown/HTML for a note; null for saved URLs. */
+  content: string | null;
+  agent: NoteAgent | null;
+  /** External source URL for a note, or null. */
+  sourceUrl: string | null;
   createdAt: string | null;
   savedAt: string;
   provider: string | null;
@@ -298,6 +330,11 @@ export type BookmarkRow = {
   tweet_id: string;
   ref: string | null;
   url: string;
+  kind?: string | null;
+  format?: string | null;
+  title?: string | null;
+  content?: string | null;
+  agent_json?: string | null;
   author_name: string | null;
   author_username: string | null;
   author_avatar_url: string | null;
