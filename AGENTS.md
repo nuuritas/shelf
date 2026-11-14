@@ -470,6 +470,16 @@ protection is not authority. If the reviewer does not come back, the change wait
 and the thread returns to the user; asking a person is the escalation, merging
 anyway is not.
 
+Every pull request touched in the last 24 hours must reach one of those states. When it is not there,
+an agent opens exactly one issue per pull request naming the reviewer's unmet concerns, so the work is
+tracked and fixed instead of merged on trust.
+
+GitHub forbids approving your own pull request. A pull request authored by the maintainer therefore
+needs an approving review from `nuuritas-agent` under the review rule before the thread merges it.
+An agent-authored pull request is gated by its own checklist instead: every acceptance criterion
+marked met with file and line evidence, the checklist posted on the pull request under the
+merge-gate comment, and only then merged.
+
 ### The merge-gate comment
 
 Every merge is preceded by one comment from the author, posted in the same turn
@@ -479,7 +489,7 @@ merged, not against an earlier one.
 ```text
 <!-- merge-gate -->
 head:    <headRefOid>
-review:  APPROVED by <login> on <commit_id>
+review:  APPROVED by <login> on <commit_oid>
 asks:    <n>/<n> review items met
 checks:  <conclusion>
 merge:   <mergeable> / <mergeStateStatus>
@@ -490,12 +500,16 @@ Read the state immediately before writing it, never from memory:
 
 ```bash
 gh pr view <n> --json headRefOid,reviewDecision,mergeable,mergeStateStatus
-gh pr view <n> --json reviews \
-  --jq '.[] | select(.state=="APPROVED") | {author: .user.login, commit: .commit_id}'
+gh pr view <n> --json reviews --jq \
+  '.reviews[] | select(.state=="APPROVED") | {author: .author.login, commit: .commit.oid}'
 gh pr checks <n>
 ```
 
-- `head` is the commit the merge produces. If the approving review's `commit_id`
+`reviews` is an array under `.reviews`, and its entries use the GraphQL field names
+`author.login` and `commit.oid`: `.[]`, `user.login` and `commit_id` fail or print
+null. The `--jq` line above is the one that works with `gh` 2.73.
+
+- `head` is the commit the merge produces. If the approving review's `commit.oid`
   is not that SHA, there is no approval: push nothing and go back to the reviewer.
 - `reviewDecision` must be `APPROVED`. Empty because a review was dismissed is not
   approval, and an approval of an earlier head is not approval either.
@@ -510,16 +524,6 @@ gh pr checks <n>
 A pull request gated by its own checklist writes `review: agent checklist,
 <n>/<n> met` and pastes that checklist under the same comment. The comment is
 still required; the checklist is the review.
-
-Every pull request touched in the last 24 hours must reach one of those states. When it is not there,
-an agent opens exactly one issue per pull request naming the reviewer's unmet concerns, so the work is
-tracked and fixed instead of merged on trust.
-
-GitHub forbids approving your own pull request. A pull request authored by the maintainer therefore
-needs an approving review from `nuuritas-agent` under the review rule before the thread merges it.
-An agent-authored pull request is gated by its own checklist instead: every acceptance criterion
-marked met with file and line evidence, the checklist posted on the pull request under the
-merge-gate comment, and only then merged.
 
 ## Default-branch health
 
