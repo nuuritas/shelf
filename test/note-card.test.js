@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderNotePage, renderPage } from '../src/render.ts';
+import { CSS, renderNotePage, renderPage } from '../src/render.ts';
 
 function note(overrides = {}) {
   return {
@@ -152,4 +152,10 @@ test('the full note page renders markdown and the HTML frame', () => {
   assert.match(html, /class="note-abstract-fold"/);
   assert.doesNotMatch(html, /Full document/);
   assert.doesNotMatch(html, /<script>alert/);
+});
+
+test('the card-wide overlay sits under the note body and abstract', () => {
+  assert.match(CSS, /\.note-card-title a::after \{[^}]*position: absolute;[^}]*inset: 0/);
+  assert.match(CSS, /\.note-card \.note-body[^{}]*\{[^}]*z-index: 1;/);
+  assert.match(CSS, /\.note-card \.note-abstract[^{}]*\{[^}]*z-index: 1;/);
 });
