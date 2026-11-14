@@ -145,7 +145,7 @@ maintainer's own changes, including docs and chores, follow this loop:
 4. Implement and verify on the branch.
 5. Push the branch and open a PR against `main`. The body starts with
    `Closes #<issue>` and follows `.github/pull_request_template.md`.
-6. Merge the PR (squash is fine). The linked issue closes and the project's
+6. Merge the PR yourself (squash is fine); an agent does not merge your pull request. The linked issue closes and the project's
    built-in workflows move the card to Done. Deploy after the merge, not before.
 7. Delete the branch.
 
@@ -401,6 +401,51 @@ API: see `docs/PROGRESS.md` §3.
 - Filing an issue to describe a change is the same as handing it to the
   superagent. Work on the agent contract itself goes straight to a branch and a
   pull request (see **Agent harnesses**), or two agents edit the same file.
+
+## Agent structure
+
+Every change in this repository is made by an agent, and the structure is the same in every
+repository here. Four roles, four different jobs.
+
+| Role | Identity | May | Must not |
+| --- | --- | --- | --- |
+| Maintainer | `nuuritas` (person) | open issues, decide, approve | — |
+| Implementer | `nuuritas-agent` | clone, branch `agent/<ticket>`, one pull request, merge **its own** pull request once the guardrails hold | merge a pull request it did not write, build, test, deploy |
+| Reviewer | `nuuritas-agent` under the `review` rule | read the diff, post one checklist comment, approve or request changes | merge, push to that branch, edit the diff |
+| Interactive thread (T3 Code, where present) | the person's own session | implement, run the gates | file an issue for work it is already doing |
+
+### The loop
+
+1. An issue opened by `nuuritas` is a work order. No label and no mention are required.
+2. The agent acknowledges within a minute, works in its own clone, and opens exactly one pull
+   request against `main`.
+3. Before merging it posts a checklist on the pull request: one line per acceptance criterion, each
+   marked **met** or **not met** with the file and line that proves it, plus the paths changed, the
+   diff size and the gates it did not run.
+4. It merges only when every guardrail holds and every criterion is met. Otherwise it replies
+   `blocked` on the issue with one question and stops. A ticket ends merged or with an answer, never
+   in `progress`.
+5. A reviewer other than the author may approve or request changes. **Changes requested is a task
+   for the author**, not a handoff: the author pushes the fix to the same branch and requests review
+   again. When the author is the automated agent, that review is itself the work order.
+6. Reviewed and reviewed-by are different jobs. An automated agent merges only its own pull request;
+   "merge the pull request" in a maintainer loop is a step for the person, never permission for an
+   agent to merge someone else's work.
+
+### Guardrails
+
+One module, at most 200 changed lines, and no dependency, lockfile, deployment or generated-file
+change. The agent never builds, tests, deploys, runs migrations, connects to production or reads
+secrets — the operator runs the gates. When the work does not fit one module it replies with a
+narrowing question instead of shipping half of it.
+
+### Where things live
+
+- This repository's instance: `shelf`, panel `http://192.168.1.102:3083`.
+- The contract and the operator tooling: `nuuritas/spl-hazirlik` — `plans/SUPERAGENT.md`,
+  `scripts/superagent-status.sh`, `scripts/superagent-activity.sh`, `scripts/superagent-sync.sh`.
+  Nothing in this repository depends on them.
+- What the agents have been doing, per repository: `https://sa.nuritas.tr`.
 
 ## Autonomous agent (superagent)
 
