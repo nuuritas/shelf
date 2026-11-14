@@ -291,3 +291,37 @@ test('the notifications card shows the subscription count and controls', () => {
   assert.match(html, /data-push-test/);
   assert.match(html, /Send a test notification/);
 });
+
+test('the empty search state keeps the selected source', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: 'claude',
+    view: 'active',
+    lang: 'tr',
+    source: 'youtube',
+  });
+
+  assert.match(html, /class="view-switch source-switch"/);
+  assert.match(html, /<a class="small-button" href="\/\?source=youtube">Clear search<\/a>/);
+});
+
+test('an empty folder keeps the selected source when browsing folders', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: '',
+    topic: {
+      slug: 'ai',
+      name: 'AI',
+      description: null,
+      overview: '',
+      overviewAt: null,
+      count: 0,
+      archivedCount: 0,
+    },
+    source: 'linkedin',
+  });
+
+  assert.match(html, /href="\/\?layout=folders&amp;source=linkedin">Browse folders<\/a>/);
+});
