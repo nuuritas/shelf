@@ -23,9 +23,12 @@ Two harnesses work on this repository. They do different jobs, and the split is
 deliberate.
 
 **T3 Code is the main harness.** Work a person starts happens in a T3 thread:
-one thread, one worktree, one branch, one pull request. A thread can link and
-watch its pull request, so failed CI wakes the same session that wrote the code,
-and it runs the gates in the change checklist before the pull request opens.
+one thread, one worktree, one branch, one pull request. It runs the gates in the
+change checklist before the pull request opens, then links the pull request and
+watches it, so a failed check, a new review, a comment or a conflict wakes the
+same session that wrote the code. The thread owns its pull request through the
+review, fixes what the reviewer asked for, and merges it once **The review gate**
+holds.
 
 **`dsh-superagent` is the unattended lane.** It watches this repository's issues
 and turns each one into a clone, a branch and one pull request, then merges it
@@ -53,7 +56,13 @@ waits for the other, so these rules keep one change from being done twice:
   check is a bug in the process, not extra progress.
 - Gates belong to T3. A superagent pull request states the gates it did not run;
   run them in the review thread before merging, or hand the branch to T3 to fix.
-  A T3 merge then needs its own review; see **The review gate**.
+- A T3 thread links its pull request with `link_pull_request`, watches it with
+  `watch_pull_request`, and ends the turn. The watch stays armed across turns:
+  do not poll, sleep, or run `gh pr checks --watch`. On a wake, read only what is
+  new, fix it, push, reply on the pull request, and end the turn.
+- A wake is not an approval. Before merging, re-read **The review gate** and the
+  merge-gate comment against the current head; an event that woke the thread says
+  nothing about the review state.
 
 ## Layout
 
@@ -146,8 +155,9 @@ maintainer's own changes, including docs and chores, follow this loop:
 4. Implement and verify on the branch.
 5. Push the branch and open a PR against `main`. The body starts with
    `Closes #<issue>` and follows `.github/pull_request_template.md`.
-6. Merge the PR yourself (squash is fine) once its head commit carries a review
-   that allows the merge; an agent does not merge your pull request. The linked
+6. Merge the PR (squash is fine) once its head commit carries a review that
+   allows the merge and the merge-gate comment is on the pull request. The thread
+   that wrote it may run that merge; the superagent may not. The linked
    issue closes and the project's built-in workflows move the card to Done.
    Deploy after the merge, not before.
 7. Delete the branch.
@@ -418,7 +428,7 @@ different jobs.
 | Maintainer | `nuuritas` (person) | open issues, decide, approve, merge their own reviewed pull request | — |
 | Implementer | `nuuritas-agent` | clone, branch `agent/<ticket>`, one pull request, merge **its own** pull request once the guardrails hold | merge a pull request it did not write, build, test, deploy |
 | Reviewer | `nuuritas-agent` under the `review` rule | read the diff, post one checklist comment, approve or request changes | merge, push to that branch, edit the diff |
-| Interactive thread (T3 Code, where present) | the person's own session | implement, run the gates | file an issue for work it is already doing |
+| Interactive thread (T3 Code, where present) | the person's own session | implement, run the gates, watch its pull request, merge it once the review gate holds | file an issue for work it is already doing |
 
 ### The loop
 
@@ -434,9 +444,10 @@ different jobs.
 5. A reviewer other than the author may approve or request changes. **Changes requested is a task
    for the author**, not a handoff: the author pushes the fix to the same branch and requests review
    again. When the author is the automated agent, that review is itself the work order.
-6. Reviewed and reviewed-by are different jobs. An automated agent merges only its own pull request;
-   "merge the pull request" in a maintainer loop is a step for the person, never permission for an
-   agent to merge someone else's work.
+6. Reviewed and reviewed-by are different jobs. An automated agent merges only its own pull request,
+   and a thread merges only the pull request it wrote. The superagent never merges the maintainer's
+   pull request, and a T3 thread never merges an `agent/<ticket>` pull request it did not write.
+   Merging the pull request you wrote is the normal end of the loop, once **The review gate** holds.
 
 ### The review gate
 
@@ -459,15 +470,56 @@ protection is not authority. If the reviewer does not come back, the change wait
 and the thread returns to the user; asking a person is the escalation, merging
 anyway is not.
 
+### The merge-gate comment
+
+Every merge is preceded by one comment from the author, posted in the same turn
+as the merge. It is the record that the gate was checked against the commit being
+merged, not against an earlier one.
+
+```text
+<!-- merge-gate -->
+head:    <headRefOid>
+review:  APPROVED by <login> on <commit_id>
+asks:    <n>/<n> review items met
+checks:  <conclusion>
+merge:   <mergeable> / <mergeStateStatus>
+verdict: merge
+```
+
+Read the state immediately before writing it, never from memory:
+
+```bash
+gh pr view <n> --json headRefOid,reviewDecision,mergeable,mergeStateStatus
+gh pr view <n> --json reviews \
+  --jq '.[] | select(.state=="APPROVED") | {author: .user.login, commit: .commit_id}'
+gh pr checks <n>
+```
+
+- `head` is the commit the merge produces. If the approving review's `commit_id`
+  is not that SHA, there is no approval: push nothing and go back to the reviewer.
+- `reviewDecision` must be `APPROVED`. Empty because a review was dismissed is not
+  approval, and an approval of an earlier head is not approval either.
+- Any `CHANGES_REQUESTED` from any account stops the merge, even when another
+  account approved after it.
+- `checks` covers the required checks. A skipped, pending or neutral check is not
+  green.
+- `asks` is the reviewer's checklist: how many of its items are met, with the file
+  and line that proves each one. An item answered with "no longer applies" is not
+  met.
+
+A pull request gated by its own checklist writes `review: agent checklist,
+<n>/<n> met` and pastes that checklist under the same comment. The comment is
+still required; the checklist is the review.
+
 Every pull request touched in the last 24 hours must reach one of those states. When it is not there,
 an agent opens exactly one issue per pull request naming the reviewer's unmet concerns, so the work is
 tracked and fixed instead of merged on trust.
 
 GitHub forbids approving your own pull request. A pull request authored by the maintainer therefore
-needs an approving review from `nuuritas-agent` under the review rule before the maintainer merges it.
+needs an approving review from `nuuritas-agent` under the review rule before the thread merges it.
 An agent-authored pull request is gated by its own checklist instead: every acceptance criterion
-marked met with file and line evidence, the checklist posted on the pull request, and only then
-merged.
+marked met with file and line evidence, the checklist posted on the pull request under the
+merge-gate comment, and only then merged.
 
 ## Default-branch health
 
@@ -511,10 +563,10 @@ open. T3 Code is the harness for work that needs a person in the loop and for th
 lanes are peers. **Agent harnesses** above is the contract for keeping them apart.
 
 - It acknowledges once on the issue, works in its own clone on `agent/<ticket>`, opens one pull
-  request against `main`, and merges it itself when the guardrails hold. This is the only lane
-  allowed to merge without a review; a T3 thread that takes over an `agent/<ticket>` branch is not
-  covered by it. An oversized change is split into consecutive scoped pull requests and merged, not
-  asked about; it never leaves one open.
+  request against `main`, posts the merge-gate comment with its checklist, and merges it itself when
+  the guardrails hold. This is the only lane allowed to merge without a second account's review; a
+  T3 thread that takes over an `agent/<ticket>` branch is not covered by it. An oversized change is
+  split into consecutive scoped pull requests and merged, not asked about; it never leaves one open.
 - Guardrails: one module, at most 200 changed lines, no dependency, lockfile, deployment or
   generated-file change. It never builds, tests, deploys, or reads secrets.
 - The issue thread is the contract. Nothing in this repository calls operator scripts, and this
