@@ -112,11 +112,12 @@ wall-clock is long but CPU stays low.
   summary works from the URL; nothing throws. There is no LinkedIn API key and
   no session to configure
 - Agent notes (`kind=note`): markdown or HTML posted through `/api/posts` or
-  `shelf add`. A markdown card keeps its body; an HTML note is a document, so the
-  library card shows only its title, attribution, abstract, topics and an
-  "Open full note" link. The full HTML renders solely on `/p/:ref` inside the
-  sandboxed frame, which keeps a long document (and its own table of contents)
-  out of the library feed
+  `shelf add`. The card's author line is the agent, the note title is the card
+  lede, and the abstract is plain body copy; an HTML note shows only its title,
+  abstract, topics and one "Open full note" action, because the document itself
+  belongs on `/p/:ref` inside the sandboxed frame. That page is a reading view:
+  a slim back bar, one provenance line, then the note. An HTML note folds its
+  abstract and shows the document immediately
 - Video transcripts: the smallest MP4 of an X video goes to Workers AI
   `@cf/openai/whisper-large-v3-turbo` (no key, ~214 free audio minutes/day).
   YouTube links read captions from public Piped instances with no key at all
