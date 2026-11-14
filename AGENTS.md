@@ -74,7 +74,7 @@ src/util.ts          escaping, linkify, cookies, base64, slugs
 src/types.ts         shared domain types
 public/              static assets, PWA manifest/service worker
 cli/shelf.ts         Bun CLI + stdio MCP server (search/show/export/mcp)
-.github/workflows/   CI + maintainer push log
+.github/workflows/   CI
 test/                node:test unit tests
 docs/PROGRESS.md     long-form project knowledge
 docs/AGENT-POSTS.md  contract for agents that write notes (shelf guide)
@@ -125,20 +125,10 @@ working secret.
 ## Maintainer project board (forks can ignore this)
 
 The maintainer's repository is linked to the user project **All work**
-(<https://github.com/users/nuuritas/projects/1>); forks do not need it and can
-delete `.github/workflows/project-push-log.yml`, which skips itself when the
-`PUSH_LOG_ISSUE` variable is absent. GitHub Projects has no commit
-item type, so `.github/workflows/project-push-log.yml` keeps one issue
-(`XB · push log`) updated on every push to `main`: it prepends the pushed commits
-to the issue body and sets the title to the newest commit. That issue is the
-repository's card on the board (Workstream `XB`, Status `In Progress`).
-
-The issue number is stored in the `PUSH_LOG_ISSUE` Actions repository variable.
-If the log issue is recreated, update the variable; no workflow edit is needed.
-
-The push log is a **feed**, not the task record. Normal work uses one issue per
-change and a real PR; see **Delivery workflow** below. The push log still records
-the merge commits that arrive on `main`.
+(<https://github.com/users/nuuritas/projects/1>); forks do not need it. The board
+holds issues and pull requests only: one card per change, moved to Done by the
+board's built-in workflows when the issue closes. Pushes are not logged on the
+board — a commit is visible in git and through the pull request that produced it.
 
 ## Maintainer delivery workflow
 
@@ -159,10 +149,10 @@ maintainer's own changes, including docs and chores, follow this loop:
    built-in workflows move the card to Done. Deploy after the merge, not before.
 7. Delete the branch.
 
-Direct pushes to `main` are reserved for emergencies: they update the `XB · push
-log` card but do not create a task card. The repository plan does not offer
-branch protection or rulesets, so this loop is enforced by convention; do not
-take the shortcut.
+Direct pushes to `main` are reserved for emergencies: they leave no card at all,
+so the change cannot be followed from the board. The repository plan does not
+offer branch protection or rulesets, so this loop is enforced by convention; do
+not take the shortcut.
 
 ## Request flow
 
