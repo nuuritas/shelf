@@ -17,13 +17,17 @@ export const NOTE_LIMITS = {
 /** Plain text stored in `text` for search, summaries and export. */
 export const NOTE_TEXT_LIMIT = 25_000;
 
-/** A rejected note; the worker turns this into a 400 with the message. */
-export class NoteInputError extends Error {
-  status = 400;
+/** Same shape the `/p/:ref` route accepts. */
+export const NOTE_REF_PATTERN = /^[A-Za-z0-9_-]{1,30}$/;
 
-  constructor(message: string) {
+/** A rejected note; the worker turns this into a 400 (or 404) with the message. */
+export class NoteInputError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
     super(message);
     this.name = 'NoteInputError';
+    this.status = status;
   }
 }
 
@@ -111,6 +115,10 @@ export function normalizeNoteInput(raw: unknown): NoteInput {
   }
 
   const clientId = optionalString(record.clientId, NOTE_LIMITS.clientId, 'clientId');
+  const ref = optionalString(record.ref, 30, 'ref');
+  if (ref && !NOTE_REF_PATTERN.test(ref)) {
+    throw new NoteInputError('ref must be 1-30 letters, digits, dashes or underscores.');
+  }
 
   return {
     format,
@@ -119,6 +127,7 @@ export function normalizeNoteInput(raw: unknown): NoteInput {
     summary,
     sourceUrl,
     clientId,
+    ref,
     agent: parseAgent(record.agent),
   };
 }

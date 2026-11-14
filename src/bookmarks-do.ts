@@ -9,7 +9,7 @@ import {
 } from './ai.ts';
 import { parseWebUrl, readExternalLinks, readWebPost } from './links.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
-import { noteIdFor, notePlainText } from './notes.ts';
+import { NoteInputError, noteIdFor, notePlainText } from './notes.ts';
 import {
   createVapidKeys,
   parsePushSubscription,
@@ -723,7 +723,18 @@ export class Bookmarks extends DurableObject<Env> {
 
   /** Create or refresh an agent note; no fetching, no AI summary job. */
   async createNote(input: NoteInput): Promise<SaveResult> {
-    const tweetId = await noteIdFor(input.clientId);
+    const refTarget = input.ref
+      ? this.sql
+          .exec<{ tweet_id: string; kind: string | null }>(
+            'SELECT tweet_id, kind FROM bookmarks WHERE ref = ?',
+            input.ref,
+          )
+          .toArray()[0]
+      : undefined;
+    if (input.ref && refTarget?.kind !== 'note') {
+      throw new NoteInputError(`No note with ref #${input.ref}.`, 404);
+    }
+    const tweetId = refTarget ? refTarget.tweet_id : await noteIdFor(input.clientId);
     const now = new Date().toISOString();
     const text = notePlainText(input.format, input.content);
     const summary = input.summary;

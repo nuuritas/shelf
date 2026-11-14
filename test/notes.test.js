@@ -41,6 +41,24 @@ test('rejects a missing format, empty content, oversize content and a bad URL', 
   );
 });
 
+test('accepts a note ref to update and rejects malformed ones', () => {
+  const note = normalizeNoteInput({
+    format: 'html',
+    content: '<h1>Revised</h1>',
+    ref: 'xqajj',
+  });
+  assert.equal(note.ref, 'xqajj');
+  assert.equal(note.clientId, null);
+  assert.throws(
+    () => normalizeNoteInput({ format: 'markdown', content: 'x', ref: 'has space' }),
+    /ref must be/,
+  );
+  assert.throws(
+    () => normalizeNoteInput({ format: 'markdown', content: 'x', ref: 'a'.repeat(31) }),
+    /ref is limited to 30 characters/,
+  );
+});
+
 test('the same clientId always maps to the same note id', async () => {
   const first = await noteIdFor('research-agent-memory');
   assert.equal(first, await noteIdFor('research-agent-memory'));

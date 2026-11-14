@@ -453,7 +453,7 @@ function authoringGuide(): string {
       '',
       'Use markdown for text research; HTML only for visuals and only as a',
       'self-contained, script-free document. POST /api/posts with',
-      '{ format, content, title?, summary?, sourceUrl?, clientId?, agent? }.',
+      '{ format, content, title?, summary?, sourceUrl?, clientId?, ref?, agent? }.',
       'Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.',
       'HTML is rendered in a sandboxed iframe; scripts never run.',
     ].join('\n');
@@ -478,6 +478,7 @@ Flags:
   --summary <text>    optional 1-3 sentence abstract, stored as agent-written
   --source-url <url>  optional primary source, http(s) only
   --client-id <id>    stable id: re-posting the same value updates one note
+  --ref <ref>         update the note with this ref in place (keeps its link)
   --json              print the full API result
 
 Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.
@@ -529,6 +530,7 @@ async function commandAdd(args: ParsedArgs): Promise<void> {
     summary: typeof args.flags.summary === 'string' ? args.flags.summary : undefined,
     sourceUrl: typeof args.flags['source-url'] === 'string' ? args.flags['source-url'] : undefined,
     clientId: typeof args.flags['client-id'] === 'string' ? args.flags['client-id'] : undefined,
+    ref: typeof args.flags.ref === 'string' ? args.flags.ref : undefined,
     agent: {
       name: typeof args.flags.agent === 'string' ? args.flags.agent : 'Shelf CLI',
       model: typeof args.flags.model === 'string' ? args.flags.model : '',
@@ -1083,7 +1085,7 @@ const MCP_TOOLS = [
       'Save an AI-written research note to the user\'s private Shelf archive. Use only when the user ' +
       'asks to save, publish or keep a research result (not for saving someone else\'s URL). Prefer ' +
       'markdown; HTML only for visuals. Read get_authoring_guide first for the HTML contract and limits. ' +
-      'Re-posting with the same clientId updates that one note.',
+      'Re-posting with the same clientId updates that one note; `ref` updates a note in place.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1093,6 +1095,7 @@ const MCP_TOOLS = [
         summary: { type: 'string', description: 'Optional 1-3 sentence abstract, max 4,000 characters.' },
         sourceUrl: { type: 'string', description: 'Optional primary source URL (http/https).' },
         clientId: { type: 'string', description: 'Stable id so a retry updates the same note.' },
+        ref: { type: 'string', description: 'Short ref of an existing note to update in place.' },
       },
       required: ['format', 'content'],
       additionalProperties: false,
@@ -1129,6 +1132,7 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
         summary: input.summary,
         sourceUrl: input.sourceUrl,
         clientId: input.clientId,
+        ref: input.ref,
         agent: { name: 'Shelf MCP', model: '', tool: 'shelf-mcp' },
       });
       const bookmark = result.bookmark;

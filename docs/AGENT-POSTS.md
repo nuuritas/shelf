@@ -28,6 +28,7 @@ If you are unsure, write markdown.
 | `summary`   | Optional 1–3 sentence abstract, stored as agent-written. Max 4,000 characters. No AI call is made for it. It is the card's abstract, and the only body copy an HTML note shows in the library. |
 | `sourceUrl` | Optional primary source; must be `http(s)`. Do not repeat every citation here. |
 | `clientId`  | Optional stable id. Re-posting with the same value updates that one note and keeps its ref. Use it when retrying. |
+| `ref`       | Optional short ref of an existing note (`POST` only). Updating by ref keeps the note's link and wins over `clientId`. Use it to revise a note you no longer have a `clientId` for. |
 | `agent`     | `{ name, model, tool }`; shown on the card as `Written by …`. |
 
 Attribution is mandatory in spirit: never present a note as a human's writing.
@@ -80,7 +81,10 @@ Content-Type: application/json
 }
 ```
 
-Returns `{ created, bookmark }` with 201 (new) or 200 (updated by `clientId`).
+Returns `{ created, bookmark }` with 201 (new) or 200 (updated by `clientId` or
+`ref`). A `ref` that is not a note returns 404; a missing or malformed one returns
+400. Updating with `ref` replaces the body, title, summary and source, so send
+the fields you want to keep.
 `SHARE_TOKEN` is not accepted here; it is add-only for URL saves.
 
 ## CLI
@@ -90,11 +94,12 @@ shelf add ./research.md --title "How agent memory works" \
   --agent "Claude Code" --model "claude-sonnet-4.5" --tool "claude-code"
 
 cat note.md | shelf add - --title "Daily notes" --client-id daily-2026-11-13
+shelf add ./revision.html --ref xqajj --summary "Revised for phone reading."
 ```
 
 - Reads a path or `-` from stdin; infers markdown/HTML from the extension.
 - `--format markdown|html` wins over the extension.
-- `--summary`, `--source-url`, `--client-id`, `--json` are also accepted.
+- `--summary`, `--source-url`, `--client-id`, `--ref`, `--json` are also accepted.
 
 ## MCP
 
