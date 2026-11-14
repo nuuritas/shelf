@@ -1456,7 +1456,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=18">
+  <link rel="stylesheet" href="/style.css?v=19">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1490,7 +1490,8 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-card-title a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--ink); text-decoration: none; }
 .note-card-title a::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
 .note-card:hover .note-card-title a { text-decoration: underline; text-underline-offset: 3px; }
-.note-card .card-foot, .note-card .card-topics, .note-card .card-head a, .note-card .ref-chip { position: relative; z-index: 1; }
+.note-card .card-foot, .note-card .card-topics, .note-card .card-head a, .note-card .ref-chip,
+.note-card .note-abstract, .note-card .note-body, .note-card .note-excerpt { position: relative; z-index: 1; }
 .note-card .note-open-link { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 12.5px; font-weight: 650; }
 .note-card .note-open-link:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
 .note-label { display: block; margin: 0 0 4px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
