@@ -390,7 +390,7 @@ export function renderPage({
                 ? `<div class="cards">${bookmarks
                     .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual))
                     .join('')}</div>`
-                : renderEmpty(query, view, currentDay, Boolean(topic))
+                : renderEmpty(query, view, currentDay, Boolean(topic), source)
           }
 
           ${
@@ -1338,6 +1338,7 @@ function renderEmpty(
   view: 'active' | 'archived' = 'active',
   day: string | null = null,
   inFolder = false,
+  source: SourceFilter = 'all',
 ): string {
   if (query) {
     return `
@@ -1345,7 +1346,7 @@ function renderEmpty(
         <p class="empty-mark">∅</p>
         <h3>${view === 'archived' ? 'No matches in the archive' : 'No matches'}</h3>
         <p>Nothing ${view === 'archived' ? 'archived ' : ''}in the library matches “${escapeHtml(query)}”${day ? ' on this day' : ''}.</p>
-        <a class="small-button" href="${escapeHtml(libraryHref('/', { day, view }))}">Clear search</a>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { day, view, source }))}">Clear search</a>
       </div>
     `;
   }
@@ -1360,7 +1361,7 @@ function renderEmpty(
             ? 'Archive a bookmark from this folder to keep it here for later.'
             : 'Save a post and the filing step will put it in a folder that fits. You can also browse every save.'
         }</p>
-        <a class="small-button" href="${escapeHtml(libraryHref('/', { view, layout: 'folders' }))}">Browse folders</a>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { view, layout: 'folders', source }))}">Browse folders</a>
       </div>
     `;
   }
