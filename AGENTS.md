@@ -410,12 +410,12 @@ API: see `docs/PROGRESS.md` §3.
 
 ## Agent structure
 
-Every change in this repository is made by an agent, and the structure is the same in every
-repository here. Four roles, four different jobs.
+Every change in this repository follows the same structure, whoever makes it. Four roles, four
+different jobs.
 
 | Role | Identity | May | Must not |
 | --- | --- | --- | --- |
-| Maintainer | `nuuritas` (person) | open issues, decide, approve | — |
+| Maintainer | `nuuritas` (person) | open issues, decide, approve, merge their own reviewed pull request | — |
 | Implementer | `nuuritas-agent` | clone, branch `agent/<ticket>`, one pull request, merge **its own** pull request once the guardrails hold | merge a pull request it did not write, build, test, deploy |
 | Reviewer | `nuuritas-agent` under the `review` rule | read the diff, post one checklist comment, approve or request changes | merge, push to that branch, edit the diff |
 | Interactive thread (T3 Code, where present) | the person's own session | implement, run the gates | file an issue for work it is already doing |
@@ -428,9 +428,9 @@ repository here. Four roles, four different jobs.
 3. Before merging it posts a checklist on the pull request: one line per acceptance criterion, each
    marked **met** or **not met** with the file and line that proves it, plus the paths changed, the
    diff size and the gates it did not run.
-4. It merges only when every guardrail holds and every criterion is met. Otherwise it replies
-   `blocked` on the issue with one question and stops. A ticket ends merged or with an answer, never
-   in `progress`.
+4. It merges only when every guardrail holds and every criterion is met. Otherwise it reports
+   `blocked` on the issue with the exact operator step and stops. A ticket ends merged or with that
+   step, never in `progress`.
 5. A reviewer other than the author may approve or request changes. **Changes requested is a task
    for the author**, not a handoff: the author pushes the fix to the same branch and requests review
    again. When the author is the automated agent, that review is itself the work order.
@@ -463,16 +463,19 @@ Every pull request touched in the last 24 hours must reach one of those states. 
 an agent opens exactly one issue per pull request naming the reviewer's unmet concerns, so the work is
 tracked and fixed instead of merged on trust.
 
-GitHub forbids approving your own pull request, so an agent-authored pull request is gated by its own
-checklist instead: every acceptance criterion marked met with file and line evidence, the checklist
-posted on the pull request, and only then merged.
+GitHub forbids approving your own pull request. A pull request authored by the maintainer therefore
+needs an approving review from `nuuritas-agent` under the review rule before the maintainer merges it.
+An agent-authored pull request is gated by its own checklist instead: every acceptance criterion
+marked met with file and line evidence, the checklist posted on the pull request, and only then
+merged.
 
 ### Guardrails
 
 One module, at most 200 changed lines, and no dependency, lockfile, deployment or generated-file
 change. The agent never builds, tests, deploys, runs migrations, connects to production or reads
-secrets — the operator runs the gates. When the work does not fit one module it replies with a
-narrowing question instead of shipping half of it.
+secrets — the operator runs the gates. When the work does not fit one module, it splits it into the
+smallest sequence of consecutive mergeable pull requests and merges them one at a time; it never asks
+how to split it and never leaves one open.
 
 ### Where things live
 
