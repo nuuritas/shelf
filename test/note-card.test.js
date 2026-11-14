@@ -154,8 +154,11 @@ test('the full note page renders markdown and the HTML frame', () => {
   assert.doesNotMatch(html, /<script>alert/);
 });
 
-test('the card-wide overlay sits under the note body and abstract', () => {
+test('the card-wide overlay sits under the note body and its interactive content', () => {
   assert.match(CSS, /\.note-card-title a::after \{[^}]*position: absolute;[^}]*inset: 0/);
-  assert.match(CSS, /\.note-card \.note-body[^{}]*\{[^}]*z-index: 1;/);
+  assert.match(CSS, /\.note-card \.note-body, [^{}]*\{[^}]*z-index: 1;/);
   assert.match(CSS, /\.note-card \.note-abstract[^{}]*\{[^}]*z-index: 1;/);
+  assert.match(CSS, /\.note-card \.note-body a[^{}]*\{[^}]*z-index: 1;/);
+  assert.match(CSS, /\.note-card \.note-body pre[^{}]*\{[^}]*z-index: 1;/);
+  assert.match(CSS, /\.note-card \.table-wrap[^{}]*\{[^}]*z-index: 1;/);
 });
