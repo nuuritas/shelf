@@ -25,7 +25,7 @@ If you are unsure, write markdown.
 | Field       | Notes |
 | ----------- | ----- |
 | `title`     | Optional; defaults to the first heading/line. Max 200 characters. |
-| `summary`   | Optional 1–3 sentence abstract, stored as agent-written. Max 4,000 characters. No AI call is made for it. It is the card's lede, and the only body copy an HTML note shows in the library. |
+| `summary`   | Optional 1–3 sentence abstract, stored as agent-written. Max 4,000 characters. No AI call is made for it. It is the card's abstract, and the only body copy an HTML note shows in the library. |
 | `sourceUrl` | Optional primary source; must be `http(s)`. Do not repeat every citation here. |
 | `clientId`  | Optional stable id. Re-posting with the same value updates that one note and keeps its ref. Use it when retrying. |
 | `agent`     | `{ name, model, tool }`; shown on the card as `Written by …`. |

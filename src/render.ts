@@ -588,66 +588,80 @@ function renderFolderGrid(
     .join('')}</div>`;
 }
 
-/** Full reading view for an agent note (`/p/:ref`). */
+/**
+ * Full reading view for an agent note (`/p/:ref`). The note is the page: one
+ * slim bar, one provenance line, then the document. An HTML note already has a
+ * title in its own markup, so the page does not repeat it — it only keeps the
+ * abstract a click away.
+ */
 export function renderNotePage({ bookmark }: { bookmark: Bookmark }): string {
   const title = bookmark.title || 'Untitled note';
   const agent = bookmark.agent;
-  const attribution = [agent?.name, agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const agentName = agent?.name?.trim() || 'AI agent';
+  const model = agent?.model?.trim() || '';
+  const byline = [agentName, model, formatDate(bookmark.savedAt)]
+    .filter(Boolean)
+    .join(' · ');
   const sourceUrl = safeHttpUrl(bookmark.sourceUrl || '');
-  const body =
-    bookmark.format === 'markdown'
-      ? `<div class="note-body note-body-full">${renderMarkdown(
-          stripDuplicateHeading(bookmark.content || '', title),
-        )}</div>`
-      : `<iframe class="note-frame note-frame-full" src="/p/${escapeHtml(bookmark.ref)}/frame" title="${escapeHtml(
-          title,
-        )}" sandbox referrerpolicy="no-referrer"></iframe>`;
+  const isHtml = bookmark.format === 'html';
+  const ref = bookmark.ref ? `#${bookmark.ref}` : '';
+  const abstract = bookmark.summary
+    ? `<section class="note-abstract"><span class="note-label">Abstract</span>${renderParagraphs(
+        bookmark.summary,
+      )}</section>`
+    : '';
+  const body = isHtml
+    ? `<iframe class="note-frame note-frame-full" src="/p/${escapeHtml(bookmark.ref)}/frame" title="${escapeHtml(
+        title,
+      )}" sandbox referrerpolicy="no-referrer"></iframe>`
+    : `<div class="note-body note-body-full">${renderMarkdown(
+        stripDuplicateHeading(bookmark.content || '', title),
+      )}</div>`;
 
   return pageShell({
     title: `${title} · Shelf`,
-    bodyClass: 'post',
+    bodyClass: 'note-page',
     head: '',
     body: `
-      <header class="topbar">
-        <a class="brand" href="/">
-          <span class="brand-mark">S</span>
-          <span>Shelf</span>
-        </a>
-        <div class="top-actions">
-          <a class="calendar-link" href="/?layout=saves">Library</a>
+      <header class="note-bar">
+        <a class="note-back" href="/">← Library</a>
+        <div class="note-bar-side">
+          <span class="ai-badge" title="Written by an AI agent">AI-generated</span>
+          ${
+            sourceUrl
+              ? `<a class="note-source" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
+              : ''
+          }
         </div>
       </header>
 
-      <main class="shell post-shell">
-        <nav class="folder-crumbs" aria-label="Library">
-          <a href="/?layout=saves">← All saves</a>
-          ${bookmark.topics?.length ? bookmark.topics.map(entry => `<a href="/t/${escapeHtml(entry.slug)}">${escapeHtml(entry.name)}</a>`).join('') : ''}
-        </nav>
-
-        <article class="post">
-          <div class="note-title-row">
-            <h1 class="note-title">${escapeHtml(title)}</h1>
-            <span class="ai-badge" title="Written by an AI agent">AI-generated</span>
-          </div>
-          <p class="post-meta">
-            ${escapeHtml(attribution)}
-            <span class="dot">·</span>
-            ${escapeHtml(formatDate(bookmark.savedAt))}
-            ${bookmark.ref ? `<span class="dot">·</span> #${escapeHtml(bookmark.ref)}` : ''}
-          </p>
-          ${sourceUrl ? `<p class="post-source"><a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a></p>` : ''}
-
-          ${
-            bookmark.summary
-              ? `<section class="note-abstract"><span class="summary-label">Abstract (agent-written)</span>${renderParagraphs(
-                  bookmark.summary,
-                )}</section>`
-              : ''
-          }
-
-          ${bookmark.format === 'html' ? '<p class="note-document-label">Full document</p>' : ''}
-          ${body}
-        </article>
+      <main class="shell note-shell">
+        ${
+          isHtml
+            ? `<h1 class="sr-only">${escapeHtml(title)}</h1>
+              <p class="note-byline">
+                ${escapeHtml(byline)}
+                ${ref ? `<span class="dot">·</span> ${escapeHtml(ref)}` : ''}
+              </p>
+              ${
+                bookmark.summary
+                  ? `<details class="note-abstract-fold">
+                      <summary><span>Abstract</span><span class="note-fold-hint">agent-written</span></summary>
+                      ${renderParagraphs(bookmark.summary)}
+                    </details>`
+                  : ''
+              }
+              ${body}`
+            : `<article class="note-article">
+                <h1 class="note-title">${escapeHtml(title)}</h1>
+                <p class="note-byline">
+                  ${escapeHtml(byline)}
+                  ${ref ? `<span class="dot">·</span> ${escapeHtml(ref)}` : ''}
+                </p>
+                ${abstract}
+                ${body}
+              </article>`
+        }
       </main>
     `,
   });
@@ -918,18 +932,16 @@ function renderBookmark(
   `;
 }
 
-/** "Open the full note": a page with an arrow leaving it. */
-const NOTE_OPEN_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
-
 /**
- * An agent-written note on a library page: title, attribution, the abstract and
- * a way into the note. An HTML note is a document, not card copy, so its body
- * is never embedded here — only `/p/:ref` renders the full document.
+ * An agent-written note on a library page. The author line stays as short as a
+ * person's handle; the note title is the card's lede and the abstract sits in
+ * plain body copy. An HTML note is a document, not card copy, so its body is
+ * never embedded here — the title and the primary action both lead to `/p/:ref`.
  */
 function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
   const agent = bookmark.agent;
-  const attribution =
-    [agent?.name, agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const agentName = agent?.name?.trim() || 'AI agent';
+  const model = agent?.model?.trim() || '';
   const archived = Boolean(bookmark.archivedAt);
   const sourceUrl = safeHttpUrl(bookmark.sourceUrl || '');
   const title = bookmark.title || 'Untitled note';
@@ -937,7 +949,7 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
   const href = `/p/${escapeHtml(bookmark.ref)}`;
   const abstract = bookmark.summary
     ? `<section class="note-abstract">
-              <span class="summary-label">Abstract (agent-written)</span>
+              <span class="note-label">Abstract</span>
               ${renderParagraphs(bookmark.summary)}
             </section>`
     : '';
@@ -954,12 +966,11 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
           <span class="avatar avatar-fallback note-avatar" aria-hidden="true">AI</span>
           <div class="author-text">
             <div class="author-line">
-              <strong><a class="note-title-link" href="${href}">${escapeHtml(title)}</a></strong>
+              <strong class="note-agent-name">${escapeHtml(agentName)}</strong>
               <span class="ai-badge" title="Written by an AI agent">AI-generated</span>
             </div>
             <div class="meta">
-              <span class="note-agent">${escapeHtml(attribution)}</span>
-              <span class="dot">·</span>
+              ${model ? `<span class="note-model">${escapeHtml(model)}</span><span class="dot">·</span>` : ''}
               ${escapeHtml(formatDate(bookmark.savedAt))}
               ${
                 bookmark.ref
@@ -973,9 +984,11 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
         ${
           sourceUrl
             ? `<a class="x-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
-            : `<span class="x-link note-kind">${isHtml ? 'HTML document' : 'Note'}</span>`
+            : `<span class="x-link note-kind" title="${isHtml ? 'HTML document' : 'Note'}">${isHtml ? 'HTML' : 'Note'}</span>`
         }
       </header>
+
+      <h3 class="note-card-title"><a href="${href}">${escapeHtml(title)}</a></h3>
 
       ${abstract}
       ${preview}
@@ -992,10 +1005,7 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
       }
 
       <footer class="card-foot">
-        <div class="metrics"></div>
         <div class="card-actions">
-          <a class="note-open-link" href="${href}">${NOTE_OPEN_ICON}<span>${isHtml ? 'Open full note' : 'Open note'}</span></a>
-          <span class="dot">·</span>
           <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
           <span class="dot">·</span>
           <form method="post" action="/archive" class="inline-form">
@@ -1011,6 +1021,7 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
             <button class="link-button danger" type="submit">Remove</button>
           </form>
         </div>
+        <a class="note-open-link" href="${href}">Open full note <span aria-hidden="true">→</span></a>
       </footer>
     </article>
   `;
@@ -1445,7 +1456,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=16">
+  <link rel="stylesheet" href="/style.css?v=18">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1469,9 +1480,24 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
 
 const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
 .ai-badge { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-.note-kind { color: var(--muted); font-size: 12px; font-weight: 600; }
-.note-agent { color: var(--muted); font-weight: 600; }
-.note-body { margin: 6px 0 14px; font-size: 15px; line-height: 1.62; }
+.note-kind { color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.note-agent-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-model { color: var(--faint); }
+.note-card { position: relative; }
+.note-card .card-head { margin-bottom: 12px; }
+.note-card .card-head .author { align-items: flex-start; }
+.note-card-title { margin: 0 0 10px; font-size: 21px; line-height: 1.28; font-weight: 650; letter-spacing: -0.024em; overflow-wrap: anywhere; }
+.note-card-title a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--ink); text-decoration: none; }
+.note-card-title a::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
+.note-card:hover .note-card-title a { text-decoration: underline; text-underline-offset: 3px; }
+.note-card .card-foot, .note-card .card-topics, .note-card .card-head a, .note-card .ref-chip { position: relative; z-index: 1; }
+.note-card .note-open-link { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 12.5px; font-weight: 650; }
+.note-card .note-open-link:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+.note-label { display: block; margin: 0 0 4px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.note-abstract { margin: 0 0 12px; }
+.note-abstract p { margin: 0 0 8px; font-size: 15px; line-height: 1.62; overflow-wrap: anywhere; }
+.note-abstract p:last-child { margin-bottom: 0; }
+.note-body { margin: 0 0 12px; font-size: 15px; line-height: 1.62; overflow-wrap: anywhere; }
 .note-body > :first-child { margin-top: 0; }
 .note-body h1, .note-body h2, .note-body h3, .note-body h4 { margin: 18px 0 8px; line-height: 1.25; letter-spacing: -0.02em; }
 .note-body h1 { font-size: 26px; }
@@ -1492,23 +1518,36 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-body table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .note-body th, .note-body td { padding: 7px 10px; border: 1px solid var(--line); text-align: left; }
 .note-body th { background: var(--surface-soft); }
-.note-abstract { margin: 0 0 14px; padding: 12px 14px; border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; background: var(--accent-soft); }
-.note-abstract p { margin: 6px 0 0; }
-.note-title-link { color: inherit; text-decoration: none; }
-.note-title-link:hover { text-decoration: underline; text-underline-offset: 3px; }
-.note-excerpt { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
-.note-open-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 10px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--ink); font-size: 12px; font-weight: 600; }
-.note-open-link:hover { border-color: var(--ink); background: var(--surface-soft); color: var(--ink); }
-.note-open-link svg { flex: 0 0 auto; }
-.note-document-label { margin: 22px 0 8px; color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+.note-excerpt { margin: 0 0 12px; color: var(--ink); font-size: 15px; line-height: 1.62; overflow-wrap: anywhere; }
+.note-body-full { margin: 18px 0 0; font-size: 16px; }
+.note-bar { width: min(900px, calc(100% - 36px)); margin-inline: auto; padding: 18px 0 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.note-back { color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none; }
+.note-back:hover { color: var(--ink); }
+.note-bar-side { display: flex; align-items: center; gap: 12px; }
+.note-source { color: var(--muted); font-size: 12px; text-decoration: none; }
+.note-source:hover { color: var(--ink); }
+.note-shell { padding: 6px 0 60px; }
+.note-title { margin: 0; font-size: clamp(26px, 6.4vw, 34px); line-height: 1.14; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.note-byline { margin: 6px 0 16px; color: var(--muted); font-size: 12px; }
+.note-byline .dot { margin: 0 2px; }
+.note-abstract-fold { margin: 0 0 14px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.note-abstract-fold summary { display: flex; align-items: baseline; gap: 8px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.note-abstract-fold summary::-webkit-details-marker { display: none; }
+.note-abstract-fold summary::after { content: "+"; margin-left: auto; font-size: 14px; line-height: 1; }
+.note-abstract-fold[open] summary::after { content: "−"; }
+.note-fold-hint { color: var(--faint); font-size: 9px; font-weight: 600; letter-spacing: 0.04em; }
+.note-abstract-fold p { margin: 9px 0 0; font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; }
 .note-frame { display: block; width: 100%; height: 420px; min-height: 320px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-.note-frame-full { height: 80vh; }
-.post-shell { max-width: 820px; }
-.note-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.note-title { margin: 0; font-size: 34px; line-height: 1.15; letter-spacing: -0.03em; }
-.post-meta { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
-.post-source { margin: 6px 0 0; font-size: 13px; }
-.note-body-full { margin: 20px 0 0; font-size: 16px; }`;
+.note-frame-full { height: clamp(360px, calc(100dvh - 190px), 1000px); border-radius: 12px; }
+@media (max-width: 650px) {
+  .note-card-title { font-size: 19px; }
+  .note-card .note-open-link { padding: 8px 14px; align-self: flex-end; }
+  .note-card .card-foot { align-items: stretch; }
+  .note-bar { width: min(100% - 24px, 900px); padding-top: 12px; }
+  .note-shell { padding-bottom: 40px; }
+  .note-title { font-size: clamp(24px, 7vw, 30px); }
+  .note-frame-full { height: calc(100dvh - 160px); min-height: 320px; }
+}`;
 
 export const CSS: string = `:root {
   color-scheme: light dark;

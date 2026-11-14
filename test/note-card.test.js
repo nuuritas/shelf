@@ -43,18 +43,31 @@ test('renders a note with its title, attribution and markdown body', () => {
   const html = renderPage({ bookmarks: [note()], total: 1, query: '', layout: 'saves' });
   assert.match(html, /How agent memory works/);
   assert.match(html, /AI-generated/);
-  assert.match(html, /Claude Code · claude-sonnet-4\.5/);
+  assert.match(html, /Claude Code/);
+  assert.match(html, /claude-sonnet-4\.5/);
   assert.match(html, /<h2>Memory<\/h2>/);
   assert.match(html, /<strong>Short<\/strong>/);
   assert.match(html, /href="https:\/\/example\.com\/paper"/);
-  assert.match(html, /Abstract \(agent-written\)/);
+  assert.match(html, /class="note-label">Abstract</);
   assert.doesNotMatch(html, /Summary not configured/);
+});
+
+test('the author line stays short and the note title is the card lede', () => {
+  const longTitle = 'shelf for agents: what a private archive should expose to a coding agent';
+  const html = renderPage({
+    bookmarks: [note({ title: longTitle })],
+    total: 1,
+    query: '',
+    layout: 'saves',
+  });
+  assert.match(html, /<strong class="note-agent-name">Claude Code<\/strong>/);
+  assert.match(html, new RegExp(`<h3 class="note-card-title"><a href="/p/n0te1">${longTitle}</a></h3>`));
 });
 
 test('a note without a source has no dead outbound link', () => {
   const html = renderPage({ bookmarks: [note()], total: 1, query: '', layout: 'saves' });
   assert.doesNotMatch(html, /href="#"/);
-  assert.match(html, /class="x-link note-kind">Note</);
+  assert.match(html, /class="x-link note-kind" title="Note">Note</);
 });
 
 test('a note with a source links to it and hides the duplicate H1', () => {
@@ -128,13 +141,15 @@ test('the full note page renders markdown and the HTML frame', () => {
   assert.match(markdown, /AI-generated/);
   assert.match(markdown, /Claude Code · claude-sonnet-4\.5/);
   assert.match(markdown, /<h2>Memory<\/h2>/);
-  assert.match(markdown, /Abstract \(agent-written\)/);
+  assert.match(markdown, /class="note-label">Abstract</);
 
   const html = renderNotePage({
     bookmark: note({ format: 'html', content: '<h1>Doc</h1><script>alert(1)</script>', title: 'Doc' }),
   });
   assert.match(html, /<iframe class="note-frame note-frame-full" src="\/p\/n0te1\/frame"/);
   assert.match(html, /sandbox/);
-  assert.match(html, /Full document/);
+  assert.match(html, /<h1 class="sr-only">Doc<\/h1>/);
+  assert.match(html, /class="note-abstract-fold"/);
+  assert.doesNotMatch(html, /Full document/);
   assert.doesNotMatch(html, /<script>alert/);
 });
