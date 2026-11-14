@@ -469,6 +469,21 @@ An agent-authored pull request is gated by its own checklist instead: every acce
 marked met with file and line evidence, the checklist posted on the pull request, and only then
 merged.
 
+## Default-branch health
+
+The default branch is a deliverable, not just a base. Every agent working here is responsible for its
+health, because a branch that quietly rots makes every later merge harder.
+
+- After a merge, the author checks `main` itself: the latest CI run on `main`, or the
+  documented gate when the repository has no CI.
+- An open pull request that conflicts with `main` is a defect, not a merge candidate. Rebase it
+  before asking for review again.
+- When `main` is failing or drifting, the finding becomes an issue titled
+  `Default branch main is failing: <detail>` with the run, commit and failing job, instead of a
+  comment nobody acts on.
+- The audit reports the default branch's last commit, its CI conclusion and the number of conflicting
+  open pull requests, so a rotting branch shows up on the record rather than in a surprise merge.
+
 ### Guardrails
 
 One module, at most 200 changed lines, and no dependency, lockfile, deployment or generated-file
