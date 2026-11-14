@@ -40,7 +40,6 @@ export function sourceOfUrl(value: unknown): BookmarkSource {
   return 'other';
 }
 
-/** `source` query value → a filter; anything unknown falls back to `all`. */
 /**
  * When a deployment serves the same instance on more than one custom domain,
  * move the legacy hosts to the canonical one. Returns the absolute target, or
@@ -63,6 +62,7 @@ export function canonicalRedirectUrl(
   return `https://${canonical}${url.pathname}${url.search}`;
 }
 
+/** `source` query value → a filter; anything unknown falls back to `all`. */
 export function parseSource(value: unknown): SourceFilter {
   const raw = String(value ?? '').trim().toLowerCase();
   return raw === 'x' || raw === 'linkedin' || raw === 'youtube' ? raw : 'all';
