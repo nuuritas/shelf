@@ -164,11 +164,14 @@ wall-clock is long but CPU stays low.
 - Collapsed cards (3-line peek, expand on tap) and folded topic syntheses
 - Custom domain, with the workers.dev URL kept as a fallback
 - `/api/stats` reports row counts and real SQLite database size
-- Local access for AI work: `cli/shelf.ts` (search/show/topics/export) and
+- Local access for AI work: `cli/shelf.ts` (search/show/topics/export/add) and
   `shelf mcp`, a stdio MCP server exposing `search_bookmarks`, `get_bookmark`,
-  `list_topics`, `get_topic`. Read-only; the Worker stays the source of truth,
-  nothing is mirrored. `shelf export` writes one markdown file per bookmark
-  (YAML front matter) plus `bookmarks.jsonl` for local RAG.
+  `list_topics`, `get_topic`, `create_post` and `get_authoring_guide`. The
+  Worker stays the source of truth; reads and the one write go through the same
+  API, and nothing is mirrored. `create_post` saves one agent note through
+  `POST /api/posts` following `docs/AGENT-POSTS.md`. `shelf export` writes one
+  markdown file per bookmark (YAML front matter) plus `bookmarks.jsonl` for
+  local RAG.
 - Search (`q`) spans text, author, AI summary, linked-page text, and topic
   names; whitespace-separated terms are ANDed.
 - Short bookmark ids: every card shows a `#k7f3` chip (click to copy, with a
