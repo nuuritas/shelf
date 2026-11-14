@@ -53,6 +53,7 @@ waits for the other, so these rules keep one change from being done twice:
   check is a bug in the process, not extra progress.
 - Gates belong to T3. A superagent pull request states the gates it did not run;
   run them in the review thread before merging, or hand the branch to T3 to fix.
+  A T3 merge then needs its own review; see **The review gate**.
 
 ## Layout
 
@@ -145,8 +146,10 @@ maintainer's own changes, including docs and chores, follow this loop:
 4. Implement and verify on the branch.
 5. Push the branch and open a PR against `main`. The body starts with
    `Closes #<issue>` and follows `.github/pull_request_template.md`.
-6. Merge the PR yourself (squash is fine); an agent does not merge your pull request. The linked issue closes and the project's
-   built-in workflows move the card to Done. Deploy after the merge, not before.
+6. Merge the PR yourself (squash is fine) once its head commit carries a review
+   that allows the merge; an agent does not merge your pull request. The linked
+   issue closes and the project's built-in workflows move the card to Done.
+   Deploy after the merge, not before.
 7. Delete the branch.
 
 Direct pushes to `main` are reserved for emergencies: they leave no card at all,
@@ -358,6 +361,9 @@ API: see `docs/PROGRESS.md` §3.
 
 - CSS cache (see above).
 - `tsc` hang from duplicate DO storage types (see above).
+- A dismissed review is not an approval. Dismissing a `CHANGES_REQUESTED`
+  review empties `reviewDecision` and lets GitHub merge, which is exactly the
+  state **The review gate** exists to forbid.
 - `/tmp` is wiped periodically on this machine. Put anything durable in
   `out/` (gitignored) or the repo, not `/tmp`.
 - Brave installs the PWA as a shortcut, so its share target never appears; the
@@ -439,6 +445,20 @@ author that either approves the change or whose requested changes have all been 
 re-approved. A pull request carrying `CHANGES_REQUESTED` is not done, and a pull request with no
 review at all is not done either.
 
+The review must be on the pull request's current head commit, the one the merge
+is based on. A new commit needs a new review; a review of an earlier commit does
+not carry over. Addressing the findings is not a review, and neither is rebasing
+the objection out of the diff, commenting that the concern no longer applies, or
+pointing at green CI: those are arguments for the reviewer, not permission to
+merge.
+
+Never dismiss, clear or route around another account's review — not with the
+reviews/dismissals API, not with `--admin`, and not by merging while
+`reviewDecision` is empty because you emptied it. The absence of branch
+protection is not authority. If the reviewer does not come back, the change waits
+and the thread returns to the user; asking a person is the escalation, merging
+anyway is not.
+
 Every pull request touched in the last 24 hours must reach one of those states. When it is not there,
 an agent opens exactly one issue per pull request naming the reviewer's unmet concerns, so the work is
 tracked and fixed instead of merged on trust.
@@ -473,8 +493,10 @@ open. T3 Code is the harness for work that needs a person in the loop and for th
 lanes are peers. **Agent harnesses** above is the contract for keeping them apart.
 
 - It acknowledges once on the issue, works in its own clone on `agent/<ticket>`, opens one pull
-  request against `main`, and merges it itself when the guardrails hold. An oversized change is split
-  into consecutive scoped pull requests and merged, not asked about; it never leaves one open.
+  request against `main`, and merges it itself when the guardrails hold. This is the only lane
+  allowed to merge without a review; a T3 thread that takes over an `agent/<ticket>` branch is not
+  covered by it. An oversized change is split into consecutive scoped pull requests and merged, not
+  asked about; it never leaves one open.
 - Guardrails: one module, at most 200 changed lines, no dependency, lockfile, deployment or
   generated-file change. It never builds, tests, deploys, or reads secrets.
 - The issue thread is the contract. Nothing in this repository calls operator scripts, and this
