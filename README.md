@@ -47,8 +47,9 @@ commands.
 - **Read the links** — GitHub repos through the API, other pages through a
   readability extractor.
 - **Summarize** — natural prose from Workers AI with no key, any
-  OpenAI-compatible model, or Anthropic; images, articles and video transcripts
-  are part of the input.
+  OpenAI-compatible model, or Anthropic; articles and video transcripts are
+  part of the input, and images are attached on the OpenAI-compatible and
+  Anthropic paths (the keyless Workers AI path reads text only).
 - **Organize itself** — topics induced from what you actually save, a library
   that still opens on every save, an optional folder view where each topic opens
   like a folder, per-topic syntheses, full-text search, a calendar, archive and
