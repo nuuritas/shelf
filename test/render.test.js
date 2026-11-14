@@ -302,7 +302,7 @@ test('the empty search state keeps the selected source', () => {
     source: 'youtube',
   });
 
-  assert.match(html, /class="source-switch"/);
+  assert.match(html, /class="view-switch source-switch"/);
   assert.match(html, /<a class="small-button" href="\/\?source=youtube">Clear search<\/a>/);
 });
 
