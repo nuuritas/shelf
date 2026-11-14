@@ -282,6 +282,8 @@ export interface NoteInput {
   summary: string | null;
   sourceUrl: string | null;
   clientId: string | null;
+  /** Target an existing note by its short ref; wins over `clientId`. */
+  ref: string | null;
   agent: NoteAgent | null;
 }
 
