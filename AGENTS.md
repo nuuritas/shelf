@@ -53,6 +53,7 @@ waits for the other, so these rules keep one change from being done twice:
   check is a bug in the process, not extra progress.
 - Gates belong to T3. A superagent pull request states the gates it did not run;
   run them in the review thread before merging, or hand the branch to T3 to fix.
+  A T3 merge then needs its own review; see **No merge without a review**.
 
 ## Layout
 
@@ -145,14 +146,39 @@ maintainer's own changes, including docs and chores, follow this loop:
 4. Implement and verify on the branch.
 5. Push the branch and open a PR against `main`. The body starts with
    `Closes #<issue>` and follows `.github/pull_request_template.md`.
-6. Merge the PR (squash is fine). The linked issue closes and the project's
-   built-in workflows move the card to Done. Deploy after the merge, not before.
+6. Merge the PR (squash is fine) once its head commit carries a review that
+   allows the merge; see **No merge without a review** below. The linked issue
+   closes and the project's built-in workflows move the card to Done. Deploy
+   after the merge, not before.
 7. Delete the branch.
 
 Direct pushes to `main` are reserved for emergencies: they leave no card at all,
 so the change cannot be followed from the board. The repository plan does not
 offer branch protection or rulesets, so this loop is enforced by convention; do
 not take the shortcut.
+
+### No merge without a review
+
+A T3 thread merges only after a review on the exact commit it is merging, and
+only when that review allows the merge. `CHANGES_REQUESTED` blocks the merge
+until the reviewer changes its own state.
+
+- The review must be on the head commit. A new commit needs a new review; a
+  review of an earlier commit does not carry over.
+- Addressing the findings is not a review. Neither is rebasing the objection out
+  of the diff, commenting that the concern no longer applies, nor pointing at
+  green CI. Those are arguments for the reviewer, not permission to merge.
+- Never dismiss, clear or route around another account's review: not with the
+  reviews/dismissals API, not with `--admin`, and not by merging while
+  `reviewDecision` is empty because you emptied it. The absence of branch
+  protection is not authority.
+- If the reviewer does not come back, the change waits and the thread returns to
+  the user. Asking a person is the escalation; merging anyway is not.
+
+The superagent is the one exception: its pull requests are merged by the
+unattended lane under the guardrails in **Autonomous agent (superagent)**. A T3
+thread that takes over an `agent/<ticket>` branch is not covered by that
+exception.
 
 ## Request flow
 
@@ -358,6 +384,9 @@ API: see `docs/PROGRESS.md` §3.
 
 - CSS cache (see above).
 - `tsc` hang from duplicate DO storage types (see above).
+- A dismissed review is not an approval. Dismissing a `CHANGES_REQUESTED`
+  review empties `reviewDecision` and lets GitHub merge, which is exactly the
+  state **No merge without a review** exists to forbid.
 - `/tmp` is wiped periodically on this machine. Put anything durable in
   `out/` (gitignored) or the repo, not `/tmp`.
 - Brave installs the PWA as a shortcut, so its share target never appears; the
@@ -413,7 +442,8 @@ open. T3 Code is the harness for work that needs a person in the loop and for th
 lanes are peers. **Agent harnesses** above is the contract for keeping them apart.
 
 - It acknowledges once on the issue, works in its own clone on `agent/<ticket>`, opens one pull
-  request against `main`, and merges it itself when the guardrails hold. An oversized change is split
+  request against `main`, and merges it itself when the guardrails hold. This is the only lane
+  allowed to merge without a review; see **No merge without a review**. An oversized change is split
   into consecutive scoped pull requests and merged, not asked about; it never leaves one open.
 - Guardrails: one module, at most 200 changed lines, no dependency, lockfile, deployment or
   generated-file change. It never builds, tests, deploys, or reads secrets.
