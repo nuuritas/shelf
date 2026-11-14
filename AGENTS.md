@@ -432,6 +432,21 @@ repository here. Four roles, four different jobs.
    "merge the pull request" in a maintainer loop is a step for the person, never permission for an
    agent to merge someone else's work.
 
+### The review gate
+
+No pull request is merged without a review. "Reviewed" means a review by an account other than the
+author that either approves the change or whose requested changes have all been addressed and
+re-approved. A pull request carrying `CHANGES_REQUESTED` is not done, and a pull request with no
+review at all is not done either.
+
+Every pull request touched in the last 24 hours must reach one of those states. When it is not there,
+an agent opens exactly one issue per pull request naming the reviewer's unmet concerns, so the work is
+tracked and fixed instead of merged on trust.
+
+GitHub forbids approving your own pull request, so an agent-authored pull request is gated by its own
+checklist instead: every acceptance criterion marked met with file and line evidence, the checklist
+posted on the pull request, and only then merged.
+
 ### Guardrails
 
 One module, at most 200 changed lines, and no dependency, lockfile, deployment or generated-file
