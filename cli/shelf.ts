@@ -28,9 +28,11 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { collectYoutubeIds, parseTranscriptBody, youtubeVideoId } from '../src/transcript.ts';
+import { labelSlug } from '../src/labels.ts';
 import type {
   Bookmark,
   GetResult,
+  LabelListResult,
   ListResult,
   SaveResult,
   StoreTranscriptsResult,
@@ -291,6 +293,11 @@ function topicNames(bookmark: Bookmark): string {
   return (bookmark.topics || []).map(topic => topic.name).join(', ');
 }
 
+/** The reader's own tags, as they were spelled. */
+function labelNames(bookmark: Bookmark): string {
+  return (bookmark.labels || []).map(label => label.name).join(', ');
+}
+
 /** Where a row points: the link for a save, the note's own id or citation for a note. */
 function rowTarget(bookmark: Bookmark): string {
   if (bookmark.kind === 'note') {
@@ -304,6 +311,8 @@ function renderCard(bookmark: Bookmark, index: number): string {
   const lines = [`${index}. ${authorLabel(bookmark)} · ${isoDay(bookmark.savedAt)}${flags} · ${rowTarget(bookmark)}`];
   const topics = topicNames(bookmark);
   if (topics) lines.push(`   topics: ${topics}`);
+  const labels = labelNames(bookmark);
+  if (labels) lines.push(`   labels: ${labels}`);
   const summary = (bookmark.summary || bookmark.text || '').replace(/\s+/g, ' ').trim();
   if (summary) lines.push(`   ${truncate(summary, 240)}`);
   lines.push(`   id: ${bookmark.ref || bookmark.tweetId}`);
@@ -340,6 +349,8 @@ function renderBookmark(bookmark: Bookmark): string {
   const meta = [`Saved ${isoDay(bookmark.savedAt)}`];
   const topics = topicNames(bookmark);
   if (topics) meta.push(`Topics: ${topics}`);
+  const labels = labelNames(bookmark);
+  if (labels) meta.push(`Labels: ${labels}`);
   if (bookmark.archivedAt) meta.push('Archived');
   if (bookmark.ref) meta.push(`id: ${bookmark.ref}`);
   meta.push(`post: ${bookmark.tweetId}`);
@@ -407,6 +418,7 @@ function renderNote(bookmark: Bookmark): string {
   if (bookmark.sourceUrl) lines.push('', `Source: ${bookmark.sourceUrl}`);
   const meta = [`Saved ${isoDay(bookmark.savedAt)}`];
   if (bookmark.topics?.length) meta.push(`Topics: ${topicNames(bookmark)}`);
+  if (bookmark.labels?.length) meta.push(`Labels: ${labelNames(bookmark)}`);
   if (bookmark.archivedAt) meta.push('Archived');
   if (bookmark.ref) meta.push(`id: ${bookmark.ref}`);
   meta.push(`note: ${bookmark.tweetId}`);
@@ -488,6 +500,7 @@ Flags:
   --tool <name>       tool that wrote it (default: "shelf-cli")
   --summary <text>    optional 1-3 sentence abstract, stored as agent-written
   --source-url <url>  optional primary source, http(s) only
+  --label <names>     comma-separated tags, e.g. "reading, design" (max 12)
   --client-id <id>    stable id: re-posting the same value updates one note
   --ref <ref>         update the note with this ref in place (keeps its link)
   --json              print the full API result
@@ -501,6 +514,7 @@ Guide: docs/AGENT-POSTS.md — run \`shelf guide\` for the full authoring contra
 
 Examples:
   shelf add ./research.md --title "How agent memory works" --agent "Claude Code"
+  shelf add ./notes.md --label "reading, design" --summary "One line."
   cat note.md | shelf add - --title "Notes" --client-id daily-2026-11-13
 `;
 
@@ -542,6 +556,7 @@ async function commandAdd(args: ParsedArgs): Promise<void> {
     title: typeof args.flags.title === 'string' ? args.flags.title : undefined,
     summary: typeof args.flags.summary === 'string' ? args.flags.summary : undefined,
     sourceUrl: typeof args.flags['source-url'] === 'string' ? args.flags['source-url'] : undefined,
+    labels: typeof args.flags.label === 'string' ? args.flags.label : undefined,
     clientId: typeof args.flags['client-id'] === 'string' ? args.flags['client-id'] : undefined,
     ref: typeof args.flags.ref === 'string' ? args.flags.ref : undefined,
     agent: {
@@ -563,16 +578,25 @@ async function commandAdd(args: ParsedArgs): Promise<void> {
     `${result.created ? 'Added' : 'Updated'} #${bookmark?.ref ?? '?'} ${bookmark?.tweetId ?? ''} (${format}, ${size})`,
   );
   if (bookmark?.title) console.log(`  ${bookmark.title}`);
+  if (bookmark?.labels?.length) console.log(`  labels: ${labelNames(bookmark)}`);
   const config = loadConfig();
   console.log(`  ${config.url.replace(/\/$/, '')}/?layout=saves#bookmark-${bookmark?.tweetId ?? ''}`);
 }
 
 async function commandSearch(args: ParsedArgs): Promise<void> {
   const query = args.positional.join(' ').trim();
-  if (!query) throw new Error('Usage: shelf search <words> [--limit 10] [--json]');
+  if (!query) {
+    throw new Error('Usage: shelf search <words> [--limit 10] [--label reading] [--json]');
+  }
 
   const limit = clampLimit(args.flags.limit, 10, 50);
-  const result = await api<ListResult>('api/bookmarks', { q: query, limit, view: 'all' });
+  const label = typeof args.flags.label === 'string' ? labelSlug(args.flags.label) : '';
+  const result = await api<ListResult>('api/bookmarks', {
+    q: query,
+    limit,
+    view: 'all',
+    ...(label ? { label } : {}),
+  });
 
   if (args.flags.json) {
     console.log(JSON.stringify(result, null, 2));
@@ -593,7 +617,11 @@ async function commandSearch(args: ParsedArgs): Promise<void> {
 
 async function commandRecent(args: ParsedArgs): Promise<void> {
   const limit = clampLimit(args.flags.limit, 10, 50);
-  const result = await api<ListResult>('api/bookmarks', { limit });
+  const label = typeof args.flags.label === 'string' ? labelSlug(args.flags.label) : '';
+  const result = await api<ListResult>('api/bookmarks', {
+    limit,
+    ...(label ? { label } : {}),
+  });
 
   if (args.flags.json) {
     console.log(JSON.stringify(result, null, 2));
@@ -888,6 +916,7 @@ function slugify(value: string): string {
 
 function frontMatter(bookmark: Bookmark): string {
   const topics = (bookmark.topics || []).map(topic => topic.name);
+  const labels = (bookmark.labels || []).map(label => label.name);
   const lines = [
     '---',
     `ref: "${bookmark.ref}"`,
@@ -898,6 +927,7 @@ function frontMatter(bookmark: Bookmark): string {
     `created: ${isoDay(bookmark.createdAt) || 'unknown'}`,
     `archived: ${Boolean(bookmark.archivedAt)}`,
     `topics: [${topics.map(name => JSON.stringify(name)).join(', ')}]`,
+    `labels: [${labels.map(name => JSON.stringify(name)).join(', ')}]`,
     '---',
   ];
   return lines.join('\n');
@@ -918,6 +948,9 @@ async function commandExport(args: ParsedArgs): Promise<void> {
   const dir = resolve(target);
   const bookmarks = await fetchAllBookmarks({ view: 'all' });
   const topics = await api<TopicListResult>('api/topics');
+  const labels = await api<LabelListResult>('api/labels').catch(
+    (): LabelListResult => ({ labels: [] }),
+  );
 
   mkdirSync(dir, { recursive: true });
 
@@ -943,6 +976,7 @@ async function commandExport(args: ParsedArgs): Promise<void> {
         savedAt: bookmark.savedAt,
         createdAt: bookmark.createdAt,
         topics: (bookmark.topics || []).map(topic => topic.name),
+        labels: (bookmark.labels || []).map(label => label.name),
         archived: Boolean(bookmark.archivedAt),
         summary: bookmark.summary,
         summaryEn: bookmark.summaryEn,
@@ -972,6 +1006,14 @@ async function commandExport(args: ParsedArgs): Promise<void> {
     ...topics.topics.map(
       topic => `- **${topic.name}** (\`${topic.slug}\`) — ${topic.count} items`,
     ),
+    '',
+    '## Labels',
+    '',
+    ...(labels.labels.length
+      ? labels.labels.map(
+          label => `- **${label.name}** (\`${label.slug}\`) — ${label.count} items`,
+        )
+      : ['_No labels yet._']),
   ].join('\n');
   writeFileSync(join(dir, 'INDEX.md'), `${index}\n`, 'utf8');
 
@@ -1035,14 +1077,18 @@ const MCP_TOOLS = [
     name: 'search_bookmarks',
     description:
       "Search the user's private Shelf archive (X and LinkedIn). Matches post text, AI summaries, " +
-      'authors, linked-page text and topic names. Every whitespace-separated term must match. ' +
-      'Searches both active and archived items. Returns compact cards (author, date, topics, summary excerpt, URL, post id).',
+      'authors, linked-page text, topic and label names. Every whitespace-separated term must match. ' +
+      'Searches both active and archived items. Returns compact cards (author, date, topics, labels, summary excerpt, URL, post id).',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
           description: 'Keywords, e.g. "claude code agents" or "postgres index".',
+        },
+        label: {
+          type: 'string',
+          description: 'Optional label to narrow to one tag, e.g. "reading".',
         },
         limit: {
           type: 'number',
@@ -1107,6 +1153,14 @@ const MCP_TOOLS = [
         title: { type: 'string', description: 'Title, max 200 characters.' },
         summary: { type: 'string', description: 'Optional 1-3 sentence abstract, max 4,000 characters.' },
         sourceUrl: { type: 'string', description: 'Optional primary source URL (http/https).' },
+        labels: {
+          anyOf: [
+            { type: 'array', items: { type: 'string' } },
+            { type: 'string', description: 'Comma-separated tags.' },
+          ],
+          description:
+            'Optional tags the reader can filter by, e.g. ["reading","design"] or "reading, design". Max 12.',
+        },
         clientId: { type: 'string', description: 'Stable id so a retry updates the same note.' },
         ref: { type: 'string', description: 'Short ref of an existing note to update in place.' },
         agent: {
@@ -1160,6 +1214,7 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
         title: input.title,
         summary: input.summary,
         sourceUrl: input.sourceUrl,
+        labels: input.labels,
         clientId: input.clientId,
         ref: input.ref,
         agent: {
@@ -1184,7 +1239,13 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
       const query = String(input.query || '').trim();
       if (!query) throw new Error('`query` is required.');
       const limit = clampLimit(String(input.limit ?? 10), 10, 50);
-      const result = await api<ListResult>('api/bookmarks', { q: query, limit, view: 'all' });
+      const label = String(input.label || '');
+      const result = await api<ListResult>('api/bookmarks', {
+        q: query,
+        limit,
+        view: 'all',
+        ...(label ? { label: labelSlug(label) } : {}),
+      });
       if (!result.bookmarks.length) return `No bookmarks matched “${query}”.`;
       return [
         `${result.total} match${result.total === 1 ? '' : 'es'} for “${query}”:`,
@@ -1338,11 +1399,11 @@ async function runMcp(): Promise<void> {
 const HELP = `shelf ${VERSION} — read your Shelf archive from the terminal or an AI client.
 
 Usage:
-  shelf add <file|-> [--format md|html]        save an AI-written research note
+  shelf add <file|-> [--label "a, b"]          save an AI-written research note
   shelf guide                                  print the agent-post authoring guide
-  shelf search <words> [--limit 10] [--json]   search text, summaries, authors, topics
+  shelf search <words> [--label <slug>]        search text, summaries, authors, topics
   shelf show <id|URL> [--json]                 one bookmark (short id, post id, or URL)
-  shelf recent [--limit 10] [--json]           newest bookmarks
+  shelf recent [--limit 10] [--label <slug>]   newest bookmarks
   shelf topics [--json]                        AI topics + rolling syntheses
   shelf topic <slug> [--limit 50] [--json]     one topic's synthesis + items
   shelf export [--dir ./dir]                   markdown + jsonl for local RAG

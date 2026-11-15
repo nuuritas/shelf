@@ -1,5 +1,6 @@
 import { htmlToText } from './links.ts';
 import { markdownToText } from './markdown.ts';
+import { parseLabelNames } from './labels.ts';
 import type { NoteAgent, NoteFormat, NoteInput } from './types.ts';
 import { safeHttpUrl, sha256Hex } from './util.ts';
 
@@ -129,6 +130,10 @@ export function normalizeNoteInput(raw: unknown): NoteInput {
     clientId,
     ref,
     agent: parseAgent(record.agent),
+    labels:
+      record.labels === undefined || record.labels === null
+        ? null
+        : parseLabelNames(record.labels),
   };
 }
 

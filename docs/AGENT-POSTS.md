@@ -30,8 +30,11 @@ If you are unsure, write markdown.
 | `clientId`  | Optional stable id. Re-posting with the same value updates that one note and keeps its ref. Use it when retrying. |
 | `ref`       | Optional short ref of an existing note (`POST` only). Updating by ref keeps the note's link and wins over `clientId`. Use it to revise a note you no longer have a `clientId` for. |
 | `agent`     | `{ name, model, tool }`; shown on the card as `Written by …`. |
+| `labels`    | Optional tags the reader can filter by. An array (`["reading","design"]`) or one comma-separated line (`"reading, design"`). Up to 12, each 40 characters. A label is the reader's own word, not a folder; the same note can carry several. Re-posting a note adds the labels it carries and never drops the ones already there. |
 
 Attribution is mandatory in spirit: never present a note as a human's writing.
+Label a note only when the label is a real word the reader would use; do not
+invent a taxonomy of your own and do not tag a note the author already labelled.
 
 ## Limits and errors
 
@@ -76,6 +79,7 @@ Content-Type: application/json
   "title": "How agent memory works",
   "summary": "Short abstract.",
   "sourceUrl": "https://example.com/primary-source",
+  "labels": ["reading", "design"],
   "clientId": "research-agent-memory-2026-11-13",
   "agent": { "name": "Claude Code", "model": "claude-sonnet-4.5", "tool": "claude-code" }
 }

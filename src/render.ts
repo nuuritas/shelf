@@ -12,6 +12,7 @@ import type {
   Author,
   Bookmark,
   CalendarResult,
+  LabelSummary,
   LinkRead,
   MediaItem,
   Metrics,
@@ -62,6 +63,7 @@ const NOTICES: Record<string, string> = {
   translating: 'English summaries queued. Each one appears when the background job finishes it.',
   translated: 'English summary queued.',
   'translated-none': 'Every finished summary already has an English version.',
+  labeled: 'Labels saved.',
 };
 
 export interface RenderPageOptions {
@@ -71,6 +73,10 @@ export interface RenderPageOptions {
   day?: string | null;
   topics?: TopicSummary[];
   topic?: TopicSummary | null;
+  /** The reader's labels, most carried first; the card chips link here too. */
+  labels?: LabelSummary[];
+  /** A label slug, when the library is filtered to one label. */
+  label?: string | null;
   notice?: string | null;
   error?: string | null;
   aiConfigured?: boolean;
@@ -106,6 +112,7 @@ function libraryHref(
   {
     query = '',
     day = null,
+    label = '',
     view = 'active',
     lang = 'tr',
     layout = 'saves',
@@ -113,6 +120,7 @@ function libraryHref(
   }: {
     query?: string;
     day?: string | null;
+    label?: string | null;
     view?: 'active' | 'archived';
     lang?: 'tr' | 'en';
     layout?: 'folders' | 'saves';
@@ -122,6 +130,7 @@ function libraryHref(
   const params = new URLSearchParams();
   if (query) params.set('q', query);
   if (day) params.set('day', day);
+  if (label) params.set('label', label);
   if (view === 'archived') params.set('view', 'archived');
   if (lang === 'en') params.set('lang', 'en');
   if (layout === 'folders') params.set('layout', 'folders');
@@ -137,6 +146,8 @@ export function renderPage({
   day: dayOption = null,
   topics = [],
   topic = null,
+  labels = [],
+  label: labelOption = null,
   notice,
   error,
   aiConfigured = false,
@@ -155,6 +166,8 @@ export function renderPage({
   const layout = layoutOption === 'folders' ? 'folders' : 'saves';
   const source = parseSource(sourceOption);
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(dayOption || '')) ? String(dayOption) : null;
+  const label = String(labelOption || '');
+  const currentLabel = labels.find(entry => entry.slug === label);
   const pending = bookmarks.some(
     bookmark =>
       ['pending', 'working'].includes(bookmark.summaryStatus) ||
@@ -164,6 +177,7 @@ export function renderPage({
   const path = topic ? `/t/${topic.slug}` : '/';
   const currentQuery = topic ? '' : query;
   const currentDay = topic ? null : day;
+  const currentLabelKey = topic ? '' : label;
   const activeCount = (topic ? topic.count : activeTotal) ?? 0;
   const archivedCount = (topic ? topic.archivedCount : archivedTotal) ?? 0;
   /** Topic pages never carry the folder layout, so their links stay clean. */
@@ -171,6 +185,7 @@ export function renderPage({
   const returnTo = libraryHref(path, {
     query: currentQuery,
     day: currentDay,
+    label: currentLabelKey,
     view,
     lang,
     layout: layoutParam,
@@ -190,6 +205,7 @@ export function renderPage({
           libraryHref(path, {
             query: currentQuery,
             day: currentDay,
+            label: currentLabelKey,
             view,
             lang,
             layout: layoutParam,
@@ -200,12 +216,48 @@ export function renderPage({
     .join('');
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
+  // Labels are the reader's tags, not folders: the same shelf by another cut,
+  // so the row only lists labels somebody actually used. A label on no post is
+  // dropped by the store, which keeps the row from filling with dead words.
+  const labelChips = labels.length
+    ? `<nav class="view-switch label-switch" role="group" aria-label="Label filter">
+                <a class="${currentLabelKey ? '' : 'active'}" href="${escapeHtml(
+                  libraryHref('/', {
+                    query: currentQuery,
+                    day: currentDay,
+                    view,
+                    lang,
+                    layout: 'saves',
+                    source,
+                  }),
+                )}">All labels</a>
+                ${labels
+                  .map(
+                    entry =>
+                      `<a class="${entry.slug === currentLabelKey ? 'active' : ''}" href="${escapeHtml(
+                        libraryHref('/', {
+                          day: currentDay,
+                          label: entry.slug,
+                          view,
+                          lang,
+                          layout: 'saves',
+                          source,
+                        }),
+                      )}">${escapeHtml(entry.name)}<span>${entry.count}</span></a>`,
+                  )
+                  .join('')}
+              </nav>`
+    : '';
   const showTranslateBanner =
     lang === 'en' && bilingual && aiConfigured && missingEnglish > 0;
   const dayLabel = currentDay ? formatDate(`${currentDay}T00:00:00.000Z`) : '';
   const calendarHref = lang === 'en' ? '/calendar?lang=en' : '/calendar';
   const showingList =
-    !topic && (layout === 'saves' || Boolean(currentQuery) || Boolean(currentDay));
+    !topic &&
+    (layout === 'saves' ||
+      Boolean(currentQuery) ||
+      Boolean(currentDay) ||
+      Boolean(currentLabelKey));
   const showFolders = !topic && !showingList && topics.length > 0;
 
   const folderTopics = [...topics].sort((left, right) => {
@@ -222,9 +274,11 @@ export function renderPage({
         }`
       : currentDay
         ? `Day · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
-        : view === 'archived'
-          ? `Archive · ${archivedCount} saved`
-          : `Library · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`;
+        : currentLabelKey
+          ? `Label · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
+          : view === 'archived'
+            ? `Archive · ${archivedCount} saved`
+            : `Library · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`;
 
   const heading = query
     ? currentDay
@@ -234,22 +288,26 @@ export function renderPage({
       ? `Saved on ${escapeHtml(dayLabel)}`
       : topic
         ? escapeHtml(topic.name)
-        : showFolders
-          ? 'Browse by folder'
-          : view === 'archived'
-            ? 'Archived bookmarks'
-            : 'Latest saves';
+        : currentLabel
+          ? escapeHtml(currentLabel.name)
+          : showFolders
+            ? 'Browse by folder'
+            : view === 'archived'
+              ? 'Archived bookmarks'
+              : 'Latest saves';
 
   return pageShell({
     title: topic
       ? `${topic.name} · Shelf`
-      : showFolders
-        ? 'Folders · Shelf'
-        : currentDay
-          ? `${dayLabel} · Shelf`
-          : view === 'archived'
-            ? 'Archive · Shelf'
-            : 'Shelf',
+      : currentLabel
+        ? `${currentLabel.name} · Shelf`
+        : showFolders
+          ? 'Folders · Shelf'
+          : currentDay
+            ? `${dayLabel} · Shelf`
+            : view === 'archived'
+              ? 'Archive · Shelf'
+              : 'Shelf',
     bodyClass: 'home',
     head: pending ? '<meta http-equiv="refresh" content="4">' : '',
     look: appearance,
@@ -298,6 +356,7 @@ export function renderPage({
             <div class="library-tools">
               <form class="search-form" method="get" action="/">
                 ${currentDay ? `<input type="hidden" name="day" value="${escapeHtml(currentDay)}">` : ''}
+                ${currentLabelKey ? `<input type="hidden" name="label" value="${escapeHtml(currentLabelKey)}">` : ''}
                 ${view === 'archived' ? '<input type="hidden" name="view" value="archived">' : ''}
                 ${lang === 'en' ? '<input type="hidden" name="lang" value="en">' : ''}
                 ${source !== 'all' ? `<input type="hidden" name="source" value="${source}">` : ''}
@@ -305,14 +364,14 @@ export function renderPage({
                 <label class="sr-only" for="q">Search bookmarks</label>
                 <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
                 <button type="submit">Search</button>
-                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, view, lang, layout: layoutParam, source }))}">Clear</a>` : ''}
+                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, label: currentLabelKey, view, lang, layout: layoutParam, source }))}">Clear</a>` : ''}
               </form>
               <div class="library-switches">
                 ${
                   !topic && topics.length
                     ? `<nav class="view-switch layout-switch" role="group" aria-label="Library layout">
                         <a class="${showingList ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref('/', { view, lang, layout: 'saves', source }),
+                          libraryHref('/', { label: currentLabelKey, view, lang, layout: 'saves', source }),
                         )}">All saves<span>${view === 'archived' ? archivedCount : activeCount}</span></a>
                         <a class="${showingList ? '' : 'active'}" href="${escapeHtml(
                           libraryHref('/', { view, lang, layout: 'folders', source }),
@@ -322,21 +381,22 @@ export function renderPage({
                 }
                 <nav class="view-switch" role="group" aria-label="Archive filter">
                   <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'active', lang, layout: layoutParam, source }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view: 'active', lang, layout: layoutParam, source }),
                   )}">Active<span>${activeCount}</span></a>
                   <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, view: 'archived', lang, layout: layoutParam, source }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view: 'archived', lang, layout: layoutParam, source }),
                   )}">Archived<span>${archivedCount}</span></a>
                 </nav>
                 <nav class="view-switch source-switch" role="group" aria-label="Source filter">${sourceChips}</nav>
+                ${labelChips}
                 ${
                   bilingual
                     ? `<nav class="lang-switch" role="group" aria-label="Summary language">
                         <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'tr', layout: layoutParam, source }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view, lang: 'tr', layout: layoutParam, source }),
                         )}">Türkçe</a>
                         <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, view, lang: 'en', layout: layoutParam, source }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view, lang: 'en', layout: layoutParam, source }),
                         )}">English</a>
                       </nav>`
                     : ''
@@ -350,7 +410,7 @@ export function renderPage({
             currentDay
               ? `<div class="day-banner">
                   <span>Showing ${total} ${view === 'archived' ? 'archived' : 'active'} of ${activeCount + archivedCount} ${activeCount + archivedCount === 1 ? 'save' : 'saves'} from <strong>${escapeHtml(dayLabel)}</strong>.</span>
-                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, view, lang, layout: layoutParam, source }))}">Clear date</a>
+                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, label: currentLabelKey, view, lang, layout: layoutParam, source }))}">Clear date</a>
                 </div>`
               : ''
           }
@@ -401,9 +461,29 @@ export function renderPage({
               ? ''
               : bookmarks.length
                 ? `<div class="cards">${bookmarks
-                    .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual))
+                    .map(bookmark =>
+                      renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual, view),
+                    )
                     .join('')}</div>`
-                : renderEmpty(query, view, currentDay, Boolean(topic), source, layout)
+                : currentLabelKey && !query
+                  ? `<div class="empty">
+                      <p class="empty-mark">⌁</p>
+                      <h3>Nothing ${view === 'archived' ? 'archived ' : ''}carries “${escapeHtml(
+                        currentLabel?.name || currentLabelKey,
+                      )}”</h3>
+                      <p>${
+                        view === 'archived'
+                          ? 'A label only lists what it is put on, and this one is not on an archived save yet.'
+                          : 'Every save that carries it is archived, or the label was changed from a card.'
+                      }</p>
+                      <a class="small-button" href="${escapeHtml(
+                        libraryHref('/', { label: currentLabelKey, view: view === 'archived' ? 'active' : 'archived', lang, source }),
+                      )}">${view === 'archived' ? 'Look in the active saves' : 'Look in the archive'}</a>
+                      <a class="small-button" href="${escapeHtml(
+                        libraryHref('/', { view, lang, layout: 'saves', source }),
+                      )}">All labels</a>
+                    </div>`
+                  : renderEmpty(query, view, currentDay, Boolean(topic), source, layout)
           }
 
           ${
@@ -899,14 +979,55 @@ function renderTopicOverview(text: unknown): string {
   `;
 }
 
+/**
+ * A card's labels are both a view of the shelf and the way back to one: a chip
+ * links to that label's list, and the editor rewrites the whole set because a
+ * text field cannot say which of several labels to remove. The form carries
+ * `returnTo` so saving never loses the search, day, archive or label view.
+ */
+function renderLabels(
+  bookmark: Bookmark,
+  returnTo: string,
+  view: 'active' | 'archived',
+  lang: 'tr' | 'en',
+): string {
+  const labels = bookmark.labels || [];
+  const names = labels.map(label => label.name);
+  const field = `labels-${bookmark.tweetId}`;
+  const chips = labels
+    .map(
+      label =>
+        `<a class="label" href="${escapeHtml(
+          libraryHref('/', { label: label.slug, view, lang }),
+        )}">${escapeHtml(label.name)}</a>`,
+    )
+    .join('');
+
+  return `<div class="card-labels">${chips}<details class="label-editor">
+            <summary>${
+              names.length
+                ? `Labels <span class="label-count">${names.length}</span>`
+                : '+ Label'
+            }</summary>
+            <form class="label-form" method="post" action="/labels">
+              <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+              <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+              <label class="sr-only" for="${field}">Labels, comma-separated</label>
+              <input id="${field}" name="labels" value="${escapeHtml(names.join(', '))}" placeholder="reading, design, later" autocomplete="off">
+              <button type="submit">Save labels</button>
+            </form>
+          </details></div>`;
+}
+
 function renderBookmark(
   bookmark: Bookmark,
   aiConfigured: boolean,
   returnTo = '/',
   lang: 'tr' | 'en' = 'tr',
   bilingual = false,
+  view: 'active' | 'archived' = 'active',
 ): string {
-  if (bookmark.kind === 'note') return renderNoteCard(bookmark, returnTo);
+  if (bookmark.kind === 'note') return renderNoteCard(bookmark, returnTo, view, lang);
 
   const author: Partial<Author> = bookmark.author ?? {};
   const handle = author.username ? `@${author.username}` : '';
@@ -979,6 +1100,8 @@ function renderBookmark(
 
       ${extras.length ? `<p class="peek-meta">${escapeHtml(extras.join(' · '))}</p>` : ''}
 
+      ${renderLabels(bookmark, returnTo, view, lang)}
+
       <footer class="card-foot">
         <div class="metrics">${renderMetrics(bookmark.metrics)}</div>
         <div class="card-actions">
@@ -1012,7 +1135,12 @@ function renderBookmark(
  * plain body copy. An HTML note is a document, not card copy, so its body is
  * never embedded here — the title and the primary action both lead to `/p/:ref`.
  */
-function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
+function renderNoteCard(
+  bookmark: Bookmark,
+  returnTo: string,
+  view: 'active' | 'archived' = 'active',
+  lang: 'tr' | 'en' = 'tr',
+): string {
   const agent = bookmark.agent;
   const agentName = agent?.name?.trim() || 'AI agent';
   const model = agent?.model?.trim() || '';
@@ -1077,6 +1205,8 @@ function renderNoteCard(bookmark: Bookmark, returnTo: string): string {
               .join('')}</div>`
           : ''
       }
+
+      ${renderLabels(bookmark, returnTo, view, lang)}
 
       <footer class="card-foot">
         <div class="card-actions">
@@ -1573,7 +1703,7 @@ function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=24">
+  <link rel="stylesheet" href="/style.css?v=25">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -3147,6 +3277,86 @@ h1, h2, h3 {
 }
 
 .card-topic:hover { background: var(--accent); color: var(--paper); }
+
+/* Labels are the reader's own tags: a chip reads back as a filter, and the
+   editor under it rewrites the whole set on that one card. */
+.label-switch {
+  max-width: 100%;
+  flex-wrap: wrap;
+  border-radius: 14px;
+}
+
+.card-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 2px;
+}
+
+.label {
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.label:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.label-editor { display: inline-block; }
+
+.label-editor summary {
+  padding: 2px 9px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+.label-editor summary::-webkit-details-marker { display: none; }
+.label-editor[open] summary { border-style: solid; color: var(--ink); }
+.label-count { font-variant-numeric: tabular-nums; opacity: 0.65; }
+
+.label-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.label-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.75rem;
+  outline: 0;
+}
+
+.label-form input:focus { border-color: var(--line-strong); }
+
+.label-form button {
+  padding: 7px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
 
 /* Settings is a form, not a list, so it reads at the cloud's 920px measure.
    That is wider than the 820px reading column, so this page's own shell and
