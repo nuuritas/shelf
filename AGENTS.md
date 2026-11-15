@@ -55,7 +55,7 @@ waits for the other, so these rules keep one change from being done twice:
 - One pull request per change. Two open pull requests for the same acceptance
   check is a bug in the process, not extra progress.
 - Gates belong to T3. A superagent pull request states the gates it did not run;
-  run them in the review thread before merging, or hand the branch to T3 to fix.
+  the operator runs them, and any failure is handed to T3 to fix.
 - A T3 thread links its pull request with `link_pull_request`, watches it with
   `watch_pull_request`, and ends the turn. The watch stays armed across turns:
   do not poll, sleep, or run `gh pr checks --watch`. On a wake, read only what is
@@ -146,20 +146,22 @@ Public contributors follow `CONTRIBUTING.md` (fork → branch → PR). The
 maintainer's own changes, including docs and chores, follow this loop:
 
 1. Open an issue in `nuuritas/shelf` with the goal and an acceptance
-   check. The one exception is a change to the agent contract itself; see
-   **Agent harnesses** above before filing.
+   check. Two cases skip steps 1-2: a change to the agent contract itself, and
+   work started in a T3 thread. See **Agent harnesses** above — an issue routes
+   the change to the superagent, so T3 work opens no issue.
 2. Add the issue to **All work** (project 1), set Workstream `XB`, and move it to
    `Todo`/`In Progress` when work starts. The project's Auto-add workflow is not
    enabled for this repository, so add the item explicitly.
 3. Branch from an up-to-date `main`: `git switch -c <type>/<slug>`.
 4. Implement and verify on the branch.
 5. Push the branch and open a PR against `main`. The body starts with
-   `Closes #<issue>` and follows `.github/pull_request_template.md`.
+   `Closes #<issue>` when step 1 applied, or says why there is no `Closes #N`
+   when it was skipped, and follows `.github/pull_request_template.md`.
 6. Merge the PR (squash is fine) once its head commit carries a review that
    allows the merge and the merge-gate comment is on the pull request. The thread
-   that wrote it may run that merge; the superagent may not. The linked
-   issue closes and the project's built-in workflows move the card to Done.
-   Deploy after the merge, not before.
+   that wrote it may run that merge; the superagent may not. A linked issue
+   closes and the project's built-in workflows move the card to Done. Deploy
+   after the merge, not before.
 7. Delete the branch.
 
 Direct pushes to `main` are reserved for emergencies: they leave no card at all,
