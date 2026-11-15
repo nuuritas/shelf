@@ -265,7 +265,8 @@ One column, one container per band of the page:
   left, the current page's actions on the right (saves count, Settings or
   Library, Log out).
 - `.shell` — `min(820px, 100% - 36px)`, the reading column: the library, a
-  folder, the calendar, the settings page and the full-note body.
+  folder, the calendar and the full-note body. `/settings` is the exception: it
+  widens its own shell and topbar to 920px (see **Settings** below).
 - `.note-bar` — `min(900px, 100% - 36px)`, the full-note page's own bar: back
   link, AI badge, source link.
 
@@ -278,12 +279,55 @@ for the add form and the login card, which float above the page.
 - **650px** — the single breakpoint. The topbar and shell lose 12px of gutter,
   the hero drops to `clamp(2.375rem, 12vw, 3.625rem)`, the add form stacks, the
   library head and its tools go vertical, cards lose padding, the calendar
-  tightens and the settings cards go to one column.
+  tightens, the settings cards go to one column and a settings label row
+  collapses under its label.
 - The note page uses the same 650px boundary for its own stack.
 
 Nothing between 651px and 1440px is special-cased; the clamps carry it. Check
 768px and 1024px after a layout change, because that is where a two-column
 block is closest to failing.
+
+### Settings
+
+`/settings` is a form, not a list, so it keeps the cloud's tighter rhythm and a
+wider measure than the reading column:
+
+- The page's own `.shell` and `.topbar` widen together to
+  `min(920px, 100% - 36px)`, and `.settings` caps at `max-width: 920px`,
+  `margin-inline: auto`. Both columns stay aligned; nothing else on the site
+  changes width. Under 650px they drop to `100% - 24px`.
+- The cards are one column in `.settings-form` with `gap: 11px` and
+  `margin-top: 16px`; every card is `padding: 16px`, one hairline border and
+  `--radius` corners. A card's heading is `0.9375rem`; the page heading is
+  `1.4375rem` with `-0.03em` tracking.
+- Every card opens with `.settings-card-head`: the heading on the left, one
+  `.settings-badge` with the current state on the right (browser-only,
+  built-in/custom prompt, language, AI configured, push state). The badge
+  ellipsises at `max-width: 50%` so a long provider name cannot push the
+  heading.
+- A row that is a short label and a control uses `.settings-row`, a
+  `96px minmax(0, 1fr)` grid with a 12px gap: `.settings-label` sits in the
+  gutter and the control in the second column. Appearance (theme, text size) is
+  the current user of it. Do not put prose in the gutter: an explanatory
+  sentence keeps the full card width, and the summary language stays two
+  `.settings-choice` rows because each option carries its own note. Below the
+  breakpoint a row collapses to one column with a 7px gap.
+- `.settings-facts` is the label/value grid: `repeat(3, minmax(0, 1fr))` of
+  boxed `--surface-soft` cells `10px` apart, `dt` a `0.65625rem` uppercase
+  `--faint` label, `dd` a `0.8125rem` value that wraps anywhere. One column
+  under the breakpoint. The AI card is Provider / Model / Connection.
+- `.settings-note` carries `margin: 7px 0 0` and no bottom margin; each control
+  declares its own top margin (textarea and `.settings-choice` 12px,
+  `.settings-facts` 12px, `.settings-actions` 14px). Keep that split when adding
+  a control, or the card's rhythm will double up.
+- `.settings-actions` is one row with a 10px gap and 14px above; the page-level
+  Save/Reset pair reuses it as `.settings-actions-foot`, 5px below the last
+  card. Both submit buttons live in that row, inside the single
+  `<form action="/settings">`; they stack full width under 650px.
+
+The cloud splits the same page into one form per card. Do not copy that here:
+this Worker has one `POST /settings` with `action=save|reset`, and the layout
+must not grow a second endpoint.
 
 ## Motion
 
