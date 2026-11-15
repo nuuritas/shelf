@@ -27,4 +27,4 @@ jobs:
       - name: Tests
         run: node --test
       - name: Worker dry run
-        run: bun run deploy -- --dry-run
+        run: bun run deploy:dry

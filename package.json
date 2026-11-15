@@ -12,8 +12,10 @@
   "scripts": {
     "setup": "bun scripts/setup.ts",
     "dev": "cf dev",
-    "deploy": "cf deploy",
-    "deploy:personal": "cf deploy --mode personal",
+    "deploy": "bun scripts/deploy-check.ts && cf deploy",
+    "deploy:personal": "bun scripts/deploy-check.ts && cf deploy --mode personal",
+    "deploy:dry": "cf deploy --dry-run",
+    "deploy:personal:dry": "cf deploy --mode personal --dry-run",
     "test": "node --test",
     "typecheck": "tsc --noEmit"
   },

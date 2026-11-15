@@ -106,7 +106,8 @@ bun run setup               # fresh deploy: write .dev.vars, push secrets, deplo
 bun run dev                 # local Worker (cf dev, needs .dev.vars)
 bun run deploy:personal     # deploy the maintainer instance (cloudflare.personal.json)
 bun run deploy              # deploy the public shape (workers.dev, English)
-bun run deploy -- --dry-run # build and check without uploading (CI runs this)
+bun run deploy:personal:dry # build and check a personal deploy without uploading
+bun run deploy:dry          # build and check without uploading (CI runs this)
 cf o11y telemetry live-tail --script-id shelf  # production logs
 shelf add file.md --title "…"  # save an agent-written note
 shelf guide                    # the agent-post contract (docs/AGENT-POSTS.md)
@@ -121,6 +122,13 @@ delegates bundling to it, and `wrangler.config.ts` is the file that names
 `public/` as the asset directory. `cf` also loads `cloudflare.config.ts` with
 Node, so it needs Node 22.18 or newer — run it through `bun run`, never as a Bun
 script, and do not call `cf` from a Worker.
+
+`bun run deploy` publishes `main` and nothing else. A deploy bundles the working
+tree rather than a checkout of a commit — `src/` is bundled from disk and
+`public/` is copied whole — so `scripts/deploy-check.ts` runs first and refuses a
+branch other than `main`, an uncommitted change under `src/` or `public/`, and a
+`main` that is behind `origin/main`. A dry run uploads nothing and skips the
+check, which is why `deploy:dry` and `deploy:personal:dry` exist.
 
 `.dev.vars` (gitignored): `APP_PASSWORD` is required and `APP_SECRET` signs the
 session cookie. `SHARE_TOKEN` is optional: it adds an add-only bearer token for
@@ -358,9 +366,9 @@ API: see `docs/PROGRESS.md` §3.
 1. `bun run typecheck` — must be clean.
 2. `node --test` — must pass.
 3. If CSS/markup changed: bump `?v=` and check the page with a session cookie.
-4. If Worker code changed: `bun run deploy:personal -- --dry-run` on the branch,
-   then deploy from `main` after the merge (`bun run deploy:personal`; secrets
-   come from `bun run setup`, which passes `.dev.vars` with the deploy).
+4. If Worker code changed: `bun run deploy:personal:dry` on the branch, then
+   deploy from `main` after the merge (`bun run deploy:personal`; secrets come
+   from `bun run setup`, which passes `.dev.vars` with the deploy).
 5. If AI behaviour changed: run one real save/reindex in production and inspect
    the resulting text, not just the HTTP status.
 6. If notifications changed: send the Settings test in a browser, and run
