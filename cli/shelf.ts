@@ -486,7 +486,7 @@ Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.
 HTML rules: a complete document with inline CSS/SVG, no scripts, forms or
 external assets. HTML is stored untrusted and rendered sandboxed.
 
-Guide: docs/AGENT-POSTS.md — run `shelf guide` for the full authoring contract.
+Guide: docs/AGENT-POSTS.md — run \`shelf guide\` for the full authoring contract.
 
 Examples:
   shelf add ./research.md --title "How agent memory works" --agent "Claude Code"
