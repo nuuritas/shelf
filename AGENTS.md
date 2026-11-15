@@ -61,7 +61,7 @@ waits for the other, so these rules keep one change from being done twice:
   do not poll, sleep, or run `gh pr checks --watch`. On a wake, read only what is
   new, fix it, push, reply on the pull request, and end the turn.
 - A wake is not an approval. Before merging, re-read **The review gate** and the
-  merge-gate comment against the current head; an event that woke the thread says
+  merge-gate statement against the current head; an event that woke the thread says
   nothing about the review state.
 
 ## Layout
@@ -166,8 +166,8 @@ maintainer's own changes, including docs and chores, follow this loop:
    `Closes #<issue>` when step 1 applied, or says why there is no `Closes #N`
    when it was skipped, and follows `.github/pull_request_template.md`.
 6. Merge the PR (squash is fine) once its head commit carries a review that
-   allows the merge and the merge-gate comment is on the pull request. The thread
-   that wrote it may run that merge; the superagent may not. A linked issue
+   allows the merge and the merge-gate statement is on the pull request. The
+   thread that wrote it may run that merge; the superagent may not. A linked issue
    closes and the project's built-in workflows move the card to Done. Deploy
    after the merge, not before.
 7. Delete the branch.
@@ -445,12 +445,13 @@ different jobs.
 1. An issue opened by `nuuritas` is a work order. No label and no mention are required.
 2. The agent acknowledges within a minute, works in its own clone, and opens exactly one pull
    request against `main`.
-3. Before merging it posts a checklist on the pull request: one line per acceptance criterion, each
-   marked **met** or **not met** with the file and line that proves it, plus the paths changed, the
-   diff size and the gates it did not run.
-4. It merges only when every guardrail holds and every criterion is met. Otherwise it reports
-   `blocked` on the issue with the exact operator step and stops. A ticket ends merged or with that
-   step, never in `progress`.
+3. Before merging it posts the merge-gate statement on the pull request (see **The merge-gate
+   statement**): one line per acceptance criterion marked **met** or **not met** with the file and
+   line that proves it, the diff size and paths changed, the gates run and not run, and the review
+   gate for the author type.
+4. It merges only when every guardrail holds and every criterion is met, with the statement already
+   posted. Otherwise it reports `blocked` on the issue with the exact operator step and stops. A
+   ticket ends merged or with that step, never in `progress`.
 5. A reviewer other than the author may approve or request changes. **Changes requested is a task
    for the author**, not a handoff: the author pushes the fix to the same branch and requests review
    again. When the author is the automated agent, that review is itself the work order.
@@ -486,54 +487,57 @@ tracked and fixed instead of merged on trust.
 
 GitHub forbids approving your own pull request. A pull request authored by the maintainer therefore
 needs an approving review from `nuuritas-agent` under the review rule before the thread merges it.
-An agent-authored pull request is gated by its own checklist instead: every acceptance criterion
-marked met with file and line evidence, the checklist posted on the pull request under the
-merge-gate comment, and only then merged.
+An agent-authored pull request is gated by its own merge-gate statement instead: every acceptance
+criterion marked met with file and line evidence, the statement posted on the pull request before
+the merge, and only then merged. GitHub forbids self-approval, so a non-author approval is neither
+requested nor required for it.
 
-### The merge-gate comment
+### The merge-gate statement
 
-Every merge is preceded by one comment from the author, posted in the same turn
-as the merge. It is the record that the gate was checked against the commit being
-merged, not against an earlier one.
+Every merge is preceded by one comment from the author, posted on the pull
+request after the last push and before the merge call, in the same turn. It is
+the record that the gate was checked against the commit being merged, not
+against an earlier one. A merge without the statement, or a statement posted
+after the merge, is a defect. The authoritative wording is `nuuritas/superagents`,
+`policy/prompts/delivery.md`; follow that template, and keep the first and last
+lines exactly as written:
 
 ```text
-<!-- merge-gate -->
-head:    <headRefOid>
-review:  APPROVED by <login> on <commit_oid>
-asks:    <n>/<n> review items met
-checks:  <conclusion>
-merge:   <mergeable> / <mergeStateStatus>
-verdict: merge
+Satisfied to merge: every acceptance criterion is met.
+
+Acceptance criteria (issue #<number>):
+- met — <criterion>: <path>:<line>
+- not met — <criterion>: <path>:<line> (operator follow-up: <exact step>)
+
+Diff: <n> files changed, +<added>/−<removed> — <paths>.
+Gates run: none — the agent is write-only.
+Gates not run: <commands this repository uses>; the operator runs them.
+Review gate: agent-authored — this statement is the gate.
+
+Merging now (squash) — this comment is the merge gate.
 ```
 
-Read the state immediately before writing it, never from memory:
+- The first line is exactly `Satisfied to merge: every acceptance criterion is met.`
+  When the only unmet items are operator steps it is `Satisfied to merge: every
+  repository-side criterion is met; <n> operator step(s) remain below.`
+- One line per acceptance criterion, in the issue's order, each starting with `met`
+  or `not met` and naming the file and line that proves it. A criterion that
+  cannot be evidenced is `not met`; an operator-only criterion names the exact
+  command or step as its follow-up.
+- `Diff` is the `git diff --stat` total, including new files, plus the paths
+  changed.
+- `Gates run` and `Gates not run` state what was actually run and the commands the
+  operator must run. The agent is write-only, so it never claims a gate passed; a
+  person-authored statement lists the gates that actually passed.
+- `Review gate` names the author type: `agent-authored — this statement is the
+  gate.` for the agent, or `person-authored — approved by <reviewer> in <review
+  URL>.` for the maintainer.
+- The last line is exactly `Merging now (squash) — this comment is the merge
+  gate.`
 
-```bash
-gh pr view <n> --json headRefOid,reviewDecision,mergeable,mergeStateStatus
-gh pr view <n> --json reviews --jq \
-  '.reviews[] | select(.state=="APPROVED") | {author: .author.login, commit: .commit.oid}'
-gh pr checks <n>
-```
-
-`reviews` is an array under `.reviews`, and its entries use the GraphQL field names
-`author.login` and `commit.oid`: `.[]`, `user.login` and `commit_id` fail or print
-null. The `--jq` line above is the one that works with `gh` 2.73.
-
-- `head` is the commit the merge produces. If the approving review's `commit.oid`
-  is not that SHA, there is no approval: push nothing and go back to the reviewer.
-- `reviewDecision` must be `APPROVED`. Empty because a review was dismissed is not
-  approval, and an approval of an earlier head is not approval either.
-- Any `CHANGES_REQUESTED` from any account stops the merge, even when another
-  account approved after it.
-- `checks` covers the required checks. A skipped, pending or neutral check is not
-  green.
-- `asks` is the reviewer's checklist: how many of its items are met, with the file
-  and line that proves each one. An item answered with "no longer applies" is not
-  met.
-
-A pull request gated by its own checklist writes `review: agent checklist,
-<n>/<n> met` and pastes that checklist under the same comment. The comment is
-still required; the checklist is the review.
+If the merge call fails, edit this same comment, or reply on it, with the failure
+and what happened next. Do not post a second statement and do not merge silently
+later.
 
 ### Guardrails
 
@@ -578,7 +582,7 @@ open. T3 Code is the harness for work that needs a person in the loop and for th
 lanes are peers. **Agent harnesses** above is the contract for keeping them apart.
 
 - It acknowledges once on the issue, works in its own clone on `agent/<ticket>`, opens one pull
-  request against `main`, posts the merge-gate comment with its checklist, and merges it itself when
+  request against `main`, posts the merge-gate statement with its checklist, and merges it itself when
   the guardrails hold. This is the only lane allowed to merge without a second account's review; a
   T3 thread that takes over an `agent/<ticket>` branch is not covered by it. An oversized change is
   split into consecutive scoped pull requests and merged, not asked about; it never leaves one open.
