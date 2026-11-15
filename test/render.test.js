@@ -148,6 +148,40 @@ test('offers to write a missing English summary', () => {
   assert.match(html, /1 finished summary has/);
 });
 
+test('offers a retry when a disabled summary can be recovered', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ summary: null, summaryStatus: 'disabled' })],
+    total: 1,
+    query: '',
+    view: 'active',
+    lang: 'tr',
+    activeTotal: 1,
+    archivedTotal: 0,
+    aiConfigured: true,
+  });
+
+  assert.match(html, /<form method="post" action="\/summarize" class="summary-retry">/);
+  assert.match(html, /Try again/);
+  assert.match(html, /name="returnTo" value="[^"]*"/);
+  assert.doesNotMatch(html, /Bind Workers AI/);
+});
+
+test('keeps the not-configured copy while AI is still off', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ summary: null, summaryStatus: 'disabled' })],
+    total: 1,
+    query: '',
+    view: 'active',
+    lang: 'tr',
+    activeTotal: 1,
+    archivedTotal: 0,
+    aiConfigured: false,
+  });
+
+  assert.match(html, /Bind Workers AI/);
+  assert.doesNotMatch(html, /class="summary-retry"/);
+});
+
 test('renders a video transcript with language, duration, and source', () => {
   const html = renderPage({
     bookmarks: [

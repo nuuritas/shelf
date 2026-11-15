@@ -1306,6 +1306,23 @@ function renderSummary(
     `;
   }
 
+  if (status === 'disabled' && aiConfigured) {
+    return `
+      <section class="summary disabled">
+        <div class="summary-head">
+          <span class="summary-mark">AI</span>
+          <h3>Summary waiting</h3>
+        </div>
+        <p class="summary-note">This post was saved while summaries were off. AI is configured now, so the queue writes it on its next pass; you can also start it now.</p>
+        <form method="post" action="/summarize" class="summary-retry">
+          <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+          <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+          <button class="small-button" type="submit">Try again</button>
+        </form>
+      </section>
+    `;
+  }
+
   return `
     <section class="summary disabled">
       <div class="summary-head">
