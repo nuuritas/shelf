@@ -104,6 +104,15 @@ test('renders the active/archived switch and unarchive action', () => {
   assert.match(html, /Bookmark archived\./);
 });
 
+test('a saved URL card does not link the note reading page', () => {
+  const html = renderPage({ bookmarks: [sampleBookmark()], total: 1, query: '' });
+
+  // Notes render their own card and `/p/:ref` rejects any other kind, so a URL
+  // card must not offer a reading link that would answer 404.
+  assert.doesNotMatch(html, /href="\/p\/k7f3"/);
+  assert.doesNotMatch(html, />Open note</);
+});
+
 test('renders the English summary board when the translation exists', () => {
   const html = renderPage({
     bookmarks: [
