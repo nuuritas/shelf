@@ -340,6 +340,19 @@ test('the empty search state keeps the selected source', () => {
   assert.match(html, /<a class="small-button" href="\/\?source=youtube">Clear search<\/a>/);
 });
 
+test('the empty search state keeps the folder layout', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: 'claude',
+    view: 'active',
+    lang: 'tr',
+    layout: 'folders',
+  });
+
+  assert.match(html, /<a class="small-button" href="\/\?layout=folders">Clear search<\/a>/);
+});
+
 test('an empty folder keeps the selected source when browsing folders', () => {
   const html = renderPage({
     bookmarks: [],
