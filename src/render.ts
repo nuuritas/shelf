@@ -43,6 +43,31 @@ import {
  */
 const ANDROID_APP_PAGE = 'https://github.com/nuuritas/shelfcloud-apk/releases/latest';
 
+/**
+ * The mark, in the same 1024-unit geometry as `public/icon.svg`: a book frame
+ * with one divider, two rows of three spines, and one leaning spine in the
+ * accent. Plate and spines follow the page's own tokens, so the mark inverts
+ * with the scheme and matches Shelf Cloud, iOS and Android.
+ */
+function brandMark(className = 'brand-mark'): string {
+  return `<svg class="${className}" viewBox="0 0 1024 1024" aria-hidden="true">
+    <rect width="1024" height="1024" rx="224" fill="var(--ink)"/>
+    <g fill="none" stroke="var(--bg)" stroke-width="36">
+      <rect x="272" y="184" width="480" height="656" rx="60"/>
+      <path d="M254 526H770"/>
+    </g>
+    <g fill="var(--bg)">
+      <rect x="340" y="370" width="60" height="119" rx="10"/>
+      <rect x="424" y="348" width="60" height="141" rx="10"/>
+      <rect x="508" y="396" width="60" height="93" rx="10"/>
+      <rect x="340" y="618" width="60" height="204" rx="10"/>
+      <rect x="424" y="588" width="60" height="234" rx="10"/>
+      <rect x="508" y="644" width="60" height="178" rx="10"/>
+    </g>
+    <rect x="614" y="638" width="56" height="182" rx="10" fill="var(--accent)" transform="rotate(10 642 729)"/>
+  </svg>`;
+}
+
 const NOTICES: Record<string, string> = {
   shared: 'Saved from the Android share sheet.',
   added: 'Saved. The summary is running in the background.',
@@ -245,7 +270,7 @@ export function renderPage({
     body: `
       <header class="topbar">
         <a class="brand" href="/">
-          <span class="brand-mark">S</span>
+          ${brandMark()}
           <span>Shelf</span>
         </a>
         <div class="top-actions">
@@ -507,7 +532,7 @@ export function renderCalendar({
     body: `
       <header class="topbar">
         <a class="brand" href="${escapeHtml(libraryHref('/', { lang }))}">
-          <span class="brand-mark">S</span>
+          ${brandMark()}
           <span>Shelf</span>
         </a>
         <div class="top-actions">
@@ -718,7 +743,7 @@ export function renderSettings({
     body: `
       <header class="topbar">
         <a class="brand" href="/">
-          <span class="brand-mark">S</span>
+          ${brandMark()}
           <span>Shelf</span>
         </a>
         <div class="top-actions">
@@ -1425,7 +1450,7 @@ export function renderLogin({ error, next }: { error?: string | null; next?: str
     body: `
       <main class="login-wrap">
         <div class="login-card">
-          <span class="brand-mark large">S</span>
+          ${brandMark('brand-mark large')}
           <p class="eyebrow">Private library</p>
           <h1>Shelf</h1>
           <p class="lede">Enter the password to open your saved posts.</p>
@@ -1450,7 +1475,7 @@ export function renderSetup(): string {
     body: `
       <main class="login-wrap">
         <div class="login-card setup-card">
-          <span class="brand-mark large">S</span>
+          ${brandMark('brand-mark large')}
           <p class="eyebrow">One more step</p>
           <h1>Set a password</h1>
           <p class="lede">This app is locked until an <code>APP_PASSWORD</code> secret is set.</p>
@@ -1468,7 +1493,8 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f4f0e8">
+  <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
   <meta name="description" content="A private, self-hosted reader for X and LinkedIn posts, quotes, and images.">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1531,7 +1557,7 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-body ul, .note-body ol { padding-left: 22px; }
 .note-body li { margin: 4px 0; }
 .note-body a { color: var(--accent-ink); }
-.note-body code { padding: 1px 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+.note-body code { padding: 1px 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); font-family: var(--mono); font-size: 0.9em; }
 .note-body pre { padding: 14px 16px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
 .note-body pre code { padding: 0; border: 0; background: none; }
 .note-body blockquote { padding: 2px 0 2px 14px; border-left: 3px solid var(--line-strong); color: var(--muted); }
@@ -1572,47 +1598,104 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
   .note-frame-full { height: calc(100dvh - 160px); min-height: 320px; }
 }`;
 
-export const CSS: string = `:root {
+// One brand with shelf-cloud: cool paper, blue-black ink, one cobalt accent,
+// and the same three families (Figtree display, Onest interface, JetBrains
+// Mono values). The token names stay `--bg/--surface/--ink` here so the rest of
+// this stylesheet keeps working; the values are the shared ones.
+const FONT_FACES = `
+@font-face{font-family:"Figtree";font-style:normal;font-weight:400;font-display:swap;
+src:url("/fonts/figtree-400-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:400;font-display:swap;
+src:url("/fonts/figtree-400-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:500;font-display:swap;
+src:url("/fonts/figtree-500-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:500;font-display:swap;
+src:url("/fonts/figtree-500-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:600;font-display:swap;
+src:url("/fonts/figtree-600-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:600;font-display:swap;
+src:url("/fonts/figtree-600-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Onest";font-style:normal;font-weight:400;font-display:swap;
+src:url("/fonts/onest-400-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Onest";font-style:normal;font-weight:400;font-display:swap;
+src:url("/fonts/onest-400-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Onest";font-style:normal;font-weight:500;font-display:swap;
+src:url("/fonts/onest-500-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Onest";font-style:normal;font-weight:500;font-display:swap;
+src:url("/fonts/onest-500-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Onest";font-style:normal;font-weight:600;font-display:swap;
+src:url("/fonts/onest-600-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Onest";font-style:normal;font-weight:600;font-display:swap;
+src:url("/fonts/onest-600-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:400;font-display:swap;
+src:url("/fonts/jetbrains-mono-400-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:400;font-display:swap;
+src:url("/fonts/jetbrains-mono-400-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:500;font-display:swap;
+src:url("/fonts/jetbrains-mono-500-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:500;font-display:swap;
+src:url("/fonts/jetbrains-mono-500-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+`;
+
+export const CSS: string = `${FONT_FACES}
+:root {
   color-scheme: light dark;
-  --bg: #f4f0e8;
-  --surface: #fffdf8;
-  --surface-soft: #f8f3ea;
-  --ink: #1c1a17;
-  --muted: #726b61;
-  --faint: #9b9286;
-  --line: #e3dbcf;
-  --line-strong: #d2c7b7;
-  --accent: #c24a22;
-  --accent-ink: #7f2e15;
-  --accent-soft: #f7e2d8;
-  --green: #2f6f4f;
-  --green-soft: #e6f1e9;
-  --red: #9f2f28;
-  --red-soft: #f7e4e1;
-  --shadow: 0 18px 50px rgba(45, 36, 24, 0.07);
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-soft: #f7f9fb;
+  --ink: #0f1720;
+  --muted: #5a6775;
+  --faint: #7b8794;
+  --line: #dce2ea;
+  --line-strong: #c3ccd8;
+  --accent: #1d4ed8;
+  --accent-ink: #1d4ed8;
+  --accent-soft: #e4ebff;
+  --green: #0f6b4c;
+  --green-soft: #e7f2ec;
+  --red: #a3312a;
+  --red-soft: #fbe9e7;
+  --shadow: 0 18px 50px rgba(15, 23, 32, 0.07);
   --radius: 22px;
-  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --display: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sans: "Onest", "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #141311;
-    --surface: #1d1b18;
-    --surface-soft: #24211d;
-    --ink: #f3ede3;
-    --muted: #b6ac9f;
-    --faint: #81786d;
-    --line: #332f29;
-    --line-strong: #484138;
-    --accent: #e77a4f;
-    --accent-ink: #ffb08f;
-    --accent-soft: #3a241b;
-    --green: #8bc7a5;
-    --green-soft: #1d2f25;
+    --bg: #0d1117;
+    --surface: #151b23;
+    --surface-soft: #11161d;
+    --ink: #e8eef5;
+    --muted: #97a3b1;
+    --faint: #7b8794;
+    --line: #232b35;
+    --line-strong: #323c48;
+    --accent: #7da2ff;
+    --accent-ink: #a9c1ff;
+    --accent-soft: #16203a;
+    --green: #6fcfa6;
+    --green-soft: #12251d;
     --red: #f09b91;
     --red-soft: #351f1d;
-    --shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+    --shadow: 0 22px 60px rgba(0, 0, 0, 0.32);
   }
 }
 
@@ -1670,28 +1753,23 @@ button { cursor: pointer; }
   align-items: center;
   gap: 10px;
   text-decoration: none;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
+  display: block;
   width: 28px;
   height: 28px;
   border-radius: 9px;
-  background: var(--ink);
-  color: var(--bg);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
+  flex: none;
 }
 
 .brand-mark.large {
   width: 54px;
   height: 54px;
   border-radius: 17px;
-  font-size: 27px;
 }
 
 .top-actions {
@@ -1707,6 +1785,8 @@ button { cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-family: var(--mono);
+  font-size: 11.5px;
 }
 
 .hero {
@@ -1724,12 +1804,21 @@ button { cursor: pointer; }
 
 h1, h2, h3, p { margin-top: 0; }
 
+/* Figtree is the voice on every surface, so headings take it directly and the
+   component rules below only set size and tracking. */
+h1, h2, h3 {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
 .hero h1 {
   margin-bottom: 20px;
+  font-family: var(--display);
   font-size: clamp(42px, 8vw, 76px);
-  line-height: 0.98;
-  letter-spacing: -0.055em;
-  font-weight: 650;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  font-weight: 500;
 }
 
 .lede {
@@ -1824,8 +1913,10 @@ h1, h2, h3, p { margin-top: 0; }
 
 .library-head h2 {
   margin: 0;
+  font-family: var(--display);
   font-size: 24px;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.01em;
+  font-weight: 500;
 }
 
 .library-tools {
@@ -2781,7 +2872,6 @@ h1, h2, h3, p { margin-top: 0; }
 .topic-overview-empty {
   color: var(--faint);
   font-size: 14px;
-  font-style: italic;
 }
 
 .folder-crumbs {

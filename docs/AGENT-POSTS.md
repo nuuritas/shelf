@@ -134,9 +134,9 @@ Minimal HTML note:
     <meta charset="utf-8">
     <title>Latency budget</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 24px; color: #1c1a17; }
-      @media (prefers-color-scheme: dark) { body { background: #1d1b18; color: #f4f0e8; } }
-      .bar { height: 12px; border-radius: 6px; background: #c24a22; }
+      body { font-family: system-ui, sans-serif; margin: 24px; color: #0f1720; }
+      @media (prefers-color-scheme: dark) { body { background: #0d1117; color: #e8eef5; } }
+      .bar { height: 12px; border-radius: 6px; background: #1d4ed8; }
     </style>
   </head>
   <body>
