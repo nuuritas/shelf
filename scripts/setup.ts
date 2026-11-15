@@ -8,6 +8,8 @@
  *
  * It never overwrites a value that already exists in `.dev.vars`, so re-running
  * it is safe. Secrets are printed nowhere; the file is written with mode 0600.
+ * A provider that needs a key is refused before deploy when `.dev.vars` has no
+ * non-empty `AI_API_KEY` or `OPENCODE_API_KEY`.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -134,8 +136,36 @@ function randomSecret(): string {
 
 /** Values copied from .dev.vars.example must never become a deployed secret. */
 function isPlaceholder(value: string | undefined): boolean {
-  if (!value) return true;
-  return /^replace-with|^changeme$|^<.*>$/.test(value.trim());
+  const trimmed = value?.trim();
+  if (!trimmed) return true;
+  return /^replace-with|^changeme$|^<.*>$/.test(trimmed);
+}
+
+/**
+ * The .dev.vars lines a key-requiring provider still needs. `AI_API_KEY` and
+ * its legacy alias `OPENCODE_API_KEY` are interchangeable, so one non-empty
+ * value is enough; an empty, blank, or placeholder line is missing.
+ */
+export function missingProviderKey(
+  provider: Pick<ProviderChoice, 'needsKey'>,
+  vars: Map<string, string>,
+): string[] {
+  if (!provider.needsKey) return [];
+  const hasKey = !isPlaceholder(vars.get('AI_API_KEY')) || !isPlaceholder(vars.get('OPENCODE_API_KEY'));
+  return hasKey ? [] : ['AI_API_KEY', 'OPENCODE_API_KEY'];
+}
+
+/**
+ * The Worker secrets to upload. A blank or placeholder value is missing, not a
+ * secret: uploading it would deploy a provider that cannot authenticate.
+ */
+export function collectWorkerSecrets(vars: Map<string, string>): Record<string, string> {
+  const secrets: Record<string, string> = {};
+  for (const key of WORKER_SECRETS) {
+    const value = vars.get(key);
+    if (value && !isPlaceholder(value)) secrets[key] = value;
+  }
+  return secrets;
 }
 
 function parseVars(text: string): Map<string, string> {
@@ -199,14 +229,28 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const keyMissing = provider.needsKey && !vars.get('AI_API_KEY') && !vars.get('OPENCODE_API_KEY');
+  const missingKey = missingProviderKey(provider, vars);
+  const keyMissing = missingKey.length > 0;
   const configText = readFileSync(configFile, 'utf8');
   const customIncomplete = provider.id === 'custom' && !/"AI_BASE_URL"\s*:/.test(configText);
 
   if (!deploy) {
     console.log('\nSecrets stay in .dev.vars. Deploy when ready:\n  bun run setup');
-    if (keyMissing) console.log(`\nSummaries need a key for ${provider.label}: edit .dev.vars first.`);
+    if (keyMissing) {
+      console.log(
+        `\nSummaries need a key for ${provider.label}: set ${missingKey.join(' or ')} in ${VARS_PATH} before deploying.`,
+      );
+    }
     return;
+  }
+
+  if (keyMissing) {
+    console.error(
+      `\n${provider.label} needs a key, so nothing was deployed.`,
+      `\nSet a non-empty ${missingKey.join(' or ')} line in ${VARS_PATH},`,
+      'then run `bun run setup` again.',
+    );
+    process.exit(1);
   }
 
   console.log('\nChecking Cloudflare login...');
@@ -215,11 +259,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const secrets: Record<string, string> = {};
-  for (const key of WORKER_SECRETS) {
-    const value = vars.get(key);
-    if (value) secrets[key] = value;
-  }
+  const secrets = collectWorkerSecrets(vars);
 
   const secretsPath = join(tmpdir(), `shelf-secrets-${process.pid}.json`);
   writeFileSync(secretsPath, JSON.stringify(secrets), { mode: 0o600 });
@@ -280,4 +320,5 @@ function printNextSteps(provider: ProviderChoice, keyMissing: boolean, customInc
   console.log(lines.join('\n'));
 }
 
-await main();
+// Guarded so a test can import the pure helpers without running a setup.
+if (import.meta.main) await main();
