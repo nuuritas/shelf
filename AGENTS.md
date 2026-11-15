@@ -551,8 +551,8 @@ how to split it and never leaves one open.
 ### Where things live
 
 - This repository's instance: `shelf`, panel `http://192.168.1.102:3083`.
-- The contract and the operator tooling: `nuuritas/spl-hazirlik` — `plans/SUPERAGENT.md`,
-  `scripts/superagent-status.sh`, `scripts/superagent-activity.sh`, `scripts/superagent-sync.sh`.
+- The contract and the operator tooling: `nuuritas/superagents` — `ARCHITECTURE.md`,
+  `bin/superagent-status.sh`, `bin/superagent-activity.sh`, `bin/superagent-sync.sh`.
   Nothing in this repository depends on them.
 - What the agents have been doing, per repository: `https://sa.nuritas.tr`.
 
@@ -575,6 +575,6 @@ lanes are peers. **Agent harnesses** above is the contract for keeping them apar
   generated-file change. It never builds, tests, deploys, or reads secrets.
 - The issue thread is the contract. Nothing in this repository calls operator scripts, and this
   repository has no dependency on them.
-- Operator tooling — status, configuration and instance control — lives in `nuuritas/spl-hazirlik`:
-  `scripts/superagent-status.sh`, `scripts/superagent-sync.sh`, `scripts/superagent-instance.sh`,
-  and `plans/SUPERAGENT.md`.
+- Operator tooling — status, configuration and instance control — lives in `nuuritas/superagents`:
+  `bin/superagent-status.sh`, `bin/superagent-sync.sh`, `bin/superagent-instance.sh`,
+  and `ARCHITECTURE.md`.
