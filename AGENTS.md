@@ -167,9 +167,11 @@ maintainer's own changes, including docs and chores, follow this loop:
    when it was skipped, and follows `.github/pull_request_template.md`.
 6. Merge the PR (squash is fine) once its head commit carries a review that
    allows the merge and the merge-gate statement is on the pull request. The
-   thread that wrote it may run that merge; the superagent may not. A linked issue
-   closes and the project's built-in workflows move the card to Done. Deploy
-   after the merge, not before.
+   superagent delivers a person-authored pull request: it fixes
+   `CHANGES_REQUESTED` on that branch, reviews the new head, and merges under
+   the statement; a T3 thread merges only the pull request it wrote. A linked
+   issue closes and the project's built-in workflows move the card to Done.
+   Deploy after the merge, not before.
 7. Delete the branch.
 
 Direct pushes to `main` are reserved for emergencies: they leave no card at all,
@@ -436,8 +438,8 @@ different jobs.
 | Role | Identity | May | Must not |
 | --- | --- | --- | --- |
 | Maintainer | `nuuritas` (person) | open issues, decide, approve, merge their own reviewed pull request | — |
-| Implementer | `nuuritas-agent` | clone, branch `agent/<ticket>`, one pull request, merge **its own** pull request once the guardrails hold | merge a pull request it did not write, build, test, deploy |
-| Reviewer | `nuuritas-agent` under the `review` rule | read the diff, post one checklist comment, approve or request changes | merge, push to that branch, edit the diff |
+| Implementer | `nuuritas-agent` | clone, branch `agent/<ticket>`, one pull request, merge its own pull request or a person-authored one it reviewed and approved on the current head, once the guardrails hold | merge a person-authored head it did not approve, build, test, deploy |
+| Reviewer | `nuuritas-agent` under the `review` rule | read the diff, post one checklist comment, push one fix commit when changes are requested, approve or request changes | merge before approving the current head, rewrite the author's commits, edit the diff beyond its fix |
 | Interactive thread (T3 Code, where present) | the person's own session | implement, run the gates, watch its pull request, merge it once the review gate holds | file an issue for work it is already doing |
 
 ### The loop
@@ -452,13 +454,16 @@ different jobs.
 4. It merges only when every guardrail holds and every criterion is met, with the statement already
    posted. Otherwise it reports `blocked` on the issue with the exact operator step and stops. A
    ticket ends merged or with that step, never in `progress`.
-5. A reviewer other than the author may approve or request changes. **Changes requested is a task
-   for the author**, not a handoff: the author pushes the fix to the same branch and requests review
-   again. When the author is the automated agent, that review is itself the work order.
-6. Reviewed and reviewed-by are different jobs. An automated agent merges only its own pull request,
-   and a thread merges only the pull request it wrote. The superagent never merges the maintainer's
-   pull request, and a T3 thread never merges an `agent/<ticket>` pull request it did not write.
-   Merging the pull request you wrote is the normal end of the loop, once **The review gate** holds.
+5. A reviewer other than the author may approve or request changes. On a **person-authored** pull
+   request, `CHANGES_REQUESTED` is the agent's work order within one poll: the agent pushes one fix
+   commit to that branch, requests review again, reviews the new head, and then posts the statement
+   and squash-merges. An approved person-authored pull request with no outstanding changes is merged
+   under the same statement, without a second review when the agent already reviewed that head.
+6. Reviewed and reviewed-by are different jobs. An automated agent merges its own pull request, and
+   a person-authored pull request it reviewed and approved on the current head, under the statement.
+   A T3 thread merges only the pull request it wrote. On a person-authored pull request, the agent
+   never merges a head it did not approve, and never merges a fix it pushed before reviewing that
+   new head.
 
 ### The review gate
 
@@ -481,12 +486,29 @@ protection is not authority. If the reviewer does not come back, the change wait
 and the thread returns to the user; asking a person is the escalation, merging
 anyway is not.
 
+A person-authored pull request is the agent's to deliver. It is in one of two states:
+
+- **`CHANGES_REQUESTED`** — the review is the work order, taken within one poll: the agent reads the
+  review, pushes one fix commit to that branch on top of the author's history, requests review again,
+  reviews the new head, and only after approving it posts the statement with `Review gate:
+  person-authored, fixed by the agent — approved by <reviewer> in <review URL>`, then squash-merges.
+- **Approved with no outstanding changes** — the merge is the remaining work. When the agent already
+  reviewed the current head, it does not review again: it posts the statement with `Review gate:
+  person-authored — approved by <reviewer> in <review URL>` and merges.
+
+The agent never merges a person-authored pull request it has not reviewed on its current head, never
+merges a head it did not approve, and never merges a fix it pushed before reviewing that new head.
+It never rewrites the author's commits or force-pushes over them; its fix is one commit on top.
+
 Every pull request touched in the last 24 hours must reach one of those states. When it is not there,
-an agent opens exactly one issue per pull request naming the reviewer's unmet concerns, so the work is
-tracked and fixed instead of merged on trust.
+the `review` rule is the work order that clears it, so the work is tracked and fixed instead of merged
+on trust. An approval or change request untouched for more than 30 minutes is a stall, not a state:
+`bin/superagent-doctor.sh`'s `review-stall` check FAILs it naming `repo#pr`, and the same `review`
+rule clears it.
 
 GitHub forbids approving your own pull request. A pull request authored by the maintainer therefore
-needs an approving review from `nuuritas-agent` under the review rule before the thread merges it.
+needs an approving review from `nuuritas-agent` under the review rule, on the head being merged,
+before the agent merges it under the person-authored statement above.
 An agent-authored pull request is gated by its own merge-gate statement instead: every acceptance
 criterion marked met with file and line evidence, the statement posted on the pull request before
 the merge, and only then merged. GitHub forbids self-approval, so a non-author approval is neither
@@ -530,8 +552,10 @@ Merging now (squash) — this comment is the merge gate.
   operator must run. The agent is write-only, so it never claims a gate passed; a
   person-authored statement lists the gates that actually passed.
 - `Review gate` names the author type: `agent-authored — this statement is the
-  gate.` for the agent, or `person-authored — approved by <reviewer> in <review
-  URL>.` for the maintainer.
+  gate.` for the agent; `person-authored — approved by <reviewer> in <review
+  URL>.` for a maintainer pull request the agent reviewed; or `person-authored,
+  fixed by the agent — approved by <reviewer> in <review URL>.` when the agent
+  pushed the fix.
 - The last line is exactly `Merging now (squash) — this comment is the merge
   gate.`
 
