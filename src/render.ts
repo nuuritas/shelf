@@ -910,8 +910,6 @@ function renderBookmark(
         <div class="card-actions">
           <button class="expand-button" type="button" data-expand aria-expanded="false">Read more</button>
           <span class="dot">·</span>
-          <a href="/p/${escapeHtml(bookmark.ref)}">Open note</a>
-          <span class="dot">·</span>
           <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
           <span class="dot">·</span>
           <a href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer">Open on ${escapeHtml(source)}</a>
