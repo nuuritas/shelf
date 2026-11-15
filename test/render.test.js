@@ -447,6 +447,83 @@ test('the settings page offers theme and text size as segmented rows', () => {
   assert.match(html, /name="action" value="save"/);
 });
 
+test('the settings page keeps one form, one Save and one Reset', () => {
+  const html = renderSettings({
+    settings: { summaryPrompt: 'Write in {{language}}.', summaryLanguage: 'tr' },
+    ai: { provider: 'openai', model: 'gpt-4.1-mini', transport: 'http' },
+    aiConfigured: true,
+    pushSubscriptions: 1,
+  });
+
+  // One POST for the page: no card grew its own endpoint, and both buttons
+  // carry the same `action` field the Worker reads.
+  assert.equal(html.match(/<form method="post" action="\/settings"/g)?.length, 1);
+  assert.match(html, /<form method="post" action="\/settings" class="settings-form">/);
+  assert.doesNotMatch(html, /action="\/settings\//);
+  assert.equal(html.match(/name="action" value="save"/g)?.length, 1);
+  assert.equal(html.match(/name="action" value="reset"/g)?.length, 1);
+
+  // The hooks app.js drives are still in the markup.
+  assert.match(html, /data-prompt-source/);
+  assert.match(html, /data-prompt-count/);
+  for (const hook of ['data-push-badge', 'data-push-state', 'data-push-detail']) {
+    assert.match(html, new RegExp(hook));
+  }
+  assert.match(html, /data-push-enable/);
+  assert.match(html, /data-push-disable/);
+  assert.match(html, /data-push-test/);
+});
+
+test('the AI card shows provider, model and connection as three facts', () => {
+  const html = renderSettings({
+    settings: { summaryPrompt: '', summaryLanguage: 'en' },
+    ai: { provider: 'openai', model: 'gpt-4.1-mini', transport: 'http' },
+    aiConfigured: true,
+  });
+
+  const facts = html.match(/<dl class="settings-facts">[\s\S]*?<\/dl>/);
+  assert.ok(facts, 'the AI card keeps one definition list');
+  assert.equal(facts[0].match(/<div>/g)?.length, 3);
+  assert.equal(facts[0].match(/<dt>/g)?.length, 3);
+  assert.match(facts[0], /<div><dt>Provider<\/dt><dd>openai<\/dd><\/div>/);
+  assert.match(facts[0], /<div><dt>Model<\/dt><dd>gpt-4\.1-mini<\/dd><\/div>/);
+  assert.match(facts[0], /<div><dt>Connection<\/dt><dd>OpenAI-compatible HTTP<\/dd><\/div>/);
+});
+
+test('the Appearance card leads the settings form', () => {
+  const html = renderSettings({
+    settings: { summaryPrompt: '', summaryLanguage: 'en' },
+    ai: { provider: 'openai', model: 'gpt-4.1-mini', transport: 'http' },
+    aiConfigured: true,
+    appearance: { theme: 'dark', size: 'large' },
+  });
+
+  const form = html.indexOf('<form method="post" action="/settings" class="settings-form">');
+  const appearance = html.indexOf('<section class="settings-card" id="appearance">');
+  assert.ok(form >= 0);
+  assert.equal(html.indexOf('<section class="settings-card"', form), appearance);
+  assert.ok(appearance < html.indexOf('name="summary_language"'));
+
+  // Every card head is the same row: heading plus one state badge.
+  assert.equal(html.match(/<div class="settings-card-head">/g)?.length, 5);
+  assert.match(html, /class="settings-badge is-on">Türkçe|class="settings-badge is-on">English/);
+  assert.match(html, /class="settings-badge is-on">Configured</);
+});
+
+test('the settings stylesheet carries the cloud rhythm', () => {
+  assert.match(CSS, /\.settings \{[^}]*max-width: 920px;[^}]*margin-inline: auto;/);
+  assert.match(CSS, /body\.settings-page \.shell,\nbody\.settings-page \.topbar \{[^}]*min\(920px/);
+  assert.match(CSS, /\.settings-form \{[^}]*gap: 11px;[^}]*margin-top: 16px;/);
+  assert.match(CSS, /\.settings-card \{[^}]*padding: 16px;/);
+  // A label and a control: the 96px gutter, one column under the breakpoint.
+  assert.match(CSS, /\.settings-row \{[^}]*grid-template-columns: 96px minmax\(0, 1fr\);/);
+  assert.match(CSS, /\.settings-facts \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  const narrow = CSS.slice(CSS.indexOf('@media (max-width: 650px)'));
+  assert.match(narrow, /\.settings-row \{ grid-template-columns: 1fr; gap: 7px; \}/);
+  assert.match(narrow, /\.settings-facts \{ grid-template-columns: 1fr; \}/);
+  assert.doesNotMatch(narrow, /\.settings-card \{ padding: 16px; \}/);
+});
+
 test('the stylesheet scales from one rem root and declares no px font size', () => {
   assert.match(CSS, /html \{\s*font-size: calc\(16px \* var\(--text-scale\)\);/);
   // The four choices are rules, so no page needs an inline style.

@@ -822,7 +822,10 @@ export function renderSettings({
             </section>
 
             <section class="settings-card">
-              <h3>Summary language</h3>
+              <div class="settings-card-head">
+                <h3>Summary language</h3>
+                <span class="settings-badge is-on">${settings.summaryLanguage === 'tr' ? 'Türkçe' : 'English'}</span>
+              </div>
               <p class="settings-note">New summaries are written in this language. With Türkçe, Shelf also writes an English version for the language switch. Existing summaries are left alone.</p>
               <div class="settings-choice" role="radiogroup" aria-label="Summary language">
                 <label>
@@ -837,7 +840,10 @@ export function renderSettings({
             </section>
 
             <section class="settings-card">
-              <h3>AI</h3>
+              <div class="settings-card-head">
+                <h3>AI</h3>
+                <span class="settings-badge${aiConfigured ? ' is-on' : ''}">${aiConfigured ? 'Configured' : 'Not configured'}</span>
+              </div>
               <dl class="settings-facts">
                 <div><dt>Provider</dt><dd>${escapeHtml(ai.provider || (aiConfigured ? 'inferred' : 'none'))}</dd></div>
                 <div><dt>Model</dt><dd>${escapeHtml(ai.model || '—')}</dd></div>
@@ -1567,7 +1573,7 @@ function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=23">
+  <link rel="stylesheet" href="/style.css?v=24">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -3142,7 +3148,19 @@ h1, h2, h3 {
 
 .card-topic:hover { background: var(--accent); color: var(--paper); }
 
-.settings { padding: 12px 0 60px; }
+/* Settings is a form, not a list, so it reads at the cloud's 920px measure.
+   That is wider than the 820px reading column, so this page's own shell and
+   topbar widen together and stay aligned with each other. */
+body.settings-page .shell,
+body.settings-page .topbar {
+  width: min(920px, calc(100% - 36px));
+}
+
+.settings {
+  max-width: 920px;
+  margin-inline: auto;
+  padding: 12px 0 60px;
+}
 
 .settings-head {
   padding-top: 24px;
@@ -3150,8 +3168,8 @@ h1, h2, h3 {
 }
 
 .settings-head h2 {
-  margin: 0 0 8px;
-  font-size: 1.625rem;
+  margin: 0 0 6px;
+  font-size: 1.4375rem;
   letter-spacing: -0.03em;
 }
 
@@ -3163,14 +3181,15 @@ h1, h2, h3 {
   line-height: 1.6;
 }
 
+/* One column of cards 11px apart, each card 16px in, is the cloud's rhythm. */
 .settings-form {
   display: grid;
-  gap: 14px;
-  margin-top: 20px;
+  gap: 11px;
+  margin-top: 16px;
 }
 
 .settings-card {
-  padding: 20px;
+  padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -3178,7 +3197,7 @@ h1, h2, h3 {
 
 .settings-card h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.9375rem;
   letter-spacing: -0.01em;
 }
 
@@ -3192,6 +3211,7 @@ h1, h2, h3 {
 
 .settings-badge {
   flex: 0 0 auto;
+  max-width: 50%;
   padding: 3px 9px;
   border-radius: 999px;
   background: var(--surface-soft);
@@ -3199,33 +3219,42 @@ h1, h2, h3 {
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.settings-badge.is-on,
 .settings-badge.is-custom {
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
 
+/* A note sits 7px under whatever it explains and carries no bottom margin;
+   each control declares its own top margin, so a card keeps one vertical
+   rhythm whether the note comes above or below a field. */
 .settings-note {
   max-width: 640px;
-  margin: 6px 0 12px;
+  margin: 7px 0 0;
   color: var(--muted);
-  font-size: 0.8125rem;
-  line-height: 1.55;
+  font-size: 0.75rem;
+  line-height: 1.5;
 }
 
 .settings-note code {
   padding: 1px 5px;
-  border-radius: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   background: var(--surface-soft);
   color: var(--accent-ink);
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
 }
 
 .settings-card textarea {
   display: block;
   width: 100%;
   min-height: 260px;
+  margin-top: 12px;
   padding: 13px 14px;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
@@ -3257,13 +3286,15 @@ h1, h2, h3 {
   margin-top: 14px;
 }
 
+/* The page-level Save and Reset keep the one card action row's rhythm, one
+   gap below the last card rather than tight against it. */
 .settings-actions-foot {
-  margin-top: 4px;
-  padding: 2px 2px 0;
+  margin-top: 5px;
+  padding: 0 2px;
 }
 
 .settings-actions button {
-  padding: 9px 15px;
+  padding: 10px 15px;
   border: 1px solid var(--ink);
   border-radius: 10px;
   background: var(--ink);
@@ -3280,7 +3311,16 @@ h1, h2, h3 {
   color: var(--ink);
 }
 
-.settings-choice { display: grid; gap: 8px; }
+.settings-actions button.secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.settings-choice {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
 
 .settings-choice label {
   display: flex;
@@ -3311,9 +3351,8 @@ h1, h2, h3 {
   line-height: 1.45;
 }
 
-/* Theme and text size are two short lists, so each reads as one row: a label
-   and a segmented control. Seven boxed radio rows would be a screen of white
-   space for two small choices. */
+/* Theme and text size are two short lists, so each reads as one row: a 96px
+   label gutter and a segmented control, the same row the cloud uses. */
 .settings-row {
   display: grid;
   grid-template-columns: 96px minmax(0, 1fr);
@@ -3378,11 +3417,14 @@ h1, h2, h3 {
   outline-offset: 1px;
 }
 
+/* Provider, model and connection are three short facts, so they read as one
+   row of boxed cells: dt is the small uppercase label, dd the value. Below the
+   breakpoint the row becomes the one column it already is on a phone. */
 .settings-facts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  margin: 12px 0;
+  margin: 12px 0 0;
 }
 
 .settings-facts div {
@@ -3468,9 +3510,11 @@ h1, h2, h3 {
   .cal-count { padding: 0 5px; font-size: 0.59375rem; }
   .day-banner { align-items: flex-start; flex-direction: column; gap: 6px; }
   .settings-facts { grid-template-columns: 1fr; }
-  .settings-card { padding: 16px; }
+  .settings-row { grid-template-columns: 1fr; gap: 7px; }
   .settings-card textarea { min-height: 220px; }
   .settings-actions { flex-direction: column; align-items: stretch; }
+  body.settings-page .shell,
+  body.settings-page .topbar { width: min(100% - 24px, 920px); }
 }
 
 /* Motion is one pulse for a running summary plus colour and 1px lifts on
