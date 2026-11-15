@@ -15,8 +15,8 @@
  * Theme is a token swap in one of two places: `[data-theme="dark"]` when the
  * reader picked dark, or the media query when the choice is the system.
  * `[data-theme="light"]` wins over a dark OS, which is the point of the
- * setting. Nothing writes `data-theme` yet; the selectors are here so the
- * setting lands as a rendering change, not a stylesheet rewrite.
+ * setting. `src/appearance.ts` reads the reader's cookie and `pageShell` writes
+ * the attribute on the server, so the first paint is already right.
  */
 
 /**
@@ -85,6 +85,10 @@ color-scheme:dark;
  * older set (`--bg`, `--surface`, `--muted`), so those names stay as aliases
  * instead of rewriting every rule. An alias is a `var()` reference, so it
  * follows the dark block without being declared twice.
+ *
+ * `--text-scale` is the one value here that is not a colour: the stylesheet's
+ * root `font-size` multiplies by it and every text size downstream is in
+ * `rem`, so it is what makes the reader's size choice real.
  */
 const ALIASES = `
 --display:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -106,7 +110,31 @@ const ALIASES = `
 --red:var(--danger);
 --red-soft:var(--danger-wash);
 --radius:16px;
+--text-scale:1;
 `;
+
+/**
+ * The reader's four text sizes, as multipliers on the 16px root. They live here
+ * because `--text-scale` is a token like any other, and because the rule that
+ * reads it belongs next to the palette rather than in a page. `src/appearance.ts`
+ * validates the choice and reads this table; the cookie never carries a number,
+ * only one of these four names.
+ */
+export const TEXT_SCALES: Record<'compact' | 'normal' | 'large' | 'xlarge', number> = {
+  compact: 0.9,
+  normal: 1,
+  large: 1.1,
+  xlarge: 1.2,
+};
+
+/**
+ * The attribute, not an inline style: `<html data-size="large">` and this rule.
+ * A `style="--text-scale:1.1"` would be an inline style to CSP and would cost
+ * `style-src 'unsafe-inline'` on every page.
+ */
+export const TEXT_SCALE_CSS = Object.entries(TEXT_SCALES)
+  .map(([size, scale]) => `:root[data-size="${size}"]{--text-scale:${scale}}`)
+  .join('\n');
 
 /**
  * The tile glyph: dark rounded square, white shelf, six bars, one tilted blue
@@ -154,6 +182,7 @@ export const BRAND_CSS = `
 @media(prefers-color-scheme:dark){
 :root:not([data-theme="light"]){${DARK_TOKENS}}
 }
+${TEXT_SCALE_CSS}
 @font-face{font-family:"Figtree";font-style:normal;font-weight:400;font-display:swap;
 src:url("/fonts/figtree-400-latin.woff2") format("woff2");
 unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}

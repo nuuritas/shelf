@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderCalendar, renderPage, renderSettings } from '../src/render.ts';
+import { CSS, renderCalendar, renderLogin, renderPage, renderSettings } from '../src/render.ts';
 import { escapeHtml, linkifyText } from '../src/util.ts';
 
 test('escapes tweet text and links bare URLs', () => {
@@ -391,3 +391,73 @@ test('the footer opens the release page instead of the asset URL', () => {
   );
   assert.doesNotMatch(html, /releases\/latest\/download\/Shelf\.apk/);
 });
+test('the reader appearance is on the html element of every page', () => {
+  const dark = renderPage({
+    bookmarks: [sampleBookmark()],
+    total: 1,
+    query: '',
+    appearance: { theme: 'dark', size: 'large' },
+  });
+  assert.match(dark, /<html lang="en" data-theme="dark" data-size="large">/);
+  assert.match(dark, /<meta name="theme-color" content="#0d1117">/);
+  assert.doesNotMatch(dark, /prefers-color-scheme/);
+
+  const calendar = renderCalendar({
+    calendar: { month: '2026-11', days: [], total: 0 },
+    appearance: { theme: 'light', size: 'compact' },
+  });
+  assert.match(calendar, /<html lang="en" data-theme="light" data-size="compact">/);
+
+  const login = renderLogin({ appearance: { theme: 'dark', size: 'xlarge' } });
+  assert.match(login, /<html lang="en" data-theme="dark" data-size="xlarge">/);
+
+  // No choice is a choice: the media query decides, and the default is kept.
+  const system = renderPage({ bookmarks: [], total: 0, query: '' });
+  assert.match(system, /<html lang="en" data-size="normal">/);
+  assert.doesNotMatch(system, /data-theme=/);
+  assert.match(system, /media="\(prefers-color-scheme: dark\)"/);
+});
+
+test('the settings page offers theme and text size as segmented rows', () => {
+  const html = renderSettings({
+    settings: { summaryPrompt: '', summaryLanguage: 'en' },
+    ai: { provider: 'openai', model: 'gpt-4.1-mini', transport: 'http' },
+    aiConfigured: true,
+    appearance: { theme: 'dark', size: 'xlarge' },
+  });
+
+  assert.match(html, /<section class="settings-card" id="appearance">/);
+  assert.match(html, /class="settings-row"/);
+  assert.match(html, /role="radiogroup" aria-labelledby="theme-label"/);
+  assert.match(html, /role="radiogroup" aria-labelledby="size-label"/);
+
+  for (const theme of ['system', 'light', 'dark']) {
+    assert.match(html, new RegExp(`name="theme" value="${theme}"`));
+  }
+  for (const size of ['compact', 'normal', 'large', 'xlarge']) {
+    assert.match(html, new RegExp(`name="size" value="${size}"`));
+  }
+
+  assert.match(html, /name="theme" value="dark" checked/);
+  assert.match(html, /name="size" value="xlarge" checked/);
+  assert.match(html, /<html lang="en" data-theme="dark" data-size="xlarge">/);
+  assert.match(html, /browser setting/);
+  // Appearance still saves through the one form the page already posted.
+  assert.match(html, /<form method="post" action="\/settings" class="settings-form">/);
+  assert.match(html, /name="action" value="save"/);
+});
+
+test('the stylesheet scales from one rem root and declares no px font size', () => {
+  assert.match(CSS, /html \{\s*font-size: calc\(16px \* var\(--text-scale\)\);/);
+  // The four choices are rules, so no page needs an inline style.
+  for (const [size, scale] of Object.entries({ compact: 0.9, normal: 1, large: 1.1, xlarge: 1.2 })) {
+    assert.match(CSS, new RegExp(`:root\\[data-size="${size}"\\]\\{--text-scale:${scale}\\}`));
+  }
+  assert.doesNotMatch(CSS, /font-size:\s*[\d.]+px/);
+  assert.match(CSS, /body \{[^}]*font-size: 1rem;/);
+  assert.match(CSS, /\.segmented \{/);
+  assert.match(CSS, /\.segmented label:has\(input:checked\) span \{/);
+  assert.match(CSS, /\.settings-row \{/);
+  assert.match(CSS, /\.settings-label \{/);
+});
+

@@ -1,4 +1,13 @@
 import { aiConfig, isAiConfigured } from './ai.ts';
+import {
+  APPEARANCE_COOKIE,
+  APPEARANCE_MAX_AGE,
+  isTextSize,
+  isTheme,
+  parseAppearance,
+  serializeAppearance,
+  type Appearance,
+} from './appearance.ts';
 import { Bookmarks } from './bookmarks-do.ts';
 import { parseWebUrl } from './links.ts';
 import { normalizeNoteInput } from './notes.ts';
@@ -67,6 +76,9 @@ const SECURITY_HEADERS: Record<string, string> = {
 const worker: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    // Read once, before any page renders: the first paint is already the
+    // reader's theme and text size, and no script has to fix it afterwards.
+    const look = parseAppearance(request.headers.get('cookie') ?? undefined);
 
     if (url.pathname === '/healthz') {
       return secure(jsonResponse({ ok: true }));
@@ -92,15 +104,22 @@ const worker: ExportedHandler<Env> = {
       if (url.pathname.startsWith('/api/')) {
         return secure(jsonResponse({ error: 'APP_PASSWORD is not configured.' }, 503));
       }
-      return secure(htmlResponse(renderSetup(), 503));
+      return secure(htmlResponse(renderSetup({ appearance: look }), 503));
     }
 
     if (url.pathname === '/login') {
       if (request.method === 'GET') {
-        return secure(htmlResponse(renderLogin({ next: safeNext(url.searchParams.get('next')) })));
+        return secure(
+          htmlResponse(
+            renderLogin({
+              next: safeNext(url.searchParams.get('next')),
+              appearance: look,
+            }),
+          ),
+        );
       }
       if (request.method === 'POST') {
-        return secure(await handleLogin(request, env));
+        return secure(await handleLogin(request, env, look));
       }
     }
 
@@ -132,26 +151,26 @@ const worker: ExportedHandler<Env> = {
     }
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return secure(await handleHome(url, env));
+      return secure(await handleHome(url, env, look));
     }
 
     if (request.method === 'GET' && url.pathname === '/calendar') {
-      return secure(await handleCalendarPage(url, env));
+      return secure(await handleCalendarPage(url, env, look));
     }
 
     const notePageMatch = url.pathname.match(/^\/p\/([A-Za-z0-9_-]{1,30})(\/frame)?$/);
     if (notePageMatch && request.method === 'GET') {
-      return await handleNotePage(notePageMatch[1], Boolean(notePageMatch[2]), env);
+      return await handleNotePage(notePageMatch[1], Boolean(notePageMatch[2]), env, look);
     }
 
     if (url.pathname === '/settings') {
-      if (request.method === 'GET') return secure(await handleSettingsPage(url, env));
+      if (request.method === 'GET') return secure(await handleSettingsPage(url, env, look));
       if (request.method === 'POST') return secure(await handleSettingsSave(request, env));
     }
 
     if (request.method === 'GET' && url.pathname.startsWith('/t/')) {
       const slug = decodeURIComponent(url.pathname.slice(3)).replace(/\/+$/, '');
-      return secure(await handleTopicPage(slug, env, url));
+      return secure(await handleTopicPage(slug, env, url, look));
     }
 
     if (request.method === 'POST' && (url.pathname === '/add' || url.pathname === '/share')) {
@@ -265,7 +284,7 @@ const worker: ExportedHandler<Env> = {
 
 export default worker;
 
-async function handleHome(url: URL, env: Env): Promise<Response> {
+async function handleHome(url: URL, env: Env, look: Appearance): Promise<Response> {
   const query = (url.searchParams.get('q') || '').trim();
   const day = parseDay(url.searchParams.get('day'));
   const view = parseView(url.searchParams.get('view'));
@@ -302,6 +321,7 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
         aiConfigured: isAiConfigured(env),
+        appearance: look,
       }),
     );
   } catch (error) {
@@ -322,13 +342,19 @@ async function handleHome(url: URL, env: Env): Promise<Response> {
         notice: null,
         error: errorMessage(error),
         aiConfigured: isAiConfigured(env),
+        appearance: look,
       }),
       502,
     );
   }
 }
 
-async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Response> {
+async function handleTopicPage(
+  slug: string,
+  env: Env,
+  url: URL,
+  look: Appearance,
+): Promise<Response> {
   if (!/^[a-z0-9-]{1,60}$/.test(slug)) {
     return htmlResponse('<h1>Topic not found</h1><p><a href="/">Go home</a></p>', 404);
   }
@@ -365,6 +391,7 @@ async function handleTopicPage(slug: string, env: Env, url: URL): Promise<Respon
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
         aiConfigured: isAiConfigured(env),
+        appearance: look,
       }),
     );
   } catch (error) {
@@ -376,7 +403,7 @@ async function handleApiTopics(env: Env): Promise<Response> {
   return jsonResponse(await doJson<TopicListResult>(env, '/topics'));
 }
 
-async function handleCalendarPage(url: URL, env: Env): Promise<Response> {
+async function handleCalendarPage(url: URL, env: Env, look: Appearance): Promise<Response> {
   const month = (url.searchParams.get('month') || '').trim();
   const settings = await readSettings(env);
   const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
@@ -389,6 +416,7 @@ async function handleCalendarPage(url: URL, env: Env): Promise<Response> {
         calendar,
         lang,
         error: url.searchParams.get('error'),
+        appearance: look,
       }),
     );
   } catch (error) {
@@ -397,13 +425,14 @@ async function handleCalendarPage(url: URL, env: Env): Promise<Response> {
         calendar: { month: new Date().toISOString().slice(0, 7), days: [], total: 0 },
         lang,
         error: errorMessage(error),
+        appearance: look,
       }),
       502,
     );
   }
 }
 
-async function handleSettingsPage(url: URL, env: Env): Promise<Response> {
+async function handleSettingsPage(url: URL, env: Env, look: Appearance): Promise<Response> {
   const settings = await readSettings(env);
   const push = await readPushState(env);
   return htmlResponse(
@@ -414,6 +443,7 @@ async function handleSettingsPage(url: URL, env: Env): Promise<Response> {
       pushSubscriptions: push.subscriptions,
       notice: url.searchParams.get('notice'),
       error: url.searchParams.get('error'),
+      appearance: look,
     }),
   );
 }
@@ -429,6 +459,17 @@ async function handleSettingsSave(request: Request, env: Env): Promise<Response>
   );
   const rawPrompt = reset ? '' : String(form.get('summary_prompt') ?? '');
 
+  // The appearance lives in a cookie, not in the settings table: it belongs to
+  // the screen in front of the reader. Anything missing or unknown keeps what
+  // the browser already had instead of snapping back to the default.
+  const currentLook = parseAppearance(request.headers.get('cookie') ?? undefined);
+  const theme = String(form.get('theme') || '');
+  const size = String(form.get('size') || '');
+  const look: Appearance = {
+    theme: isTheme(theme) ? theme : currentLook.theme,
+    size: isTextSize(size) ? size : currentLook.size,
+  };
+
   const renderError = (message: string, status = 400) =>
     htmlResponse(
       renderSettings({
@@ -439,6 +480,7 @@ async function handleSettingsSave(request: Request, env: Env): Promise<Response>
         ai: aiConfig(env),
         aiConfigured: isAiConfigured(env),
         error: message,
+        appearance: currentLook,
       }),
       status,
     );
@@ -457,7 +499,15 @@ async function handleSettingsSave(request: Request, env: Env): Promise<Response>
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ summaryPrompt: prompt, summaryLanguage: language }),
     });
-    return redirect(`/settings?notice=${reset ? 'reset' : 'saved'}`);
+    return new Response(null, {
+      status: 303,
+      headers: {
+        Location: `/settings?notice=${reset ? 'reset' : 'saved'}`,
+        // Not HttpOnly: the native clients read this cookie out of their own
+        // store to paint the chrome. Not Secure either: `bun run dev` is http.
+        'Set-Cookie': `${APPEARANCE_COOKIE}=${serializeAppearance(look)}; Path=/; Max-Age=${APPEARANCE_MAX_AGE}; SameSite=Lax`,
+      },
+    });
   } catch (error) {
     return renderError(errorMessage(error), 502);
   }
@@ -639,7 +689,12 @@ const NOTE_FRAME_HEADERS: Record<string, string> = {
 };
 
 /** `/p/:ref` is the note reading page; `/p/:ref/frame` is its sandboxed HTML. */
-async function handleNotePage(ref: string, frame: boolean, env: Env): Promise<Response> {
+async function handleNotePage(
+  ref: string,
+  frame: boolean,
+  env: Env,
+  look: Appearance,
+): Promise<Response> {
   const result = await doJson<GetResult>(env, `/get?id=${encodeURIComponent(ref)}`).catch(
     (): GetResult | null => null,
   );
@@ -657,7 +712,7 @@ async function handleNotePage(ref: string, frame: boolean, env: Env): Promise<Re
     return new Response(bookmark.content || '', { status: 200, headers: NOTE_FRAME_HEADERS });
   }
 
-  return secure(htmlResponse(renderNotePage({ bookmark })));
+  return secure(htmlResponse(renderNotePage({ bookmark, appearance: look })));
 }
 
 async function handleApiCreatePost(request: Request, env: Env): Promise<Response> {
@@ -870,13 +925,13 @@ async function doJson<T>(env: Env, path: string, init?: RequestInit): Promise<T>
   return payload as T;
 }
 
-async function handleLogin(request: Request, env: Env): Promise<Response> {
+async function handleLogin(request: Request, env: Env, look: Appearance): Promise<Response> {
   const form = await request.formData();
   const password = String(form.get('password') || '');
   const next = safeNext(String(form.get('next') || '/'));
 
   if (!(await passwordMatches(password, env.APP_PASSWORD))) {
-    return htmlResponse(renderLogin({ error: 'Wrong password.', next }), 401);
+    return htmlResponse(renderLogin({ error: 'Wrong password.', next, appearance: look }), 401);
   }
 
   const token = await createSession(env);

@@ -1,5 +1,11 @@
 import { DEFAULT_SUMMARY_PROMPT } from './ai.ts';
-import { BRAND_CSS, BRAND_MARK, THEME_COLORS, assetUrl } from './brand.ts';
+import {
+  DEFAULT_APPEARANCE,
+  appearanceAttributes,
+  themeColorMeta,
+  type Appearance,
+} from './appearance.ts';
+import { BRAND_CSS, BRAND_MARK, assetUrl } from './brand.ts';
 import { renderMarkdown } from './markdown.ts';
 import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
 import type {
@@ -78,6 +84,8 @@ export interface RenderPageOptions {
   archivedTotal?: number;
   missingEnglish?: number;
   bilingual?: boolean;
+  /** The reader's theme and text size, read from the cookie before rendering. */
+  appearance?: Appearance;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -140,6 +148,7 @@ export function renderPage({
   archivedTotal = 0,
   missingEnglish = 0,
   bilingual = false,
+  appearance = DEFAULT_APPEARANCE,
 }: RenderPageOptions): string {
   const view = viewOption === 'archived' ? 'archived' : 'active';
   const lang = langOption === 'en' ? 'en' : 'tr';
@@ -243,6 +252,7 @@ export function renderPage({
             : 'Shelf',
     bodyClass: 'home',
     head: pending ? '<meta http-equiv="refresh" content="4">' : '',
+    look: appearance,
     body: `
       <header class="topbar">
         <a class="brand" href="/">
@@ -419,6 +429,7 @@ export interface RenderCalendarOptions {
   calendar: CalendarResult;
   lang?: 'tr' | 'en';
   error?: string | null;
+  appearance?: Appearance;
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -457,6 +468,7 @@ export function renderCalendar({
   calendar,
   lang: langOption = 'tr',
   error,
+  appearance = DEFAULT_APPEARANCE,
 }: RenderCalendarOptions): string {
   const lang = langOption === 'en' ? 'en' : 'tr';
   const month = calendar.month;
@@ -505,6 +517,7 @@ export function renderCalendar({
     title: `${label} · Calendar · Shelf`,
     bodyClass: 'home calendar-page',
     head: '',
+    look: appearance,
     body: `
       <header class="topbar">
         <a class="brand" href="${escapeHtml(libraryHref('/', { lang }))}">
@@ -599,7 +612,13 @@ function renderFolderGrid(
  * title in its own markup, so the page does not repeat it — it only keeps the
  * abstract a click away.
  */
-export function renderNotePage({ bookmark }: { bookmark: Bookmark }): string {
+export function renderNotePage({
+  bookmark,
+  appearance = DEFAULT_APPEARANCE,
+}: {
+  bookmark: Bookmark;
+  appearance?: Appearance;
+}): string {
   const title = bookmark.title || 'Untitled note';
   const agent = bookmark.agent;
   const agentName = agent?.name?.trim() || 'AI agent';
@@ -627,6 +646,7 @@ export function renderNotePage({ bookmark }: { bookmark: Bookmark }): string {
     title: `${title} · Shelf`,
     bodyClass: 'note-page',
     head: '',
+    look: appearance,
     body: `
       <header class="note-bar">
         <a class="note-back" href="/">← Library</a>
@@ -679,6 +699,7 @@ export interface RenderSettingsOptions {
   pushSubscriptions?: number;
   notice?: string | null;
   error?: string | null;
+  appearance?: Appearance;
 }
 
 const SETTINGS_NOTICES: Record<string, string> = {
@@ -693,6 +714,23 @@ const TRANSPORT_LABELS: Record<string, string> = {
   none: 'Not configured',
 };
 
+/**
+ * One choice in a `.segmented` control: a visually hidden radio plus its
+ * label. The note is the `title`, so the control stays one row of words.
+ */
+function segmentedOption(
+  name: string,
+  value: string,
+  label: string,
+  note: string,
+  checked: boolean,
+  accessibleName = label,
+): string {
+  return `<label title="${escapeHtml(note)}"><input type="radio" name="${name}" value="${value}"${
+    checked ? ' checked' : ''
+  } aria-label="${escapeHtml(accessibleName)}"><span>${label}</span></label>`;
+}
+
 export function renderSettings({
   settings,
   ai,
@@ -700,6 +738,7 @@ export function renderSettings({
   pushSubscriptions = 0,
   notice,
   error,
+  appearance = DEFAULT_APPEARANCE,
 }: RenderSettingsOptions): string {
   const customPrompt = Boolean(settings.summaryPrompt);
   const pushDetail =
@@ -716,6 +755,7 @@ export function renderSettings({
     title: 'Settings · Shelf',
     bodyClass: 'home settings-page',
     head: '',
+    look: appearance,
     body: `
       <header class="topbar">
         <a class="brand" href="/">
@@ -742,6 +782,31 @@ export function renderSettings({
           ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
 
           <form method="post" action="/settings" class="settings-form">
+            <section class="settings-card" id="appearance">
+              <div class="settings-card-head">
+                <h3>Appearance</h3>
+                <span class="settings-badge">This browser</span>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label" id="theme-label">Theme</span>
+                <div class="segmented" role="radiogroup" aria-labelledby="theme-label">
+                  ${segmentedOption('theme', 'system', 'System', 'Follow the operating system.', appearance.theme === 'system')}
+                  ${segmentedOption('theme', 'light', 'Light', 'Always the light paper.', appearance.theme === 'light')}
+                  ${segmentedOption('theme', 'dark', 'Dark', 'Always the dark paper.', appearance.theme === 'dark')}
+                </div>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label" id="size-label">Text size</span>
+                <div class="segmented" role="radiogroup" aria-labelledby="size-label">
+                  ${segmentedOption('size', 'compact', 'S', 'Compact: 90% of the normal size.', appearance.size === 'compact', 'Compact')}
+                  ${segmentedOption('size', 'normal', 'M', 'Normal text size.', appearance.size === 'normal', 'Normal')}
+                  ${segmentedOption('size', 'large', 'L', 'Large: 110% of the normal size.', appearance.size === 'large', 'Large')}
+                  ${segmentedOption('size', 'xlarge', 'XL', 'Extra large: 120% of the normal size.', appearance.size === 'xlarge', 'Extra large')}
+                </div>
+              </div>
+              <p class="settings-note">This is a browser setting, not an account one: it is kept in a cookie, so the phone and the desktop can differ. It saves with the rest of this page.</p>
+            </section>
+
             <section class="settings-card">
               <div class="settings-card-head">
                 <h3>Summary prompt</h3>
@@ -1418,11 +1483,20 @@ function renderEmpty(
   `;
 }
 
-export function renderLogin({ error, next }: { error?: string | null; next?: string | null } = {}): string {
+export function renderLogin({
+  error,
+  next,
+  appearance = DEFAULT_APPEARANCE,
+}: {
+  error?: string | null;
+  next?: string | null;
+  appearance?: Appearance;
+} = {}): string {
   return pageShell({
     title: 'Log in · Shelf',
     bodyClass: 'login-page',
     head: '',
+    look: appearance,
     body: `
       <main class="login-wrap">
         <div class="login-card">
@@ -1443,11 +1517,14 @@ export function renderLogin({ error, next }: { error?: string | null; next?: str
   });
 }
 
-export function renderSetup(): string {
+export function renderSetup({
+  appearance = DEFAULT_APPEARANCE,
+}: { appearance?: Appearance } = {}): string {
   return pageShell({
     title: 'Setup required',
     bodyClass: 'login-page',
     head: '',
+    look: appearance,
     body: `
       <main class="login-wrap">
         <div class="login-card setup-card">
@@ -1463,14 +1540,25 @@ export function renderSetup(): string {
   });
 }
 
-function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass: string; head: string; body: string }): string {
+function pageShell({
+  title,
+  bodyClass,
+  head,
+  body,
+  look = DEFAULT_APPEARANCE,
+}: {
+  title: string;
+  bodyClass: string;
+  head: string;
+  body: string;
+  look?: Appearance;
+}): string {
   return `<!doctype html>
-<html lang="en">
+<html lang="en"${appearanceAttributes(look)}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="${THEME_COLORS.light}" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="${THEME_COLORS.dark}" media="(prefers-color-scheme: dark)">
+  ${themeColorMeta(look)}
   <meta name="description" content="A private, self-hosted reader for X and LinkedIn posts, quotes, and images.">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1479,7 +1567,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=22">
+  <link rel="stylesheet" href="/style.css?v=23">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1501,34 +1589,34 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
 </html>`;
 }
 
-const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
-.ai-badge { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-.note-kind { color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.04em; }
+.ai-badge { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.note-kind { color: var(--muted); font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
 .note-agent-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-model { color: var(--faint); }
 .note-card { position: relative; }
 .note-card .card-head { margin-bottom: 12px; }
 .note-card .card-head .author { align-items: flex-start; }
-.note-card-title { margin: 0 0 10px; font-size: 21px; line-height: 1.28; font-weight: 650; letter-spacing: -0.024em; overflow-wrap: anywhere; }
+.note-card-title { margin: 0 0 10px; font-size: 1.3125rem; line-height: 1.28; font-weight: 650; letter-spacing: -0.024em; overflow-wrap: anywhere; }
 .note-card-title a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--ink); text-decoration: none; }
 .note-card-title a::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
 .note-card:hover .note-card-title a { text-decoration: underline; text-underline-offset: 3px; }
 .note-card .card-foot, .note-card .card-topics, .note-card .card-head a, .note-card .ref-chip,
 .note-card .note-abstract, .note-card .note-body, .note-card .note-excerpt,
 .note-card .note-body a, .note-card .note-body pre, .note-card .table-wrap { position: relative; z-index: 1; }
-.note-card .note-open-link { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 12.5px; font-weight: 650; }
+.note-card .note-open-link { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 0.78125rem; font-weight: 650; }
 .note-card .note-open-link:hover { border-color: var(--accent); background: var(--accent); color: var(--paper); }
-.note-label { display: block; margin: 0 0 4px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.note-label { display: block; margin: 0 0 4px; color: var(--faint); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
 .note-abstract { margin: 0 0 12px; }
-.note-abstract p { margin: 0 0 8px; font-size: 15px; line-height: 1.62; overflow-wrap: anywhere; }
+.note-abstract p { margin: 0 0 8px; font-size: 0.9375rem; line-height: 1.62; overflow-wrap: anywhere; }
 .note-abstract p:last-child { margin-bottom: 0; }
-.note-body { margin: 0 0 12px; font-size: 15px; line-height: 1.62; overflow-wrap: anywhere; }
+.note-body { margin: 0 0 12px; font-size: 0.9375rem; line-height: 1.62; overflow-wrap: anywhere; }
 .note-body > :first-child { margin-top: 0; }
 .note-body h1, .note-body h2, .note-body h3, .note-body h4 { margin: 18px 0 8px; line-height: 1.25; letter-spacing: -0.02em; }
-.note-body h1 { font-size: 26px; }
-.note-body h2 { font-size: 22px; }
-.note-body h3 { font-size: 18px; }
-.note-body h4 { font-size: 15px; }
+.note-body h1 { font-size: 1.625rem; }
+.note-body h2 { font-size: 1.375rem; }
+.note-body h3 { font-size: 1.125rem; }
+.note-body h4 { font-size: 0.9375rem; }
 .note-body p, .note-body ul, .note-body ol, .note-body blockquote, .note-body pre, .note-body .table-wrap { margin: 0 0 12px; }
 .note-body ul, .note-body ol { padding-left: 22px; }
 .note-body li { margin: 4px 0; }
@@ -1540,37 +1628,37 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-body img { display: block; max-width: 100%; height: auto; margin: 10px 0; border-radius: 12px; }
 .note-body hr { margin: 18px 0; border: 0; border-top: 1px solid var(--line); }
 .note-body .table-wrap { overflow-x: auto; }
-.note-body table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.note-body table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .note-body th, .note-body td { padding: 7px 10px; border: 1px solid var(--line); text-align: left; }
 .note-body th { background: var(--surface-soft); }
-.note-excerpt { margin: 0 0 12px; color: var(--ink); font-size: 15px; line-height: 1.62; overflow-wrap: anywhere; }
-.note-body-full { margin: 18px 0 0; font-size: 16px; }
+.note-excerpt { margin: 0 0 12px; color: var(--ink); font-size: 0.9375rem; line-height: 1.62; overflow-wrap: anywhere; }
+.note-body-full { margin: 18px 0 0; font-size: 1rem; }
 .note-bar { width: min(900px, calc(100% - 36px)); margin-inline: auto; padding: 18px 0 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.note-back { color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none; }
+.note-back { color: var(--muted); font-size: 0.8125rem; font-weight: 600; text-decoration: none; }
 .note-back:hover { color: var(--ink); }
 .note-bar-side { display: flex; align-items: center; gap: 12px; }
-.note-source { color: var(--muted); font-size: 12px; text-decoration: none; }
+.note-source { color: var(--muted); font-size: 0.75rem; text-decoration: none; }
 .note-source:hover { color: var(--ink); }
 .note-shell { padding: 6px 0 60px; }
-.note-title { margin: 0; font-size: clamp(26px, 6.4vw, 34px); line-height: 1.14; letter-spacing: -0.03em; overflow-wrap: anywhere; }
-.note-byline { margin: 6px 0 16px; color: var(--muted); font-size: 12px; }
+.note-title { margin: 0; font-size: clamp(1.625rem, 6.4vw, 2.125rem); line-height: 1.14; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.note-byline { margin: 6px 0 16px; color: var(--muted); font-size: 0.75rem; }
 .note-byline .dot { margin: 0 2px; }
 .note-abstract-fold { margin: 0 0 14px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; }
-.note-abstract-fold summary { display: flex; align-items: baseline; gap: 8px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.note-abstract-fold summary { display: flex; align-items: baseline; gap: 8px; color: var(--faint); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; cursor: pointer; list-style: none; }
 .note-abstract-fold summary::-webkit-details-marker { display: none; }
-.note-abstract-fold summary::after { content: "+"; margin-left: auto; font-size: 14px; line-height: 1; }
+.note-abstract-fold summary::after { content: "+"; margin-left: auto; font-size: 0.875rem; line-height: 1; }
 .note-abstract-fold[open] summary::after { content: "−"; }
-.note-fold-hint { color: var(--faint); font-size: 9px; font-weight: 600; letter-spacing: 0.04em; }
-.note-abstract-fold p { margin: 9px 0 0; font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.note-fold-hint { color: var(--faint); font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.04em; }
+.note-abstract-fold p { margin: 9px 0 0; font-size: 0.90625rem; line-height: 1.6; overflow-wrap: anywhere; }
 .note-frame { display: block; width: 100%; height: 420px; min-height: 320px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .note-frame-full { height: clamp(360px, calc(100dvh - 190px), 1000px); border-radius: 12px; }
 @media (max-width: 650px) {
-  .note-card-title { font-size: 19px; }
+  .note-card-title { font-size: 1.1875rem; }
   .note-card .note-open-link { padding: 8px 14px; align-self: flex-end; }
   .note-card .card-foot { align-items: stretch; }
   .note-bar { width: min(100% - 24px, 900px); padding-top: 12px; }
   .note-shell { padding-bottom: 40px; }
-  .note-title { font-size: clamp(24px, 7vw, 30px); }
+  .note-title { font-size: clamp(1.5rem, 7vw, 1.875rem); }
   .note-frame-full { height: calc(100dvh - 160px); min-height: 320px; }
 }`;
 
@@ -1582,14 +1670,21 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 export const CSS: string = `${BRAND_CSS}
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; }
+/* The reader's text size, read once: every size below is in rem, so the whole
+   page moves with this one number. The server writes data-size on <html> from
+   the cookie and BRAND_CSS maps it to --text-scale; nothing here knows which
+   choice is active. */
+html {
+  font-size: calc(16px * var(--text-scale));
+  scroll-behavior: smooth;
+}
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -1662,7 +1757,7 @@ button { cursor: pointer; }
   align-items: center;
   gap: 16px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .count {
@@ -1671,7 +1766,7 @@ button { cursor: pointer; }
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 70%, transparent);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 .hero {
@@ -1681,7 +1776,7 @@ button { cursor: pointer; }
 .eyebrow {
   margin: 0 0 12px;
   color: var(--accent);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1700,7 +1795,7 @@ h1, h2, h3 {
 .hero h1 {
   margin-bottom: 20px;
   font-family: var(--display);
-  font-size: clamp(42px, 8vw, 76px);
+  font-size: clamp(2.625rem, 8vw, 4.75rem);
   line-height: 1.02;
   letter-spacing: -0.025em;
   font-weight: 500;
@@ -1710,7 +1805,7 @@ h1, h2, h3 {
   max-width: 590px;
   margin-bottom: 30px;
   color: var(--muted);
-  font-size: 17px;
+  font-size: 1.0625rem;
   line-height: 1.6;
 }
 
@@ -1733,7 +1828,7 @@ h1, h2, h3 {
   outline: 0;
   background: transparent;
   color: var(--ink);
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 .add-form input::placeholder { color: var(--faint); }
@@ -1756,7 +1851,7 @@ h1, h2, h3 {
 .fine-print {
   margin: 12px 2px 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .fine-print strong { color: var(--muted); }
@@ -1765,7 +1860,7 @@ h1, h2, h3 {
   margin: 0 0 18px;
   padding: 12px 15px;
   border-radius: 12px;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .banner.success {
@@ -1799,7 +1894,7 @@ h1, h2, h3 {
 .library-head h2 {
   margin: 0;
   font-family: var(--display);
-  font-size: 24px;
+  font-size: 1.5rem;
   letter-spacing: -0.01em;
   font-weight: 500;
 }
@@ -1836,7 +1931,7 @@ h1, h2, h3 {
   padding: 4px 10px;
   border-radius: 999px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
@@ -1853,7 +1948,7 @@ h1, h2, h3 {
 
 .view-switch span {
   color: inherit;
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-variant-numeric: tabular-nums;
   opacity: 0.65;
 }
@@ -1866,7 +1961,7 @@ h1, h2, h3 {
   border-radius: 999px;
   background: var(--surface);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
@@ -1888,7 +1983,7 @@ h1, h2, h3 {
   border-radius: 12px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .day-banner strong { color: var(--ink); }
@@ -1912,7 +2007,7 @@ h1, h2, h3 {
 
 .calendar-head h2 {
   margin: 0;
-  font-size: clamp(28px, 5vw, 38px);
+  font-size: clamp(1.75rem, 5vw, 2.375rem);
   letter-spacing: -0.04em;
 }
 
@@ -1927,7 +2022,7 @@ h1, h2, h3 {
   border: 1px solid var(--line);
   border-radius: 9px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
@@ -1941,7 +2036,7 @@ h1, h2, h3 {
 .calendar-note {
   margin: 0 0 16px;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .calendar-grid {
@@ -1953,7 +2048,7 @@ h1, h2, h3 {
 .cal-weekday {
   padding: 4px 0;
   color: var(--faint);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-align: center;
@@ -1986,7 +2081,7 @@ h1, h2, h3 {
 }
 
 .cal-num {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1996,7 +2091,7 @@ h1, h2, h3 {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-ink);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -2007,7 +2102,7 @@ h1, h2, h3 {
 .calendar-hint {
   margin: 14px 0 10px;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .archive-chip {
@@ -2017,7 +2112,7 @@ h1, h2, h3 {
   border-radius: 999px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 600;
 }
 
@@ -2032,7 +2127,7 @@ h1, h2, h3 {
   border-radius: 6px;
   background: var(--ink);
   color: var(--bg);
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 800;
   letter-spacing: 0.05em;
 }
@@ -2053,12 +2148,12 @@ h1, h2, h3 {
   background: var(--surface-soft);
 }
 
-.translate-banner strong { font-size: 13px; }
+.translate-banner strong { font-size: 0.8125rem; }
 
 .translate-banner p {
   margin: 3px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .translate-banner form { flex: 0 0 auto; }
@@ -2067,7 +2162,7 @@ h1, h2, h3 {
 .version-language-note {
   margin: 8px 0 0;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 .search-form {
@@ -2084,7 +2179,7 @@ h1, h2, h3 {
   background: var(--surface);
   color: var(--ink);
   outline: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .search-form input:focus { border-color: var(--line-strong); }
@@ -2098,13 +2193,13 @@ h1, h2, h3 {
   background: transparent;
   color: var(--ink);
   text-decoration: none;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
 }
 
 .clear-search {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-decoration: none;
 }
 
@@ -2160,7 +2255,7 @@ h1, h2, h3 {
   align-items: center;
   flex-wrap: wrap;
   gap: 5px;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .author-line strong {
@@ -2178,12 +2273,12 @@ h1, h2, h3 {
   border-radius: 50%;
   background: var(--accent);
   color: white;
-  font-size: 9px;
+  font-size: 0.5625rem;
 }
 
 .handle, .meta {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .ref-chip {
@@ -2194,7 +2289,7 @@ h1, h2, h3 {
   background: var(--surface-soft);
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -2213,14 +2308,14 @@ h1, h2, h3 {
 
 .x-link {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-decoration: none;
   white-space: nowrap;
 }
 
 .tweet-text {
   margin-bottom: 16px;
-  font-size: 17px;
+  font-size: 1.0625rem;
   line-height: 1.62;
   letter-spacing: -0.012em;
   overflow-wrap: anywhere;
@@ -2282,26 +2377,26 @@ h1, h2, h3 {
 
 .linked-article h3 {
   margin: 0 0 7px;
-  font-size: 20px;
+  font-size: 1.25rem;
   letter-spacing: -0.025em;
 }
 
 .linked-article p {
   margin: 0 0 8px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
 }
 
 .article-open {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-decoration: none;
 }
 
 .article-note {
   color: var(--faint);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .link-stack {
@@ -2334,7 +2429,7 @@ h1, h2, h3 {
   border-radius: 6px;
   background: var(--ink);
   color: var(--bg);
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-align: center;
@@ -2348,25 +2443,25 @@ h1, h2, h3 {
 }
 
 .link-card-body strong {
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.35;
 }
 
 .link-description {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
 .link-host {
   color: var(--faint);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 .link-arrow {
   margin-left: auto;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .quote {
@@ -2387,7 +2482,7 @@ h1, h2, h3 {
 
 .quote-label {
   color: var(--accent);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -2395,13 +2490,13 @@ h1, h2, h3 {
 
 .quote-author {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .quote-author span { color: var(--faint); }
 
 .quote-text {
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -2429,7 +2524,7 @@ h1, h2, h3 {
 
 .summary-head h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
   letter-spacing: -0.01em;
 }
 
@@ -2441,25 +2536,25 @@ h1, h2, h3 {
   border-radius: 8px;
   background: var(--accent);
   color: white;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
   letter-spacing: 0.03em;
 }
 
 .summary-count {
   color: var(--faint);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
 }
 
 .summary-time {
   margin-left: auto;
   color: var(--faint);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .summary-text {
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -2474,7 +2569,7 @@ h1, h2, h3 {
 
 .transcripts summary {
   color: var(--accent-ink);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 600;
   cursor: pointer;
   list-style: none;
@@ -2486,7 +2581,7 @@ h1, h2, h3 {
 
 .transcript-meta {
   color: var(--faint);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2497,7 +2592,7 @@ h1, h2, h3 {
   max-height: 420px;
   overflow: auto;
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -2505,7 +2600,7 @@ h1, h2, h3 {
 .summary-note {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .summary-retry { margin-top: 10px; }
@@ -2540,7 +2635,7 @@ h1, h2, h3 {
   padding-top: 13px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .metrics {
@@ -2590,7 +2685,7 @@ h1, h2, h3 {
 .empty-mark {
   margin-bottom: 8px;
   color: var(--accent);
-  font-size: 30px;
+  font-size: 1.875rem;
 }
 
 .empty h3 { margin-bottom: 6px; }
@@ -2599,7 +2694,7 @@ h1, h2, h3 {
 .paging-note {
   margin: 18px 0 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-align: center;
 }
 
@@ -2610,7 +2705,7 @@ h1, h2, h3 {
   padding: 26px 0 44px;
   border-top: 1px solid var(--line);
   color: var(--faint);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .footer a { color: var(--muted); }
@@ -2634,17 +2729,17 @@ h1, h2, h3 {
 
 .login-card h1 {
   margin: 18px 0 10px;
-  font-size: 34px;
+  font-size: 2.125rem;
   letter-spacing: -0.045em;
 }
 
-.login-card .lede { margin-bottom: 22px; font-size: 14px; }
+.login-card .lede { margin-bottom: 22px; font-size: 0.875rem; }
 
 .login-form { display: grid; gap: 8px; }
 
 .login-form label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
 }
 
@@ -2667,7 +2762,7 @@ h1, h2, h3 {
   border-radius: 9px;
   background: var(--surface-soft);
   color: var(--accent-ink);
-  font-size: 12px;
+  font-size: 0.75rem;
   overflow-x: auto;
 }
 
@@ -2685,7 +2780,7 @@ h1, h2, h3 {
   gap: 10px;
   padding: 13px 16px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   list-style: none;
 }
@@ -2702,7 +2797,7 @@ h1, h2, h3 {
   border-radius: 50%;
   background: var(--ink);
   color: var(--bg);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 500;
   line-height: 1;
   transition: transform 0.18s ease;
@@ -2732,7 +2827,7 @@ h1, h2, h3 {
   margin: 0 0 14px;
   max-width: 620px;
   color: var(--muted);
-  font-size: 15.5px;
+  font-size: 0.96875rem;
   line-height: 1.55;
 }
 
@@ -2748,7 +2843,7 @@ h1, h2, h3 {
   overflow-wrap: anywhere;
   margin: 0 0 14px;
   color: var(--ink);
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.68;
 }
 
@@ -2756,7 +2851,7 @@ h1, h2, h3 {
 
 .topic-overview-empty {
   color: var(--faint);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .folder-crumbs {
@@ -2764,7 +2859,7 @@ h1, h2, h3 {
   align-items: center;
   gap: 8px;
   margin: 10px 0 -6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .folder-crumbs a {
@@ -2818,7 +2913,7 @@ h1, h2, h3 {
 
 .folder-name {
   overflow-wrap: anywhere;
-  font-size: 15.5px;
+  font-size: 0.96875rem;
   font-weight: 650;
   letter-spacing: -0.01em;
   line-height: 1.25;
@@ -2830,7 +2925,7 @@ h1, h2, h3 {
   overflow: hidden;
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -2838,20 +2933,20 @@ h1, h2, h3 {
 
 .folder-meta {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-variant-numeric: tabular-nums;
 }
 
 .folder-arrow {
   margin-left: auto;
   color: var(--faint);
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 .folder-hint {
   margin: 2px 0 18px;
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   line-height: 1.5;
 }
 
@@ -2876,7 +2971,7 @@ h1, h2, h3 {
   background: none;
   color: var(--accent-ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -2904,7 +2999,7 @@ h1, h2, h3 {
   gap: 8px;
   padding: 8px 12px;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   list-style: none;
 }
 
@@ -2912,7 +3007,7 @@ h1, h2, h3 {
 
 .version-tag {
   color: var(--accent-ink);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 
@@ -2927,7 +3022,7 @@ h1, h2, h3 {
 .version-text {
   overflow-wrap: anywhere;
   padding: 0 12px 12px;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.6;
 }
 
@@ -2935,7 +3030,7 @@ h1, h2, h3 {
 
 .regen summary {
   color: var(--accent-ink);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 600;
   cursor: pointer;
   list-style: none;
@@ -2958,7 +3053,7 @@ h1, h2, h3 {
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .regen button {
@@ -2968,7 +3063,7 @@ h1, h2, h3 {
   background: var(--ink);
   color: var(--bg);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -2976,13 +3071,13 @@ h1, h2, h3 {
 .regen-note {
   margin: 6px 0 0;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 .version-note {
   margin: 8px 0 0;
   color: var(--faint);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .version-note.error { color: var(--red); }
@@ -3008,7 +3103,7 @@ h1, h2, h3 {
   display: none;
   margin: 10px 0 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .card.is-collapsed .peek-meta { display: block; }
@@ -3020,7 +3115,7 @@ h1, h2, h3 {
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -3039,7 +3134,7 @@ h1, h2, h3 {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-ink);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   text-decoration: none;
@@ -3056,7 +3151,7 @@ h1, h2, h3 {
 
 .settings-head h2 {
   margin: 0 0 8px;
-  font-size: 26px;
+  font-size: 1.625rem;
   letter-spacing: -0.03em;
 }
 
@@ -3064,7 +3159,7 @@ h1, h2, h3 {
   max-width: 620px;
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.6;
 }
 
@@ -3083,7 +3178,7 @@ h1, h2, h3 {
 
 .settings-card h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
   letter-spacing: -0.01em;
 }
 
@@ -3101,7 +3196,7 @@ h1, h2, h3 {
   border-radius: 999px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -3115,7 +3210,7 @@ h1, h2, h3 {
   max-width: 640px;
   margin: 6px 0 12px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
 }
 
@@ -3124,7 +3219,7 @@ h1, h2, h3 {
   border-radius: 5px;
   background: var(--surface-soft);
   color: var(--accent-ink);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .settings-card textarea {
@@ -3137,7 +3232,7 @@ h1, h2, h3 {
   background: var(--bg);
   color: var(--ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   line-height: 1.6;
   resize: vertical;
   outline: 0;
@@ -3151,7 +3246,7 @@ h1, h2, h3 {
   gap: 12px;
   margin-top: 6px;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 .settings-actions {
@@ -3174,7 +3269,7 @@ h1, h2, h3 {
   background: var(--ink);
   color: var(--bg);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 650;
   cursor: pointer;
 }
@@ -3194,7 +3289,7 @@ h1, h2, h3 {
   padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: 11px;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   cursor: pointer;
 }
 
@@ -3212,8 +3307,75 @@ h1, h2, h3 {
   display: block;
   margin-top: 2px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
+}
+
+/* Theme and text size are two short lists, so each reads as one row: a label
+   and a segmented control. Seven boxed radio rows would be a screen of white
+   space for two small choices. */
+.settings-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.settings-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.segmented label {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.segmented input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.segmented span {
+  display: block;
+  padding: 6px 4px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.78125rem;
+  font-weight: 650;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.segmented label:hover span { color: var(--ink); }
+
+.segmented label:has(input:checked) span {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(15, 23, 32, 0.14);
+}
+
+.segmented label:has(input:focus-visible) span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .settings-facts {
@@ -3231,7 +3393,7 @@ h1, h2, h3 {
 
 .settings-facts dt {
   color: var(--faint);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3239,7 +3401,7 @@ h1, h2, h3 {
 
 .settings-facts dd {
   margin: 3px 0 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   overflow-wrap: anywhere;
 }
 
@@ -3250,14 +3412,14 @@ h1, h2, h3 {
   align-items: center;
   gap: 9px;
   color: var(--faint);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .settings-toggle input { accent-color: var(--accent); }
 
 .settings-foot {
   margin: 18px 0 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .settings-foot a {
@@ -3276,8 +3438,8 @@ h1, h2, h3 {
   .card.is-collapsed .tweet-text,
   .card.is-collapsed .summary-text { -webkit-line-clamp: 2; }
   .hero { padding: 54px 0 38px; }
-  .hero h1 { font-size: clamp(38px, 12vw, 58px); }
-  .lede { font-size: 15px; }
+  .hero h1 { font-size: clamp(2.375rem, 12vw, 3.625rem); }
+  .lede { font-size: 0.9375rem; }
   .add-form { flex-direction: column; padding: 6px; }
   .add-form button { width: 100%; }
   .library-head { align-items: flex-start; flex-direction: column; }
@@ -3287,7 +3449,7 @@ h1, h2, h3 {
   .search-form { width: 100%; }
   .search-form input { flex: 1; width: auto; }
   .card { padding: 16px; border-radius: 18px; }
-  .tweet-text { font-size: 16px; }
+  .tweet-text { font-size: 1rem; }
   .card-foot { align-items: flex-start; flex-direction: column; }
   .media-grid.media-count-3 { grid-template-columns: repeat(2, 1fr); }
   .media-grid.media-count-3 .media-cell:first-child { grid-column: span 2; }
@@ -3297,13 +3459,13 @@ h1, h2, h3 {
   .topic-brief { margin: 0 0 8px; }
   .topic-overview { padding: 15px 16px; }
   .topic-overview { padding: 16px 17px; }
-  .topic-overview p { font-size: 15px; }
+  .topic-overview p { font-size: 0.9375rem; }
   .calendar-head { align-items: flex-start; flex-direction: column; gap: 10px; }
   .calendar-grid { gap: 4px; }
   .cal-day { min-height: 50px; border-radius: 9px; }
-  .cal-weekday { font-size: 9px; }
-  .cal-num { font-size: 12.5px; }
-  .cal-count { padding: 0 5px; font-size: 9.5px; }
+  .cal-weekday { font-size: 0.5625rem; }
+  .cal-num { font-size: 0.78125rem; }
+  .cal-count { padding: 0 5px; font-size: 0.59375rem; }
   .day-banner { align-items: flex-start; flex-direction: column; gap: 6px; }
   .settings-facts { grid-template-columns: 1fr; }
   .settings-card { padding: 16px; }
