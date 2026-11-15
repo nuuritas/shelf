@@ -79,7 +79,8 @@ src/notes.ts         agent-note validation, ids, limits, extracted text
 src/linkedin.ts      public LinkedIn post reader (guest page meta tags)
 src/youtube.ts       public YouTube video reader (oEmbed + watch page meta tags)
 src/transcript.ts    video transcripts (Whisper for X, Piped by default for YouTube)
-src/render.ts        SSR HTML + the entire stylesheet as a template string
+src/render.ts        SSR HTML + this Worker's own stylesheet rules
+src/brand.ts         the cobalt palette, @font-face set, mark and asset version
 src/util.ts          escaping, linkify, cookies, base64, slugs
 src/types.ts         shared domain types
 public/              static assets, PWA manifest/service worker
@@ -88,6 +89,7 @@ cli/shelf.ts         Bun CLI + stdio MCP server (search/show/export/mcp)
 test/                node:test unit tests
 docs/PROGRESS.md     long-form project knowledge
 docs/AGENT-POSTS.md  contract for agents that write notes (shelf guide)
+docs/DESIGN.md       the design system: tokens, type, mark, layout
 ```
 
 The Android and iOS clients are not in this repository, and their source is not
@@ -331,8 +333,13 @@ API: see `docs/PROGRESS.md` §3.
 
 - HTML is built in `render.ts`; every interpolated value must go through
   `escapeHtml`, `safeHttpUrl`, or `linkifyText`.
-- The stylesheet is the `CSS` template string in the same file, served at
-  `/style.css`.
+- The stylesheet is the `CSS` template string in `render.ts`, served at
+  `/style.css`. It starts with `BRAND_CSS` from `src/brand.ts`: the palette,
+  both theme blocks, the legacy aliases and the `@font-face` set live there and
+  nowhere else. Do not write a hex in `render.ts`; add a token instead.
+- Brand assets (the favicon, the touch icon, the manifest) are linked through
+  `assetUrl()` in `src/brand.ts`, which appends `?v=${ASSET_VERSION}`. Bump
+  that constant in the same commit that redraws a file under `public/`.
 - **When you change CSS, bump the query in `pageShell`:**
   `<link rel="stylesheet" href="/style.css?v=N">`. The route serves CSS with
   `Cache-Control: no-cache`, but the versioned URL is what guarantees clients
