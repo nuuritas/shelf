@@ -390,7 +390,7 @@ export function renderPage({
                 ? `<div class="cards">${bookmarks
                     .map(bookmark => renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual))
                     .join('')}</div>`
-                : renderEmpty(query, view, currentDay, Boolean(topic), source)
+                : renderEmpty(query, view, currentDay, Boolean(topic), source, layout)
           }
 
           ${
@@ -1356,6 +1356,7 @@ function renderEmpty(
   day: string | null = null,
   inFolder = false,
   source: SourceFilter = 'all',
+  layout: 'folders' | 'saves' = 'saves',
 ): string {
   if (query) {
     return `
@@ -1363,7 +1364,7 @@ function renderEmpty(
         <p class="empty-mark">∅</p>
         <h3>${view === 'archived' ? 'No matches in the archive' : 'No matches'}</h3>
         <p>Nothing ${view === 'archived' ? 'archived ' : ''}in the library matches “${escapeHtml(query)}”${day ? ' on this day' : ''}.</p>
-        <a class="small-button" href="${escapeHtml(libraryHref('/', { day, view, source }))}">Clear search</a>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { day, view, layout, source }))}">Clear search</a>
       </div>
     `;
   }
