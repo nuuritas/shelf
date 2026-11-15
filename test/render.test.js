@@ -381,3 +381,13 @@ test('an empty folder keeps the selected source when browsing folders', () => {
 
   assert.match(html, /href="\/\?layout=folders&amp;source=linkedin">Browse folders<\/a>/);
 });
+
+test('the footer opens the release page instead of the asset URL', () => {
+  const html = renderPage({ bookmarks: [], total: 0, query: '', view: 'active' });
+
+  assert.match(
+    html,
+    /<a href="https:\/\/github\.com\/nuuritas\/shelfcloud-apk\/releases\/latest" rel="noopener">Android app<\/a>/,
+  );
+  assert.doesNotMatch(html, /releases\/latest\/download\/Shelf\.apk/);
+});

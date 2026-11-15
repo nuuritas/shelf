@@ -28,18 +28,20 @@ import {
 } from './util.ts';
 
 /**
- * Published mobile build. The client is dual-mode, so this one APK works
- * against any self-hosted Worker; it is built and signed in
- * `nuuritas/shelf-cloud` and published as a GitHub release asset in the public
- * `nuuritas/shelfcloud-apk` repository, because a release in the private source
- * repository answers 404 to anyone who is not signed in. The canonical asset is
- * `Shelf.apk`, and the release also carries a `ShelfShare.apk` copy for older
- * links; the `app-latest` tag is what keeps this download URL stable across
- * versions, not the asset name. A fork that ships its own APK should point this
- * at its own download URL.
+ * Where the footer's Android link goes: GitHub's release page, not the asset.
+ *
+ * The asset URL 302s through `releases/latest/download/…` to a signed asset
+ * URL. curl and desktop Chrome follow that chain; Android Chrome reaches the
+ * full file size and never finishes, while tapping the same asset on the
+ * release page downloads it first time. The page costs one tap and it is the
+ * path a phone completes. Inside the Android app the WebView hands any host
+ * that is not this site to the browser, so this link leaves the app cleanly
+ * instead of trying to download in place.
+ *
+ * The direct asset URL stays in `INSTALL.md` for scripts. A fork that ships its
+ * own APK should point this at its own release page.
  */
-const ANDROID_APP_URL =
-  'https://github.com/nuuritas/shelfcloud-apk/releases/latest/download/Shelf.apk';
+const ANDROID_APP_PAGE = 'https://github.com/nuuritas/shelfcloud-apk/releases/latest';
 
 const NOTICES: Record<string, string> = {
   shared: 'Saved from the Android share sheet.',
@@ -406,7 +408,7 @@ export function renderPage({
         <span class="dot">·</span>
         <span>Summaries by OpenCode</span>
         <span class="dot">·</span>
-        <a href="${ANDROID_APP_URL}">Android app</a>
+        <a href="${ANDROID_APP_PAGE}" rel="noopener">Android app</a>
       </footer>
     `,
   });
@@ -1475,7 +1477,7 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=20">
+  <link rel="stylesheet" href="/style.css?v=21">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
