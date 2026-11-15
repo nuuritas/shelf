@@ -211,10 +211,14 @@ the fallback when a domain's DNS record is wrong.
 
 ## Mobile apps (optional)
 
-There is nothing to build. Install the published Android app
-(`https://github.com/nuuritas/shelfcloud-apk/releases/latest/download/Shelf.apk`),
-or the iOS app from TestFlight once it is public, and choose **Self-hosted** at
-first launch:
+There is nothing to build. Install the published Android app from
+<https://github.com/nuuritas/shelfcloud-apk/releases/latest> — tap `Shelf.apk` on
+that page. The direct asset URL
+(`https://github.com/nuuritas/shelfcloud-apk/releases/latest/download/Shelf.apk`)
+is for scripts: Android Chrome starts that download, reaches the full file size
+and never finishes, so a tap on the page is the path that works on a phone. Or
+install the iOS app from TestFlight once it is public, and choose **Self-hosted**
+at first launch:
 
 1. Server URL: the Worker URL from step 6.
 2. Password: the same `APP_PASSWORD`.
