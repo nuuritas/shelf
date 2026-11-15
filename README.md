@@ -7,6 +7,8 @@ summary and files it into a folder. One Worker, one SQLite Durable Object, serve
 HTML, no build step, no database to manage. The free plan is enough for personal
 use.
 
+Everything it keeps stays in your own Cloudflare account; nothing is sent to a third-party service.
+
 ## Default branch
 
 `main` is the default branch. Open pull requests against `main`.
