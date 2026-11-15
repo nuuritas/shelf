@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { LABEL_LIMITS, labelSlug, parseLabelNames } from '../src/labels.ts';
+import { LABEL_LIMITS, labelSlug, labelTone, parseLabelNames } from '../src/labels.ts';
 import { normalizeNoteInput } from '../src/notes.ts';
 
 test('a label slug is the name, lowercased and joined with dashes', () => {
@@ -48,6 +48,16 @@ test('truncates a long name instead of refusing the post', () => {
 test('stops at the per-post cap', () => {
   const many = Array.from({ length: LABEL_LIMITS.perBookmark + 5 }, (_, i) => `tag-${i}`);
   assert.equal(parseLabelNames(many).length, LABEL_LIMITS.perBookmark);
+});
+
+test('a label keeps one colour, and the colour is one of the six tones', () => {
+  assert.equal(labelTone('reading'), labelTone('reading'));
+  assert.match(labelTone('design').toString(), /^[1-6]$/);
+  // Different words should not all land on one tone.
+  const tones = new Set(['design', 'reading', 'later', 'ai', 'cloud', 'video'].map(labelTone));
+  assert.ok(tones.size > 1, 'every label got the same tone');
+  // A blank slug still has to be paintable.
+  assert.match(labelTone('').toString(), /^[1-6]$/);
 });
 
 test('a note that carries labels parses them once', () => {

@@ -109,8 +109,10 @@ test('an HTML note keeps its document off the library card', () => {
   assert.doesNotMatch(html, /\/p\/n0te1\/frame/);
   assert.match(html, /The short version of the document\./);
   assert.doesNotMatch(html, /Hi alert\(1\)/);
-  assert.match(html, /class="note-open-link" href="\/p\/n0te1"/);
-  assert.match(html, /Open full note/);
+  // The title is the way into the note; the card has no second link row.
+  assert.match(html, /<h3 class="note-card-title"><a href="\/p\/n0te1">HTML note<\/a><\/h3>/);
+  assert.doesNotMatch(html, /class="card-foot"/);
+  assert.doesNotMatch(html, />Open full note/);
   assert.match(html, /HTML document/);
 });
 

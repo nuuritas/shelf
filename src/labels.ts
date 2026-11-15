@@ -20,6 +20,26 @@ export const LABEL_LIMITS = {
   menu: 24,
 } as const;
 
+/**
+ * How many colours a label may take. Enough to tell a shelf's tags apart at a
+ * glance without turning the card into a swatch book.
+ */
+export const LABEL_TONE_COUNT = 6;
+
+/**
+ * A label's colour, derived from its slug so the same word is the same colour
+ * on every card and in every view. Nothing is stored: the slug is already the
+ * key, and a hash keeps a rename from leaving a stale colour behind. The tone
+ * is 1-based because the stylesheet names them `tone-1` … `tone-6`.
+ */
+export function labelTone(slug: string): number {
+  let hash = 0;
+  for (const char of String(slug ?? '')) {
+    hash = (hash * 33 + (char.codePointAt(0) ?? 0)) % 1000003;
+  }
+  return (hash % LABEL_TONE_COUNT) + 1;
+}
+
 /** The URL-safe form of a label name. Lookups and filter links use this. */
 export function labelSlug(name: string): string {
   return String(name ?? '')

@@ -40,7 +40,7 @@ writes a hex value.
 | `--card` | `#ffffff` | `#151b23` | cards, add form, login card, control backgrounds |
 | `--ink` | `#0f1720` | `#e8eef5` | body text, primary button fill, the mark plate |
 | `--ink-soft` | `#33404f` | `#c3cdd8` | list text that is not a heading |
-| `--soft` | `#5a6775` | `#97a3b1` | secondary text, leads, meta, labels |
+| `--soft` | `#5a6775` | `#97a3b1` | secondary text, leads, meta |
 | `--rule` | `#dce2ea` | `#232b35` | hairlines between rows and bands |
 | `--rule-strong` | `#c3ccd8` | `#323c48` | input borders, dot separators |
 | `--accent` | `#1d4ed8` | `#7da2ff` | emphasis, links, focus, the leaning spine |
@@ -64,6 +64,13 @@ belongs to status, not identity.
 Cloud rather than because this Worker paints with them. They are part of the
 shared schema; deleting them here would make the two brand modules differ for
 no reason.
+
+`--label-1-ink` … `--label-6-ink` and their `-wash` fills are the one family
+that is not purely semantic: a label chip takes a tone from its slug
+(`labelTone` in `src/labels.ts`), so a word keeps one colour on every card and
+in every view without a stored column. Tone 1 is the accent and tone 2 is the
+`--ok` green; 3–6 are an amber, a brick, a violet and a slate, each with its own
+wash. The worst pair clears AA at 5.3:1 in light and 8.2:1 in dark.
 
 ### Aliases
 
@@ -94,6 +101,7 @@ Every text token clears WCAG AA (4.5:1) at body size.
 | accent on card | 6.7:1 | 7.0:1 |
 | `--ok` on card | 6.5:1 | 9.2:1 |
 | paper on an accent fill (hover chip, tag) | 6.2:1 | 7.6:1 |
+| label ink on its wash (worst of six tones) | 5.3:1 | 8.2:1 |
 | deep-soft on deep | 7.5:1 | 6.3:1 |
 | deep-ink on deep | 16.3:1 | 16.9:1 |
 
@@ -196,7 +204,7 @@ just the exit code.
 | lead paragraph | Onest | 400 | 1.0625rem / 1.6 | `.lede` |
 | body | Onest | 400 | 1rem / 1.55 | `body` |
 | interface label | Onest | 600 | 0.75–0.78125rem | `.small-button`, `.calendar-link`, switches |
-| meta row | Onest | 400 | 0.8125rem | `.top-actions`, card footer |
+| meta row | Onest | 400 | 0.8125rem | `.top-actions`, card head |
 | numeric / literal | JetBrains Mono | 400 | 0.71875rem | `.count`, refs, dates |
 
 Figtree is a geometric sans with slightly rounded terminals. It holds at 4.75rem

@@ -115,9 +115,9 @@ wall-clock is long but CPU stays low.
   no session to configure
 - Agent notes (`kind=note`): markdown or HTML posted through `/api/posts` or
   `shelf add`. The card's author line is the agent, the note title is the card
-  lede, and the abstract is plain body copy; an HTML note shows only its title,
-  abstract, topics and one "Open full note" action, because the document itself
-  belongs on `/p/:ref` inside the sandboxed frame. That page is a reading view:
+  lede, and the abstract is plain body copy; the title is the way into
+  `/p/:ref`, which holds the document itself inside the sandboxed frame, because
+  a card must not embed it. That page is a reading view:
   a slim back bar, one provenance line, then the note. An HTML note folds its
   abstract and shows the document immediately
 - Video transcripts: the smallest MP4 of an X video goes to Workers AI
@@ -167,7 +167,9 @@ wall-clock is long but CPU stays low.
 - Labels: free text a person types on a save, many per post and one filter row.
   A chip on the card opens that label's list (`/?label=reading`), and a small
   editor under the chips rewrites the whole set without losing the search, day,
-  archive or language view. Labels the AI never writes and `POST /api/posts`
+  archive or language view. Each chip takes one of six tones, hashed from its
+  slug, so a word keeps the same colour in every view without a stored column.
+  Labels the AI never writes and `POST /api/posts`
   accepts them, so an agent can tag what it files. Unused labels are dropped
   from the menu; the same word typed twice with different case is one label.
 - Custom domain, with the workers.dev URL kept as a fallback
@@ -247,6 +249,7 @@ wall-clock is long but CPU stays low.
 | Nov 11 | YouTube links save as bookmarks | Pasting `youtu.be/...?si=` failed because the save path only knew X and LinkedIn. `src/youtube.ts` reads oEmbed plus the watch page (title, channel, description, thumbnail) and stores `provider = 'youtube'`; the existing transcript ladder then feeds the summary |
 | Nov 13 | Native apps moved to `nuuritas/shelf-cloud`; this repository ships published builds only | The maintainer signs and distributes every build, so the app trees, the keystore and the release workflow belong with the service that ships them; an MIT repository should not license the app source by accident. The clients stay dual-mode, so one published APK or TestFlight build still works against any self-hosted Worker |
 | Nov 16 | Labels ported from Shelf Cloud (#183) | Topics are folders the AI fills; a label is a word a person types. The library reads the same shelf by that cut, cards link to it, and an agent can tag a note through `POST /api/posts` / `shelf add --label`. Slug-keyed in SQLite, unused labels dropped |
+| Nov 16 | One control row per card, and coloured labels | The footer repeated the source link the head already carried and printed reply/repost/like/view counts nobody reads, plus a JSON link that the API still answers. Archive and Remove became buttons in the head beside the source link, and a label chip now takes one of six tones hashed from its slug |
 
 ### Video transcripts
 
