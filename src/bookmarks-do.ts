@@ -25,7 +25,13 @@ import {
 } from './settings.ts';
 import { parseYouTubeUrl, readYouTubePost } from './youtube.ts';
 import { readTranscripts } from './transcript.ts';
-import { clampInteger, jsonResponse, parseSource, sourceFilterSql } from './util.ts';
+import {
+  clampInteger,
+  jsonResponse,
+  parseSource,
+  recoverDisabledSummariesSql,
+  sourceFilterSql,
+} from './util.ts';
 import { readPost } from './x.ts';
 import type {
   ArchiveResult,
@@ -1454,6 +1460,13 @@ export class Bookmarks extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
+    // A row saved while AI was off is parked at `disabled`, which no queue
+    // query selects. Once AI is configured, move a bounded batch back to
+    // `pending` so a recovered deployment picks the backlog up instead of
+    // leaving it stuck. While AI stays off the helper returns null.
+    const recovery = recoverDisabledSummariesSql(isAiConfigured(this.env));
+    if (recovery) this.sql.exec(recovery);
+
     const staleBefore = Date.now() - STALE_SUMMARY_MS;
     this.sql.exec(
       `UPDATE bookmarks

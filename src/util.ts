@@ -81,6 +81,26 @@ export function sourceFilterSql(source: Exclude<SourceFilter, 'all'>): string {
   }
 }
 
+/**
+ * Re-queue `disabled` summaries once AI is configured. `disabled` means "saved
+ * while AI was off", not a queue state, so no queue query selects it again and
+ * those rows would stay stuck forever. The batch is bounded because the alarm
+ * summarizes one row per pass; a large backlog drains over several passes
+ * instead of stalling the queue. Returns null while AI stays unconfigured.
+ */
+export function recoverDisabledSummariesSql(aiConfigured: boolean): string | null {
+  if (!aiConfigured) return null;
+  return `UPDATE bookmarks
+    SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
+        summary_attempts = 0, summary_retry_at = NULL
+    WHERE tweet_id IN (
+      SELECT tweet_id FROM bookmarks
+      WHERE summary_status = 'disabled'
+      ORDER BY saved_at ASC
+      LIMIT 10
+    )`;
+}
+
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
