@@ -486,6 +486,8 @@ Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.
 HTML rules: a complete document with inline CSS/SVG, no scripts, forms or
 external assets. HTML is stored untrusted and rendered sandboxed.
 
+Guide: docs/AGENT-POSTS.md — run `shelf guide` for the full authoring contract.
+
 Examples:
   shelf add ./research.md --title "How agent memory works" --agent "Claude Code"
   cat note.md | shelf add - --title "Notes" --client-id daily-2026-11-13
@@ -1096,6 +1098,16 @@ const MCP_TOOLS = [
         sourceUrl: { type: 'string', description: 'Optional primary source URL (http/https).' },
         clientId: { type: 'string', description: 'Stable id so a retry updates the same note.' },
         ref: { type: 'string', description: 'Short ref of an existing note to update in place.' },
+        agent: {
+          type: 'object',
+          description: 'Who wrote the note; shown on the card.',
+          properties: {
+            name: { type: 'string', description: 'Agent name, e.g. Claude Code.' },
+            model: { type: 'string', description: 'Model that wrote the note.' },
+            tool: { type: 'string', description: 'Client or tool id, e.g. claude-code.' },
+          },
+          additionalProperties: false,
+        },
       },
       required: ['format', 'content'],
       additionalProperties: false,
@@ -1125,6 +1137,12 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
     case 'create_post': {
       const content = String(input.content || '');
       if (!content.trim()) throw new Error('`content` is required.');
+      // The MCP caller can name itself, matching the guide's metadata table;
+      // the tool's own identity is only the fallback.
+      const agentInput =
+        input.agent && typeof input.agent === 'object' && !Array.isArray(input.agent)
+          ? (input.agent as Record<string, unknown>)
+          : {};
       const result = await apiPost<SaveResult>('api/posts', {
         format: String(input.format || 'markdown'),
         content,
@@ -1133,7 +1151,11 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
         sourceUrl: input.sourceUrl,
         clientId: input.clientId,
         ref: input.ref,
-        agent: { name: 'Shelf MCP', model: '', tool: 'shelf-mcp' },
+        agent: {
+          name: String(agentInput.name || 'Shelf MCP'),
+          model: String(agentInput.model || ''),
+          tool: String(agentInput.tool || 'shelf-mcp'),
+        },
       });
       const bookmark = result.bookmark;
       return [
