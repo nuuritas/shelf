@@ -7,6 +7,10 @@ summary and files it into a folder. One Worker, one SQLite Durable Object, serve
 HTML, no build step, no database to manage. The free plan is enough for personal
 use.
 
+## Default branch
+
+`main` is the default branch. Open pull requests against `main`.
+
 ## Install it with your AI
 
 Nobody installs this by hand, so don't. Paste this into Claude Code, Codex,
