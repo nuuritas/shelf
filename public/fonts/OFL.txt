@@ -1,0 +1,37 @@
+The web fonts in this directory are subsets of three SIL Open Font License 1.1
+typefaces. They are served from this origin; neither the site nor the app loads
+a font from a third-party host. The same three families ship as static TTFs to
+the native clients (`apps/ios/Shelf/Fonts`, `apps/android/assets/fonts`), so
+every surface shows the same letters.
+
+Figtree
+  Copyright 2022 The Figtree Project Authors
+  https://github.com/erikdkennedy/figtree
+  Instanced at weights 400, 500 and 600.
+
+Onest
+  Copyright 2021 The Onest Project Authors
+  https://github.com/googlefonts/onest
+  Instanced at weights 400, 500 and 600.
+
+JetBrains Mono
+  Copyright 2020 The JetBrains Mono Project Authors
+  https://github.com/JetBrains/JetBrainsMono
+  Instanced at weights 400 and 500.
+
+All three were reduced to the Latin and Latin Extended character sets (which
+covers Turkish) with fonttools:
+
+  fonttools varLib.instancer <variable>.woff2 wght=500 -o <name>.woff2
+  pyftsubset <name>.woff2 --flavor=woff2 --unicodes=... --output-file=<subset>
+
+Files: figtree-{400,500,600}-{latin,latin-ext},
+onest-{400,500,600}-{latin,latin-ext},
+jetbrains-mono-{400,500}-{latin,latin-ext}.
+
+Figtree is the display face (wordmark, headlines, card titles). Onest is the
+interface face (body, labels, buttons, navigation). JetBrains Mono is only for
+values: refs, codes, counts, sizes and addresses. No italic is used anywhere.
+
+The full license text for each family is in OFL-Figtree.txt, OFL-Onest.txt and
+OFL-JetBrainsMono.txt in this directory.

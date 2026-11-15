@@ -1,4 +1,5 @@
 import { DEFAULT_SUMMARY_PROMPT } from './ai.ts';
+import { BRAND_CSS, BRAND_MARK, THEME_COLORS, assetUrl } from './brand.ts';
 import { renderMarkdown } from './markdown.ts';
 import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
 import type {
@@ -245,7 +246,7 @@ export function renderPage({
     body: `
       <header class="topbar">
         <a class="brand" href="/">
-          <span class="brand-mark">S</span>
+          <span class="brand-mark">${BRAND_MARK}</span>
           <span>Shelf</span>
         </a>
         <div class="top-actions">
@@ -507,7 +508,7 @@ export function renderCalendar({
     body: `
       <header class="topbar">
         <a class="brand" href="${escapeHtml(libraryHref('/', { lang }))}">
-          <span class="brand-mark">S</span>
+          <span class="brand-mark">${BRAND_MARK}</span>
           <span>Shelf</span>
         </a>
         <div class="top-actions">
@@ -718,7 +719,7 @@ export function renderSettings({
     body: `
       <header class="topbar">
         <a class="brand" href="/">
-          <span class="brand-mark">S</span>
+          <span class="brand-mark">${BRAND_MARK}</span>
           <span>Shelf</span>
         </a>
         <div class="top-actions">
@@ -1425,7 +1426,7 @@ export function renderLogin({ error, next }: { error?: string | null; next?: str
     body: `
       <main class="login-wrap">
         <div class="login-card">
-          <span class="brand-mark large">S</span>
+          <span class="brand-mark large">${BRAND_MARK}</span>
           <p class="eyebrow">Private library</p>
           <h1>Shelf</h1>
           <p class="lede">Enter the password to open your saved posts.</p>
@@ -1450,7 +1451,7 @@ export function renderSetup(): string {
     body: `
       <main class="login-wrap">
         <div class="login-card setup-card">
-          <span class="brand-mark large">S</span>
+          <span class="brand-mark large">${BRAND_MARK}</span>
           <p class="eyebrow">One more step</p>
           <h1>Set a password</h1>
           <p class="lede">This app is locked until an <code>APP_PASSWORD</code> secret is set.</p>
@@ -1468,16 +1469,17 @@ function pageShell({ title, bodyClass, head, body }: { title: string; bodyClass:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f4f0e8">
+  <meta name="theme-color" content="${THEME_COLORS.light}" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="${THEME_COLORS.dark}" media="(prefers-color-scheme: dark)">
   <meta name="description" content="A private, self-hosted reader for X and LinkedIn posts, quotes, and images.">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>${escapeHtml(title)}</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=21">
+  <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
+  <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
+  <link rel="stylesheet" href="/style.css?v=22">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1515,7 +1517,7 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-card .note-abstract, .note-card .note-body, .note-card .note-excerpt,
 .note-card .note-body a, .note-card .note-body pre, .note-card .table-wrap { position: relative; z-index: 1; }
 .note-card .note-open-link { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 12.5px; font-weight: 650; }
-.note-card .note-open-link:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+.note-card .note-open-link:hover { border-color: var(--accent); background: var(--accent); color: var(--paper); }
 .note-label { display: block; margin: 0 0 4px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
 .note-abstract { margin: 0 0 12px; }
 .note-abstract p { margin: 0 0 8px; font-size: 15px; line-height: 1.62; overflow-wrap: anywhere; }
@@ -1531,7 +1533,7 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-body ul, .note-body ol { padding-left: 22px; }
 .note-body li { margin: 4px 0; }
 .note-body a { color: var(--accent-ink); }
-.note-body code { padding: 1px 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+.note-body code { padding: 1px 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); font-family: var(--mono); font-size: 0.9em; }
 .note-body pre { padding: 14px 16px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
 .note-body pre code { padding: 0; border: 0; background: none; }
 .note-body blockquote { padding: 2px 0 2px 14px; border-left: 3px solid var(--line-strong); color: var(--muted); }
@@ -1572,50 +1574,12 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
   .note-frame-full { height: calc(100dvh - 160px); min-height: 320px; }
 }`;
 
-export const CSS: string = `:root {
-  color-scheme: light dark;
-  --bg: #f4f0e8;
-  --surface: #fffdf8;
-  --surface-soft: #f8f3ea;
-  --ink: #1c1a17;
-  --muted: #726b61;
-  --faint: #9b9286;
-  --line: #e3dbcf;
-  --line-strong: #d2c7b7;
-  --accent: #c24a22;
-  --accent-ink: #7f2e15;
-  --accent-soft: #f7e2d8;
-  --green: #2f6f4f;
-  --green-soft: #e6f1e9;
-  --red: #9f2f28;
-  --red-soft: #f7e4e1;
-  --shadow: 0 18px 50px rgba(45, 36, 24, 0.07);
-  --radius: 22px;
-  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141311;
-    --surface: #1d1b18;
-    --surface-soft: #24211d;
-    --ink: #f3ede3;
-    --muted: #b6ac9f;
-    --faint: #81786d;
-    --line: #332f29;
-    --line-strong: #484138;
-    --accent: #e77a4f;
-    --accent-ink: #ffb08f;
-    --accent-soft: #3a241b;
-    --green: #8bc7a5;
-    --green-soft: #1d2f25;
-    --red: #f09b91;
-    --red-soft: #351f1d;
-    --shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
-  }
-}
-
+/**
+ * The stylesheet: the shared brand block first, then the rules that are
+ * this Worker's own. The palette, the @font-face set and the mark live in
+ * `src/brand.ts` and nowhere else; nothing below declares a token or a hex.
+ */
+export const CSS: string = `${BRAND_CSS}
 * { box-sizing: border-box; }
 
 html { scroll-behavior: smooth; }
@@ -1670,28 +1634,27 @@ button { cursor: pointer; }
   align-items: center;
   gap: 10px;
   text-decoration: none;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
+  display: block;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
-  background: var(--ink);
-  color: var(--bg);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
+  flex: none;
+}
+
+.brand-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .brand-mark.large {
   width: 54px;
   height: 54px;
-  border-radius: 17px;
-  font-size: 27px;
 }
 
 .top-actions {
@@ -1707,6 +1670,8 @@ button { cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-family: var(--mono);
+  font-size: 11.5px;
 }
 
 .hero {
@@ -1724,12 +1689,21 @@ button { cursor: pointer; }
 
 h1, h2, h3, p { margin-top: 0; }
 
+/* Figtree is the voice on every surface, so headings take it directly and the
+   component rules below only set size and tracking. */
+h1, h2, h3 {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
 .hero h1 {
   margin-bottom: 20px;
+  font-family: var(--display);
   font-size: clamp(42px, 8vw, 76px);
-  line-height: 0.98;
-  letter-spacing: -0.055em;
-  font-weight: 650;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  font-weight: 500;
 }
 
 .lede {
@@ -1824,8 +1798,10 @@ h1, h2, h3, p { margin-top: 0; }
 
 .library-head h2 {
   margin: 0;
+  font-family: var(--display);
   font-size: 24px;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.01em;
+  font-weight: 500;
 }
 
 .library-tools {
@@ -2781,7 +2757,6 @@ h1, h2, h3, p { margin-top: 0; }
 .topic-overview-empty {
   color: var(--faint);
   font-size: 14px;
-  font-style: italic;
 }
 
 .folder-crumbs {
@@ -3070,7 +3045,7 @@ h1, h2, h3, p { margin-top: 0; }
   text-decoration: none;
 }
 
-.card-topic:hover { background: var(--accent); color: #fff; }
+.card-topic:hover { background: var(--accent); color: var(--paper); }
 
 .settings { padding: 12px 0 60px; }
 
@@ -3334,6 +3309,13 @@ h1, h2, h3, p { margin-top: 0; }
   .settings-card { padding: 16px; }
   .settings-card textarea { min-height: 220px; }
   .settings-actions { flex-direction: column; align-items: stretch; }
+}
+
+/* Motion is one pulse for a running summary plus colour and 1px lifts on
+   hover. Readers who ask for less get none of it. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 ${NOTE_STYLES}
 `;
