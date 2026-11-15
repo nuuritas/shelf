@@ -41,13 +41,28 @@ export function isTextSize(value: unknown): value is TextSizeChoice {
   return typeof value === 'string' && (TEXT_SIZES as readonly string[]).includes(value);
 }
 
+/**
+ * A cookie is attacker-adjacent data, not our own output: `decodeURIComponent`
+ * throws `URIError` on a lone `%`, and an exception here runs before routing, so
+ * one malformed cookie would 500 every page for that browser. Undecodable means
+ * "this is not a value we wrote", which the guards below already turn into the
+ * default.
+ */
+function decode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function cookieValue(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined;
   for (const part of header.split(';')) {
     const equals = part.indexOf('=');
     if (equals < 0) continue;
     if (part.slice(0, equals).trim() !== name) continue;
-    return decodeURIComponent(part.slice(equals + 1).trim());
+    return decode(part.slice(equals + 1).trim());
   }
   return undefined;
 }

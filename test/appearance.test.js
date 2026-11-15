@@ -60,6 +60,31 @@ test('one bad half does not throw away the other', () => {
   });
 });
 
+test('a malformed percent-encoded cookie is the default, not an exception', () => {
+  // `decodeURIComponent` throws on a lone `%`. This runs before routing, so an
+  // exception here would 500 every page for that browser until it clears the
+  // cookie; the value has to fall through to the guards instead.
+  for (const header of [
+    `${APPEARANCE_COOKIE}=%`,
+    `${APPEARANCE_COOKIE}=%E0%A4%A`,
+    `a=b; ${APPEARANCE_COOKIE}=theme=%`,
+    `${APPEARANCE_COOKIE}=theme=%&size=large`,
+    `${APPEARANCE_COOKIE}=theme=dark&size=%ZZ`,
+  ]) {
+    assert.doesNotThrow(() => parseAppearance(header), header);
+  }
+
+  assert.deepEqual(parseAppearance(`${APPEARANCE_COOKIE}=%`), DEFAULT_APPEARANCE);
+  assert.deepEqual(parseAppearance(`${APPEARANCE_COOKIE}=theme=%&size=large`), {
+    theme: 'system',
+    size: 'large',
+  });
+  assert.deepEqual(parseAppearance(`${APPEARANCE_COOKIE}=theme=dark&size=%ZZ`), {
+    theme: 'dark',
+    size: 'normal',
+  });
+});
+
 test('the appearance cookie is found among the session cookie', () => {
   const header = `shelf_session=v1.1.sig; ${cookie('theme=light&size=compact')}; other=x`;
   assert.deepEqual(parseAppearance(header), { theme: 'light', size: 'compact' });
