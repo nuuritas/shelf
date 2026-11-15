@@ -279,6 +279,9 @@ function isoDay(value: string | null | undefined): string {
 }
 
 function authorLabel(bookmark: Bookmark): string {
+  // A note was written by an agent, so that is its author; it has no post
+  // handle to show, and "unknown author" would hide who actually wrote it.
+  if (bookmark.kind === 'note') return bookmark.agent?.name || 'AI agent';
   const username = bookmark.author?.username;
   if (username) return `@${username}`;
   return bookmark.author?.name || 'unknown author';
@@ -288,9 +291,17 @@ function topicNames(bookmark: Bookmark): string {
   return (bookmark.topics || []).map(topic => topic.name).join(', ');
 }
 
+/** Where a row points: the link for a save, the note's own id or citation for a note. */
+function rowTarget(bookmark: Bookmark): string {
+  if (bookmark.kind === 'note') {
+    return bookmark.sourceUrl || bookmark.tweetId || bookmark.ref || '';
+  }
+  return bookmark.url || '';
+}
+
 function renderCard(bookmark: Bookmark, index: number): string {
   const flags = bookmark.archivedAt ? ' · archived' : '';
-  const lines = [`${index}. ${authorLabel(bookmark)} · ${isoDay(bookmark.savedAt)}${flags} · ${bookmark.url}`];
+  const lines = [`${index}. ${authorLabel(bookmark)} · ${isoDay(bookmark.savedAt)}${flags} · ${rowTarget(bookmark)}`];
   const topics = topicNames(bookmark);
   if (topics) lines.push(`   topics: ${topics}`);
   const summary = (bookmark.summary || bookmark.text || '').replace(/\s+/g, ' ').trim();
