@@ -2362,8 +2362,8 @@ function rowToBookmark(row: BookmarkRow): Bookmark {
     transcripts: parseJson<VideoTranscript[]>(row.transcripts_json, []),
     // Filled by attachLabels for a page of cards; a bare row has no tag yet.
     labels: [],
-    // `{}` is the historical fallback for a missing metrics column; keep it
-    // (renderMetrics treats missing fields as "no count").
+    // `{}` is the historical fallback for a missing metrics column; the API and
+    // the stored row keep the counts even though a card no longer draws them.
     metrics: parseJson<Metrics>(row.metrics_json, {} as Metrics),
     summary: row.summary,
     summaryStatus: row.summary_status,

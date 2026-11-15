@@ -6,6 +6,7 @@ import {
   type Appearance,
 } from './appearance.ts';
 import { BRAND_CSS, BRAND_MARK, assetUrl } from './brand.ts';
+import { LABEL_TONE_COUNT, labelTone } from './labels.ts';
 import { renderMarkdown } from './markdown.ts';
 import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
 import type {
@@ -15,7 +16,6 @@ import type {
   LabelSummary,
   LinkRead,
   MediaItem,
-  Metrics,
   Quote,
   SourceFilter,
   StoredSettings,
@@ -26,7 +26,6 @@ import type {
 } from './types.ts';
 import {
   escapeHtml,
-  formatCount,
   formatDate,
   linkifyText,
   parseSource,
@@ -997,7 +996,7 @@ function renderLabels(
   const chips = labels
     .map(
       label =>
-        `<a class="label" href="${escapeHtml(
+        `<a class="label tone-${labelTone(label.slug)}" href="${escapeHtml(
           libraryHref('/', { label: label.slug, view, lang }),
         )}">${escapeHtml(label.name)}</a>`,
     )
@@ -1017,6 +1016,34 @@ function renderLabels(
               <button type="submit">Save labels</button>
             </form>
           </details></div>`;
+}
+
+/**
+ * The one control row a card carries: archive, remove, and the way out to the
+ * source. It sits in the head next to the author, where the reader already
+ * looks for what this card is, so the bottom of the card is content only — no
+ * metric counts, no JSON link, no second copy of the same destination.
+ */
+function renderCardTools(
+  tweetId: string,
+  returnTo: string,
+  archived: boolean,
+  sourceLink: string,
+): string {
+  return `<div class="card-tools">
+            <form method="post" action="/archive" class="inline-form">
+              <input type="hidden" name="id" value="${escapeHtml(tweetId)}">
+              <input type="hidden" name="archived" value="${archived ? '0' : '1'}">
+              <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+              <button class="card-tool" type="submit">${archived ? 'Unarchive' : 'Archive'}</button>
+            </form>
+            <form method="post" action="/delete" class="inline-form">
+              <input type="hidden" name="id" value="${escapeHtml(tweetId)}">
+              <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+              <button class="card-tool danger" type="submit">Remove</button>
+            </form>
+            ${sourceLink}
+          </div>`;
 }
 
 function renderBookmark(
@@ -1076,9 +1103,13 @@ function renderBookmark(
             </div>
           </div>
         </div>
-        <a class="x-link" href="${escapeHtml(outboundUrl || '#')}" target="_blank" rel="noopener noreferrer" aria-label="Open on ${escapeHtml(source)}">${escapeHtml(source)} ↗</a>
+        ${renderCardTools(
+          bookmark.tweetId,
+          returnTo,
+          archived,
+          `<a class="x-link" href="${escapeHtml(outboundUrl || '#')}" target="_blank" rel="noopener noreferrer" aria-label="Open on ${escapeHtml(source)}">${escapeHtml(source)} ↗</a>`,
+        )}
       </header>
-
       <div class="tweet-text">${linkifyText(bookmark.text)}</div>
 
       ${
@@ -1101,30 +1132,6 @@ function renderBookmark(
       ${extras.length ? `<p class="peek-meta">${escapeHtml(extras.join(' · '))}</p>` : ''}
 
       ${renderLabels(bookmark, returnTo, view, lang)}
-
-      <footer class="card-foot">
-        <div class="metrics">${renderMetrics(bookmark.metrics)}</div>
-        <div class="card-actions">
-          <button class="expand-button" type="button" data-expand aria-expanded="false">Read more</button>
-          <span class="dot">·</span>
-          <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
-          <span class="dot">·</span>
-          <a href="${escapeHtml(safeHttpUrl(bookmark.url) || '#')}" target="_blank" rel="noopener noreferrer">Open on ${escapeHtml(source)}</a>
-          <span class="dot">·</span>
-          <form method="post" action="/archive" class="inline-form">
-            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
-            <input type="hidden" name="archived" value="${archived ? '0' : '1'}">
-            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-            <button class="link-button" type="submit">${archived ? 'Unarchive' : 'Archive'}</button>
-          </form>
-          <span class="dot">·</span>
-          <form method="post" action="/delete" class="inline-form">
-            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
-            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-            <button class="link-button danger" type="submit">Remove</button>
-          </form>
-        </div>
-      </footer>
     </article>
   `;
 }
@@ -1183,11 +1190,14 @@ function renderNoteCard(
             </div>
           </div>
         </div>
-        ${
+        ${renderCardTools(
+          bookmark.tweetId,
+          returnTo,
+          archived,
           sourceUrl
             ? `<a class="x-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
-            : `<span class="x-link note-kind" title="${isHtml ? 'HTML document' : 'Note'}">${isHtml ? 'HTML' : 'Note'}</span>`
-        }
+            : `<span class="x-link note-kind" title="${isHtml ? 'HTML document' : 'Note'}">${isHtml ? 'HTML' : 'Note'}</span>`,
+        )}
       </header>
 
       <h3 class="note-card-title"><a href="${href}">${escapeHtml(title)}</a></h3>
@@ -1207,26 +1217,6 @@ function renderNoteCard(
       }
 
       ${renderLabels(bookmark, returnTo, view, lang)}
-
-      <footer class="card-foot">
-        <div class="card-actions">
-          <a href="/api/bookmarks/${escapeHtml(bookmark.tweetId)}" target="_blank" rel="noopener">JSON</a>
-          <span class="dot">·</span>
-          <form method="post" action="/archive" class="inline-form">
-            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
-            <input type="hidden" name="archived" value="${archived ? '0' : '1'}">
-            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-            <button class="link-button" type="submit">${archived ? 'Unarchive' : 'Archive'}</button>
-          </form>
-          <span class="dot">·</span>
-          <form method="post" action="/delete" class="inline-form">
-            <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
-            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-            <button class="link-button danger" type="submit">Remove</button>
-          </form>
-        </div>
-        <a class="note-open-link" href="${href}">Open full note <span aria-hidden="true">→</span></a>
-      </footer>
     </article>
   `;
 }
@@ -1536,22 +1526,6 @@ function renderSummary(
   `;
 }
 
-function renderMetrics(metrics: Partial<Metrics> = {}) {
-  const items = [
-    ['replies', metrics.replies],
-    ['reposts', metrics.reposts],
-    ['likes', metrics.likes],
-    ['views', metrics.views],
-  ]
-    .map(([label, value]) => {
-      const formatted = formatCount(value);
-      return formatted ? `<span><strong>${formatted}</strong> ${label}</span>` : '';
-    })
-    .filter(Boolean);
-
-  return items.join('<span class="dot">·</span>');
-}
-
 function renderEmpty(
   query: string,
   view: 'active' | 'archived' = 'active',
@@ -1703,7 +1677,7 @@ function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=25">
+  <link rel="stylesheet" href="/style.css?v=26">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1715,7 +1689,7 @@ function pageShell({
     .card.is-collapsed .note-card .card-head { align-items: flex-start; }
 
 .linked-article { display: block; }
-    .peek-meta, .expand-button { display: none; }
+    .peek-meta { display: none; }
   </style></noscript>
   <script src="/app.js" defer></script>
 </head>
@@ -1737,11 +1711,9 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-card-title a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--ink); text-decoration: none; }
 .note-card-title a::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
 .note-card:hover .note-card-title a { text-decoration: underline; text-underline-offset: 3px; }
-.note-card .card-foot, .note-card .card-topics, .note-card .card-head a, .note-card .ref-chip,
+.note-card .card-topics, .note-card .card-tools, .note-card .card-head a, .note-card .ref-chip,
 .note-card .note-abstract, .note-card .note-body, .note-card .note-excerpt,
 .note-card .note-body a, .note-card .note-body pre, .note-card .table-wrap { position: relative; z-index: 1; }
-.note-card .note-open-link { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 0.78125rem; font-weight: 650; }
-.note-card .note-open-link:hover { border-color: var(--accent); background: var(--accent); color: var(--paper); }
 .note-label { display: block; margin: 0 0 4px; color: var(--faint); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
 .note-abstract { margin: 0 0 12px; }
 .note-abstract p { margin: 0 0 8px; font-size: 0.9375rem; line-height: 1.62; overflow-wrap: anywhere; }
@@ -1790,13 +1762,29 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-frame-full { height: clamp(360px, calc(100dvh - 190px), 1000px); border-radius: 12px; }
 @media (max-width: 650px) {
   .note-card-title { font-size: 1.1875rem; }
-  .note-card .note-open-link { padding: 8px 14px; align-self: flex-end; }
-  .note-card .card-foot { align-items: stretch; }
   .note-bar { width: min(100% - 24px, 900px); padding-top: 12px; }
   .note-shell { padding-bottom: 40px; }
   .note-title { font-size: clamp(1.5rem, 7vw, 1.875rem); }
   .note-frame-full { height: calc(100dvh - 160px); min-height: 320px; }
 }`;
+
+/**
+ * A label's chip colour, one rule per tone. `labelTone` picks the number from
+ * the slug, and the two tokens it paints with live in `src/brand.ts`, so a
+ * theme swap recolours every chip without the page carrying a style attribute
+ * (the CSP allows `style-src 'self'` only).
+ */
+const LABEL_TONE_CSS = Array.from({ length: LABEL_TONE_COUNT }, (_, index) => index + 1)
+  .map(
+    tone => `.label.tone-${tone} {
+  border-color: color-mix(in srgb, var(--label-${tone}-ink) 34%, transparent);
+  background: var(--label-${tone}-wash);
+  color: var(--label-${tone}-ink);
+}
+
+.label.tone-${tone}:hover { border-color: var(--label-${tone}-ink); }`,
+  )
+  .join('\n');
 
 /**
  * The stylesheet: the shared brand block first, then the rules that are
@@ -2361,6 +2349,36 @@ h1, h2, h3 {
   margin-bottom: 16px;
 }
 
+/* The card's controls live beside the author, not under the content: one row
+   of small pills — archive, remove, and the outbound link — with the source at
+   the right edge where it has always been. */
+.card-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.card-tool {
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.45;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.card-tool:hover { border-color: var(--ink); color: var(--ink); }
+.card-tool.danger:hover { border-color: var(--red); background: var(--red-soft); color: var(--red); }
+
 .author {
   display: flex;
   align-items: center;
@@ -2762,36 +2780,6 @@ h1, h2, h3 {
   0%, 100% { opacity: 0.25; transform: scaleX(0.9); }
   50% { opacity: 1; transform: scaleX(1); }
 }
-
-.card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding-top: 13px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-.metrics {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.metrics strong { color: var(--ink); font-weight: 650; }
-
-.card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.card-actions a { text-decoration: none; }
-.card-actions a:hover { color: var(--ink); }
 
 .inline-form { display: inline; }
 
@@ -3244,20 +3232,6 @@ h1, h2, h3 {
 
 .card.is-collapsed .peek-meta { display: block; }
 
-.expand-button {
-  padding: 5px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.expand-button:hover { border-color: var(--ink); }
-
 .card-topics {
   display: flex;
   flex-wrap: wrap;
@@ -3279,7 +3253,8 @@ h1, h2, h3 {
 .card-topic:hover { background: var(--accent); color: var(--paper); }
 
 /* Labels are the reader's own tags: a chip reads back as a filter, and the
-   editor under it rewrites the whole set on that one card. */
+   editor under it rewrites the whole set on that one card. Each chip carries
+   the tone its slug hashes to, so a word keeps one colour everywhere. */
 .label-switch {
   max-width: 100%;
   flex-wrap: wrap;
@@ -3309,6 +3284,8 @@ h1, h2, h3 {
   border-color: var(--line-strong);
   color: var(--ink);
 }
+
+${LABEL_TONE_CSS}
 
 .label-editor { display: inline-block; }
 
@@ -3702,7 +3679,8 @@ body.settings-page .topbar {
   .search-form input { flex: 1; width: auto; }
   .card { padding: 16px; border-radius: 18px; }
   .tweet-text { font-size: 1rem; }
-  .card-foot { align-items: flex-start; flex-direction: column; }
+  .card-head { flex-wrap: wrap; gap: 10px; }
+  .card-tools { gap: 5px; }
   .media-grid.media-count-3 { grid-template-columns: repeat(2, 1fr); }
   .media-grid.media-count-3 .media-cell:first-child { grid-column: span 2; }
   .top-actions .count { display: none; }

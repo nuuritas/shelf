@@ -104,6 +104,30 @@ test('renders the active/archived switch and unarchive action', () => {
   assert.match(html, /Bookmark archived\./);
 });
 
+test('a post card keeps archive and remove in the head and has no footer', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ metrics: { replies: 12, reposts: 3, likes: 40, views: 900 } })],
+    total: 1,
+    query: '',
+  });
+
+  // The two mutations are buttons beside the source link, at the top right.
+  const tools = html.match(/<div class="card-tools">[\s\S]*?<\/div>/);
+  assert.ok(tools, 'the card has no control row');
+  assert.match(tools[0], /<button class="card-tool" type="submit">Archive<\/button>/);
+  assert.match(tools[0], /<button class="card-tool danger" type="submit">Remove<\/button>/);
+  assert.match(tools[0], /<a class="x-link" href="https:\/\/x\.com\/a\/status\/123"/);
+
+  // The bottom of the card is content only: no counts, no JSON, no repeat of
+  // the source link and no second archive/remove pair.
+  assert.doesNotMatch(html, /class="card-foot"/);
+  assert.doesNotMatch(html, /class="metrics"/);
+  assert.doesNotMatch(html, />JSON</);
+  assert.doesNotMatch(html, />Open on X</);
+  assert.equal((html.match(/action="\/archive"/g) || []).length, 1);
+  assert.equal((html.match(/action="\/delete"/g) || []).length, 1);
+});
+
 test('a saved URL card does not link the note reading page', () => {
   const html = renderPage({ bookmarks: [sampleBookmark()], total: 1, query: '' });
 
@@ -602,8 +626,9 @@ test('the library reads by label: a filter row, a heading and a card chip', () =
   assert.match(html, /class="active" href="\/\?label=reading">Reading<span>1<\/span>/);
   // The selected label is the page's heading.
   assert.match(html, /<h2>Reading<\/h2>/);
-  // A chip on the card opens that label's view.
-  assert.match(html, /<a class="label" href="\/\?label=reading">Reading<\/a>/);
+  // A chip on the card opens that label's view, carrying the tone its slug
+  // hashes to so the same word keeps one colour.
+  assert.match(html, /<a class="label tone-\d" href="\/\?label=reading">Reading<\/a>/);
   // The editor rewrites the whole set and remembers the filtered view.
   assert.match(html, /<form class="label-form" method="post" action="\/labels">/);
   assert.match(html, /name="labels" value="Design, Reading"/);
