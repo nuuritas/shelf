@@ -493,7 +493,9 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
   const parsed =
     extractXUrl(input) ?? parseLinkedInUrl(input) ?? parseYouTubeUrl(input) ?? parseWebUrl(input);
   if (!parsed) {
-    return redirect('/?error=That+does+not+look+like+a+link');
+    return redirect(
+      `/?error=${encodeURIComponent('That does not look like an X, LinkedIn, YouTube or web page link.')}`,
+    );
   }
 
   try {
