@@ -108,18 +108,25 @@ takes `--paper` as its label (`--accent` on `--paper` and `--paper` on
 
 ## Theme
 
-Today the page follows the operating system: `@media(prefers-color-scheme:dark)`
-swaps the tokens on `:root`. The two `data-theme` selectors are already in
-`BRAND_CSS` and are the ones the reader's own choice will use:
+The page follows the operating system by default: `@media(prefers-color-scheme:dark)`
+swaps the tokens on `:root`. The reader's own choice is a cookie, `shelf_look`
+(`src/appearance.ts`), read on the server and written on `<html>` by
+`src/render.ts`, so the first paint is already correct and no script runs:
 
 - `[data-theme="dark"]` wins over a light system.
 - `[data-theme="light"]` wins over a dark system.
 - No `data-theme` attribute means the media query decides.
 
-Nothing writes the attribute yet. A build that does writes it on `<html>` on
-the server, in `src/render.ts`, so the first paint is already correct and no
-script is needed. The stylesheet below the brand block never learns that a
-theme exists.
+The same cookie carries the text size: `data-size="compact|normal|large|xlarge"`,
+which `BRAND_CSS` maps to `--text-scale` (0.9 / 1 / 1.1 / 1.2). The only place
+that number is read is the root size below, and every text size in the
+stylesheet is in `rem`.
+
+The size is an attribute rather than `style="--text-scale:<n>"`, which is what
+Shelf Cloud writes. A `style` attribute is an inline style to CSP, and the cloud
+pays for its one number with `style-src 'unsafe-inline'` on every page. A data
+attribute keeps this Worker's `style-src 'self'` untouched, and the four values
+are the same table (`TEXT_SCALES` in `src/brand.ts`) either way.
 
 ## The mark
 
@@ -181,18 +188,18 @@ just the exit code.
 | Role | Family | Weight | Size | Where |
 | --- | --- | --- | --- | --- |
 | wordmark | Figtree | 600 | 1rem | `.brand` |
-| hero display | Figtree | 500 | `clamp(42px, 8vw, 76px)`, 1.02 | `.hero h1` |
-| section heading | Figtree | 500 | 24px | `.library-head h2` |
-| card title | Figtree | 600–650 | 19–21px | `.note-card-title`, card headings |
-| post text | Onest | 400 | 17px / 1.62 | `.tweet-text` |
-| summary | Onest | 400 | 13.5px / 1.6 | `.summary-text` |
-| lead paragraph | Onest | 400 | 17px / 1.6 | `.lede` |
-| body | Onest | 400 | 16px / 1.55 | `body` |
-| interface label | Onest | 600 | 12–12.5px | `.small-button`, `.calendar-link`, switches |
-| meta row | Onest | 400 | 13px | `.top-actions`, card footer |
-| numeric / literal | JetBrains Mono | 400 | 11.5px | `.count`, refs, dates |
+| hero display | Figtree | 500 | `clamp(2.625rem, 8vw, 4.75rem)`, 1.02 | `.hero h1` |
+| section heading | Figtree | 500 | 1.5rem | `.library-head h2` |
+| card title | Figtree | 600–650 | 1.1875–1.3125rem | `.note-card-title`, card headings |
+| post text | Onest | 400 | 1.0625rem / 1.62 | `.tweet-text` |
+| summary | Onest | 400 | 0.84375rem / 1.6 | `.summary-text` |
+| lead paragraph | Onest | 400 | 1.0625rem / 1.6 | `.lede` |
+| body | Onest | 400 | 1rem / 1.55 | `body` |
+| interface label | Onest | 600 | 0.75–0.78125rem | `.small-button`, `.calendar-link`, switches |
+| meta row | Onest | 400 | 0.8125rem | `.top-actions`, card footer |
+| numeric / literal | JetBrains Mono | 400 | 0.71875rem | `.count`, refs, dates |
 
-Figtree is a geometric sans with slightly rounded terminals. It holds at 76px
+Figtree is a geometric sans with slightly rounded terminals. It holds at 4.75rem
 without needing a serif's optical-size axis, and it carries the wordmark
 because it sets the same letterforms as the headings. It is instanced at 400,
 500 and 600; headings use 500–600, because a sans at display size needs the
@@ -212,6 +219,9 @@ accent colour.
 
 ### Size and spacing rules
 
+- The root is `html { font-size: calc(16px * var(--text-scale)) }` and every
+  text size is in `rem`, so the reader's size choice moves the whole page.
+  Write a new size in `rem`; a `px` font size ignores the setting.
 - Display sizes use `clamp()` with a `vw` term, so the hero holds two lines at
   1440px in English (three in Turkish, where the copy is longer) and still fits
   a 390px screen without a media query.
@@ -266,9 +276,9 @@ for the add form and the login card, which float above the page.
 ### Breakpoints
 
 - **650px** — the single breakpoint. The topbar and shell lose 12px of gutter,
-  the hero drops to `clamp(38px, 12vw, 58px)`, the add form stacks, the library
-  head and its tools go vertical, cards lose padding, the calendar tightens and
-  the settings cards go to one column.
+  the hero drops to `clamp(2.375rem, 12vw, 3.625rem)`, the add form stacks, the
+  library head and its tools go vertical, cards lose padding, the calendar
+  tightens and the settings cards go to one column.
 - The note page uses the same 650px boundary for its own stack.
 
 Nothing between 651px and 1440px is special-cased; the clamps carry it. Check
@@ -293,6 +303,9 @@ transition and smooth scrolling. Keep that block in step with anything new.
 - Rename or add a legacy alias in the same block, never in `src/render.ts`.
 - Change a size by changing the rule in `src/render.ts`, not by overriding a
   single selector from the page.
+- The theme and text size are read from the `shelf_look` cookie in
+  `src/appearance.ts` and written on `<html>`; a new theme or size is a change
+  there plus a row in the settings card, never a script on the client.
 - Change the mark by changing the geometry in every file listed under **The
   mark**, then regenerate the PNGs with `rsvg-convert` and look at them.
 - A new font needs a web subset in `public/fonts/`, an OFL note, an
