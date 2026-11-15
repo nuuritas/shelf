@@ -75,6 +75,8 @@ Browser / PWA ──session cookie──► Worker (src/worker.ts) ◄───�
 | `bookmarks` | One row per saved post (X or LinkedIn): text, author, media JSON, quote JSON, article JSON, links JSON, transcripts JSON, metrics, `summary`, `summary_en`, `archived_at`, topic/version/translation job state |
 | `topics` | AI-induced areas of interest: `slug`, `name`, `description`, `overview` (rolling synthesis), `overview_count` |
 | `item_topics` | Many-to-many filing, with confidence |
+| `labels` | The reader's own tags, keyed by slug, holding the spelling first typed. A label on no post is dropped |
+| `bookmark_labels` | Many-to-many tags on a post, up to twelve |
 | `summary_versions` | v2+ summaries, each with the instruction that produced it. v1 lives in `bookmarks.summary` |
 | `settings` | Per-deployment preferences: the summary prompt override and the default summary language; also holds the VAPID key pair |
 | `push_subscriptions` | Browser push endpoints (HTTPS only, capped at ten) |
@@ -162,6 +164,12 @@ wall-clock is long but CPU stays low.
   follow it without a redeploy; existing summaries are not rewritten. The AI and
   Notifications sections are read-only/empty-state for now.
 - Collapsed cards (3-line peek, expand on tap) and folded topic syntheses
+- Labels: free text a person types on a save, many per post and one filter row.
+  A chip on the card opens that label's list (`/?label=reading`), and a small
+  editor under the chips rewrites the whole set without losing the search, day,
+  archive or language view. Labels the AI never writes and `POST /api/posts`
+  accepts them, so an agent can tag what it files. Unused labels are dropped
+  from the menu; the same word typed twice with different case is one label.
 - Custom domain, with the workers.dev URL kept as a fallback
 - `/api/stats` reports row counts and real SQLite database size
 - Local access for AI work: `cli/shelf.ts` (search/show/topics/export/add) and
@@ -185,8 +193,8 @@ wall-clock is long but CPU stays low.
 
 | Method | Route | Notes |
 |---|---|---|
-| `GET` | `/api/bookmarks?q=&topic=&day=&view=&source=&limit=&offset=` | list; `day=YYYY-MM-DD` limits to one saved day; `view=active|archived|all` (default active); `source=x|linkedin|youtube` (default `all`, unknown values fall back to `all`) filters on the canonical URL host; `q` terms are ANDed and match text, author, both summaries, links, and topic names |
-| `POST` | `/api/posts` | `{ format: "markdown"\|"html", content, title?, summary?, sourceUrl?, clientId?, ref?, agent? }` creates an agent note (`kind=note`, no fetch, no AI summary job); the same `clientId` updates one row and `ref` updates an existing note in place; content caps are 256 KB markdown / 1 MB HTML |
+| `GET` | `/api/bookmarks?q=&topic=&label=&day=&view=&source=&limit=&offset=` | list; `day=YYYY-MM-DD` limits to one saved day; `label=<slug>` narrows to one label; `view=active|archived|all` (default active); `source=x|linkedin|youtube` (default `all`, unknown values fall back to `all`) filters on the canonical URL host; `q` terms are ANDed and match text, author, both summaries, links, topic names and label names |
+| `POST` | `/api/posts` | `{ format: "markdown"\|"html", content, title?, summary?, sourceUrl?, clientId?, ref?, agent?, labels? }` creates an agent note (`kind=note`, no fetch, no AI summary job); the same `clientId` updates one row and `ref` updates an existing note in place; `labels` is an array or a comma-separated line and a re-post adds to the note's set rather than replacing it; content caps are 256 KB markdown / 1 MB HTML |
 | `POST` | `/api/bookmarks` | `{ "url": ... }`; X, LinkedIn, YouTube, or any public http(s) page (`provider=web`, title and readable body stored in `article`); also accepts `SHARE_TOKEN` bearer |
 | `GET` | `/api/bookmarks/:id` | one bookmark by short ref (`k7f3`) or tweet id |
 | `DELETE` | `/api/bookmarks/:id` | delete by short ref or tweet id |
@@ -194,6 +202,9 @@ wall-clock is long but CPU stays low.
 | `POST` | `/api/bookmarks/:id/summarize` | `{ "mode": "version", "instruction": "..." }` adds a version; `{ "mode": "translate" }` queues English |
 | `POST` | `/api/translations/en` | queue English for every finished summary that lacks it |
 | `GET` | `/api/topics` | topics with syntheses and counts |
+| `GET` | `/api/labels` | labels in use with counts, most carried first, capped at 24 |
+| `PUT` | `/api/bookmarks/:id/labels` | `{ "labels": ["reading", "design"] }` or `{ "labels": "reading, design" }`; replaces the set, `[]` clears it. Returns `{ bookmark }` |
+| `DELETE` | `/api/bookmarks/:id/labels/:slug` | removes one label from one post. Returns `{ bookmark }` |
 | `GET` | `/api/calendar?month=YYYY-MM` | save counts per UTC day for one month (defaults to the current month) |
 | `POST` | `/api/reindex` | re-induce the whole taxonomy |
 | `GET` | `/api/stats` | `total`, `archived`, `summarized`, `translated`, `pending`, `topics`, `bytes`, `rows` |
@@ -235,6 +246,7 @@ wall-clock is long but CPU stays low.
 | Nov 11 | Share saves silently again: one toast, no card | The card that replaced the toast was too heavy for a share action. The share keeps its own task affinity (so the library does not pop up), extracts any link, expands t.co, and reports with a single toast |
 | Nov 11 | YouTube links save as bookmarks | Pasting `youtu.be/...?si=` failed because the save path only knew X and LinkedIn. `src/youtube.ts` reads oEmbed plus the watch page (title, channel, description, thumbnail) and stores `provider = 'youtube'`; the existing transcript ladder then feeds the summary |
 | Nov 13 | Native apps moved to `nuuritas/shelf-cloud`; this repository ships published builds only | The maintainer signs and distributes every build, so the app trees, the keystore and the release workflow belong with the service that ships them; an MIT repository should not license the app source by accident. The clients stay dual-mode, so one published APK or TestFlight build still works against any self-hosted Worker |
+| Nov 16 | Labels ported from Shelf Cloud (#183) | Topics are folders the AI fills; a label is a word a person types. The library reads the same shelf by that cut, cards link to it, and an agent can tag a note through `POST /api/posts` / `shelf add --label`. Slug-keyed in SQLite, unused labels dropped |
 
 ### Video transcripts
 

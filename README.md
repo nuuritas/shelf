@@ -60,14 +60,19 @@ commands.
   that still opens on every save, an optional folder view where each topic opens
   like a folder, per-topic syntheses, full-text search, a calendar, archive and
   restore.
+- **Tag it yourself** — labels you type on a post (up to twelve), a filter row
+  across the library, and `?label=reading` or `GET /api/labels` for scripts and
+  the CLI. A label is not a folder: the same save can carry several, and the AI
+  never writes one.
 - **Tune it** — a Settings page (web and the Android app) for the summary
   prompt, language and notifications; new summaries pick up the change without
   a redeploy.
 - **Get notified** — a browser notification when a summary is ready, and a
   background check in the Android app that posts a system notification.
 - **Reach it from AI tools** — a Bun CLI and a stdio MCP server, so Claude Code,
-  Codex, or Cursor can search the vault themselves, and `shelf add` lets an agent
-  save a finished research note (markdown, or sandboxed HTML) next to your links.
+  Codex, or Cursor can search the vault themselves (by label too), and `shelf add`
+  lets an agent save a finished research note (markdown, or sandboxed HTML) next
+  to your links, tagged with `--label`.
   The authoring contract is in [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), also
   available as `shelf guide` and the MCP `get_authoring_guide` tool.
 

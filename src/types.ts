@@ -224,6 +224,17 @@ export interface TopicRef {
   name: string;
 }
 
+/** A label as typed by the reader; `slug` is its filter link. */
+export interface LabelName {
+  slug: string;
+  name: string;
+}
+
+/** A label the archive knows, with how many bookmarks carry it. */
+export interface LabelSummary extends LabelName {
+  count: number;
+}
+
 /** The minimal topic shape sent to the filing prompt. */
 export interface Topic {
   slug: string;
@@ -285,6 +296,8 @@ export interface NoteInput {
   /** Target an existing note by its short ref; wins over `clientId`. */
   ref: string | null;
   agent: NoteAgent | null;
+  /** Null when the post did not carry the field: an update keeps what is there. */
+  labels: LabelName[] | null;
 }
 
 export interface Bookmark {
@@ -326,6 +339,8 @@ export interface Bookmark {
   /** Set when the bookmark is archived; archived items leave the default views. */
   archivedAt: string | null;
   topics?: TopicRef[];
+  /** The reader's tags, alphabetically; empty when the post carries none. */
+  labels: LabelName[];
   versions?: SummaryVersion[];
   versionStatus?: string | null;
   versionError?: string | null;
@@ -392,6 +407,8 @@ export interface ListResult {
   total: number;
   query: string;
   topic: string | null;
+  /** Label slug the list is filtered to, or null. */
+  label: string | null;
   /** UTC day filter (`YYYY-MM-DD`) when the library is showing one day. */
   day: string | null;
   view: ArchiveView;
@@ -419,6 +436,10 @@ export interface CalendarResult {
 
 export interface TopicListResult {
   topics: TopicSummary[];
+}
+
+export interface LabelListResult {
+  labels: LabelSummary[];
 }
 
 export interface TopicPageResult {

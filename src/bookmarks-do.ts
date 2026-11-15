@@ -8,6 +8,7 @@ import {
   writeTopicOverview,
 } from './ai.ts';
 import { parseWebUrl, readExternalLinks, readWebPost } from './links.ts';
+import { LABEL_LIMITS, parseLabelNames } from './labels.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
 import { NoteInputError, noteIdFor, notePlainText } from './notes.ts';
 import {
@@ -43,6 +44,8 @@ import type {
   BootstrapTopic,
   CalendarResult,
   Env,
+  LabelListResult,
+  LabelName,
   LinkRead,
   ListResult,
   MediaItem,
@@ -176,6 +179,10 @@ type NotificationRow = { id: number; title: string; body: string; url: string };
 
 type PushRow = { endpoint: string; p256dh: string; auth: string };
 
+type LabelRefRow = { tweet_id: string; slug: string; name: string };
+
+type LabelCountRow = { slug: string; name: string; count: number };
+
 type StatsRow = {
   total: number;
   archived: number | null;
@@ -300,6 +307,21 @@ export class Bookmarks extends DurableObject<Env> {
         created_at TEXT NOT NULL,
         delivered_at TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS labels (
+        slug TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS bookmark_labels (
+        tweet_id TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        PRIMARY KEY (tweet_id, slug)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_bookmark_labels_slug
+      ON bookmark_labels (slug);
     `);
 
     try {
@@ -661,6 +683,24 @@ export class Bookmarks extends DurableObject<Env> {
         return jsonResponse({ topics: this.topics() });
       }
 
+      if (request.method === 'GET' && url.pathname === '/labels') {
+        return jsonResponse(this.labels());
+      }
+
+      if (request.method === 'POST' && url.pathname === '/labels') {
+        const body = (await request.json()) as { id?: string | null; labels?: unknown };
+        const bookmark = this.setLabels(body.id ?? null, parseLabelNames(body.labels));
+        if (!bookmark) return jsonResponse({ error: 'Bookmark not found.' }, 404);
+        return jsonResponse({ bookmark });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/labels/remove') {
+        const body = (await request.json()) as { id?: string | null; slug?: unknown };
+        const bookmark = this.removeLabel(body.id ?? null, String(body.slug ?? ''));
+        if (!bookmark) return jsonResponse({ error: 'Label not found on that bookmark.' }, 404);
+        return jsonResponse({ bookmark });
+      }
+
       if (request.method === 'GET' && url.pathname === '/topic') {
         return jsonResponse(
           this.topic(
@@ -799,6 +839,9 @@ export class Bookmarks extends DurableObject<Env> {
       `UPDATE bookmarks SET topics_status = 'pending', topics_at = NULL WHERE tweet_id = ?`,
       tweetId,
     );
+    // A re-posted note adds the labels it carried; it never drops the ones the
+    // note already has, so an older client cannot untag it by omission.
+    if (input.labels?.length) this.addLabels(tweetId, input.labels);
     await this.ctx.storage.setAlarm(Date.now() + 250);
 
     return { created: !existing, bookmark: this.get(tweetId) };
@@ -905,6 +948,7 @@ export class Bookmarks extends DurableObject<Env> {
   list(searchParams: URLSearchParams): ListResult {
     const query = (searchParams.get('q') || '').trim();
     const topicSlug = (searchParams.get('topic') || '').trim();
+    const labelKey = (searchParams.get('label') || '').trim().slice(0, LABEL_LIMITS.slug);
     const day = normalizeDay(searchParams.get('day'));
     const view = parseView(searchParams.get('view'));
     const source = parseSource(searchParams.get('source'));
@@ -917,6 +961,11 @@ export class Bookmarks extends DurableObject<Env> {
     if (topicSlug) {
       filters.push('tweet_id IN (SELECT tweet_id FROM item_topics WHERE slug = ?)');
       args.push(topicSlug);
+    }
+
+    if (labelKey) {
+      filters.push('tweet_id IN (SELECT tweet_id FROM bookmark_labels WHERE slug = ?)');
+      args.push(labelKey);
     }
 
     if (day) {
@@ -949,8 +998,15 @@ export class Bookmarks extends DurableObject<Env> {
             WHERE instr(lower(t.name), lower(?)) > 0
                OR instr(lower(t.slug), lower(?)) > 0
           )
+          OR tweet_id IN (
+            SELECT bl.tweet_id
+            FROM bookmark_labels bl
+            JOIN labels l ON l.slug = bl.slug
+            WHERE instr(lower(l.name), lower(?)) > 0
+               OR instr(lower(l.slug), lower(?)) > 0
+          )
         )`);
-        args.push(term, term, term, term, term, term, term, term, term, term, term);
+        args.push(term, term, term, term, term, term, term, term, term, term, term, term, term);
       }
     }
 
@@ -998,6 +1054,7 @@ export class Bookmarks extends DurableObject<Env> {
 
     const bookmarks = rows.map(rowToBookmark);
     this.attachTopics(bookmarks);
+    this.attachLabels(bookmarks);
     this.attachVersions(bookmarks);
 
     return {
@@ -1005,6 +1062,7 @@ export class Bookmarks extends DurableObject<Env> {
       total: Number(countRow?.count ?? 0),
       query,
       topic: topicSlug || null,
+      label: labelKey || null,
       day,
       view,
       activeTotal: Number(counts?.active ?? 0),
@@ -1071,6 +1129,139 @@ export class Bookmarks extends DurableObject<Env> {
       bookmark.topics = byTweet.get(bookmark.tweetId) ?? [];
     }
     return bookmarks;
+  }
+
+  /** The reader's tags for a page of cards, in one query rather than one each. */
+  attachLabels(bookmarks: Bookmark[]): Bookmark[] {
+    if (!bookmarks.length) return bookmarks;
+    const ids = bookmarks.map(bookmark => bookmark.tweetId);
+    const placeholders = ids.map(() => '?').join(', ');
+    const rows = this.sql
+      .exec<LabelRefRow>(
+        `SELECT bl.tweet_id, l.slug, l.name
+         FROM bookmark_labels bl
+         JOIN labels l ON l.slug = bl.slug
+         WHERE bl.tweet_id IN (${placeholders})
+         ORDER BY l.name COLLATE NOCASE`,
+        ...ids,
+      )
+      .toArray();
+
+    const byTweet = new Map<string, LabelName[]>();
+    for (const row of rows) {
+      const list = byTweet.get(row.tweet_id) ?? [];
+      list.push({ slug: row.slug, name: row.name });
+      byTweet.set(row.tweet_id, list);
+    }
+    for (const bookmark of bookmarks) {
+      bookmark.labels = byTweet.get(bookmark.tweetId) ?? [];
+    }
+    return bookmarks;
+  }
+
+  /** The labels in use, most carried first: the library's filter row. */
+  labels(): LabelListResult {
+    const rows = this.sql
+      .exec<LabelCountRow>(
+        `SELECT l.slug, l.name, COUNT(bl.tweet_id) AS count
+         FROM labels l
+         JOIN bookmark_labels bl ON bl.slug = l.slug
+         GROUP BY l.slug, l.name
+         ORDER BY count DESC, l.name COLLATE NOCASE ASC
+         LIMIT ?`,
+        LABEL_LIMITS.menu,
+      )
+      .toArray();
+    return {
+      labels: rows.map(row => ({
+        slug: row.slug,
+        name: row.name,
+        count: Number(row.count ?? 0),
+      })),
+    };
+  }
+
+  /** Replace one post's label set. Labels no post carries any more are dropped. */
+  setLabels(idOrRef: string | null, labels: LabelName[]): Bookmark | null {
+    const id = this.resolveId(idOrRef);
+    if (!id) return null;
+    const exists = this.sql
+      .exec('SELECT 1 FROM bookmarks WHERE tweet_id = ?', id)
+      .toArray();
+    if (!exists.length) return null;
+    this.writeLabels(id, labels);
+    return this.get(id);
+  }
+
+  /** Drop one label from one post, leaving the rest of its set in place. */
+  removeLabel(idOrRef: string | null, slug: string): Bookmark | null {
+    const id = this.resolveId(idOrRef);
+    if (!id) return null;
+    const linked = this.sql
+      .exec('SELECT 1 FROM bookmark_labels WHERE tweet_id = ? AND slug = ?', id, slug)
+      .toArray();
+    if (!linked.length) return null;
+    this.sql.exec('DELETE FROM bookmark_labels WHERE tweet_id = ? AND slug = ?', id, slug);
+    this.pruneLabels();
+    return this.get(id);
+  }
+
+  private addLabels(tweetId: string, labels: LabelName[]): void {
+    if (!labels.length) return;
+    const current = this.sql
+      .exec<{ name: string }>(
+        `SELECT l.name FROM bookmark_labels bl
+         JOIN labels l ON l.slug = bl.slug
+         WHERE bl.tweet_id = ?`,
+        tweetId,
+      )
+      .toArray();
+    const merged = parseLabelNames([
+      ...current.map(row => row.name),
+      ...labels.map(label => label.name),
+    ]);
+    this.writeLabels(tweetId, merged);
+  }
+
+  /**
+   * The whole set in one place. The first spelling of a slug wins, because a
+   * label somebody typed as `Design` should not become `design` on the next
+   * post that happens to use lowercase.
+   */
+  private writeLabels(tweetId: string, labels: LabelName[]): void {
+    const now = new Date().toISOString();
+    if (!labels.length) {
+      this.sql.exec('DELETE FROM bookmark_labels WHERE tweet_id = ?', tweetId);
+    } else {
+      for (const label of labels) {
+        this.sql.exec(
+          `INSERT INTO labels (slug, name, created_at) VALUES (?, ?, ?)
+           ON CONFLICT(slug) DO NOTHING`,
+          label.slug,
+          label.name,
+          now,
+        );
+      }
+      const placeholders = labels.map(() => '?').join(', ');
+      this.sql.exec(
+        `DELETE FROM bookmark_labels WHERE tweet_id = ? AND slug NOT IN (${placeholders})`,
+        tweetId,
+        ...labels.map(label => label.slug),
+      );
+      for (const label of labels) {
+        this.sql.exec(
+          'INSERT INTO bookmark_labels (tweet_id, slug) VALUES (?, ?) ON CONFLICT DO NOTHING',
+          tweetId,
+          label.slug,
+        );
+      }
+    }
+    this.pruneLabels();
+  }
+
+  /** A label on no post is a word nobody uses; keep the filter row honest. */
+  private pruneLabels(): void {
+    this.sql.exec('DELETE FROM labels WHERE slug NOT IN (SELECT slug FROM bookmark_labels)');
   }
 
   attachVersions(bookmarks: Bookmark[]): Bookmark[] {
@@ -1157,6 +1348,7 @@ export class Bookmarks extends DurableObject<Env> {
       .toArray()
       .map(rowToBookmark);
     this.attachTopics(bookmarks);
+    this.attachLabels(bookmarks);
     this.attachVersions(bookmarks);
 
     const counts = this.sql
@@ -1195,6 +1387,7 @@ export class Bookmarks extends DurableObject<Env> {
     if (!row) return null;
     const bookmark = rowToBookmark(row);
     this.attachTopics([bookmark]);
+    this.attachLabels([bookmark]);
     bookmark.versions = this.versions(bookmark.tweetId);
     return bookmark;
   }
@@ -1246,8 +1439,12 @@ export class Bookmarks extends DurableObject<Env> {
       .map(row => row.slug);
 
     this.sql.exec('DELETE FROM item_topics WHERE tweet_id = ?', id);
+    this.sql.exec('DELETE FROM bookmark_labels WHERE tweet_id = ?', id);
     this.sql.exec('DELETE FROM summary_versions WHERE tweet_id = ?', id);
     this.sql.exec('DELETE FROM bookmarks WHERE tweet_id = ?', id);
+
+    // The post's links are gone, so a label no other post carries is unused.
+    this.pruneLabels();
 
     for (const slug of affected) {
       const remaining = this.sql
@@ -1441,7 +1638,14 @@ export class Bookmarks extends DurableObject<Env> {
     }
 
     const rows: Record<string, number> = {};
-    for (const table of ['bookmarks', 'summary_versions', 'topics', 'item_topics']) {
+    for (const table of [
+      'bookmarks',
+      'summary_versions',
+      'topics',
+      'item_topics',
+      'labels',
+      'bookmark_labels',
+    ]) {
       rows[table] = Number(
         this.sql.exec<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table}`).toArray()[0]
           ?.count ?? 0,
@@ -2156,6 +2360,8 @@ function rowToBookmark(row: BookmarkRow): Bookmark {
     article: parseJson<XArticle | null>(row.article_json, null),
     links: parseJson<LinkRead[]>(row.links_json, []),
     transcripts: parseJson<VideoTranscript[]>(row.transcripts_json, []),
+    // Filled by attachLabels for a page of cards; a bare row has no tag yet.
+    labels: [],
     // `{}` is the historical fallback for a missing metrics column; keep it
     // (renderMetrics treats missing fields as "no count").
     metrics: parseJson<Metrics>(row.metrics_json, {} as Metrics),

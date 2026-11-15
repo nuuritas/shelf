@@ -82,6 +82,7 @@ src/transcript.ts    video transcripts (Whisper for X, Piped by default for YouT
 src/render.ts        SSR HTML + this Worker's own stylesheet rules
 src/brand.ts         the cobalt palette, @font-face set, mark and asset version
 src/util.ts          escaping, linkify, cookies, base64, slugs
+src/labels.ts        label names, slugs and per-post limits (pure, no imports)
 src/types.ts         shared domain types
 public/              static assets, PWA manifest/service worker
 cli/shelf.ts         Bun CLI + stdio MCP server (search/show/export/mcp)
@@ -191,9 +192,11 @@ Pages: `/` (all saves, latest first), `?layout=folders` (folder grid), `/t/:slug
 the flat latest-first library by default; folders are an opt-in view, and a query
 or `day` always renders the flat list.
 The library and folder pages accept `view=active|archived`,
-`source=x|linkedin|youtube` and `lang=tr|en`; the library also accepts
-`day=YYYY-MM-DD` for a single saved day (linked from `/calendar`). Forms carry
-a `returnTo` so a mutation keeps the current view, language, day, and layout. `/settings` also drives notification subscriptions.
+`source=x|linkedin|youtube`, `lang=tr|en` and `label=<slug>`; the library also
+accepts `day=YYYY-MM-DD` for a single saved day (linked from `/calendar`). A
+`label` always renders the flat list. Forms carry a `returnTo` so a mutation
+keeps the current view, language, day, label, and layout. `/settings` also
+drives notification subscriptions.
 API: see `docs/PROGRESS.md` §3.
 
 ## Durable Object rules
@@ -352,6 +355,13 @@ API: see `docs/PROGRESS.md` §3.
   Language has a stored default in `settings` (set on `/settings`); `lang=tr|en`
   stays a per-view override and is still kept on links and form redirects. Day
   grouping and the calendar use UTC, matching `formatDate`.
+- Labels are stored, unlike those: `labels(slug PK, name, created_at)` plus
+  `bookmark_labels(tweet_id, slug)`. The slug is the key, so the first spelling
+  wins (`ON CONFLICT(slug) DO NOTHING`), and `src/labels.ts` owns the name, slug
+  and per-post limit rules. The DO parses labels once; the Worker forwards the
+  raw array or comma string from a form, note or API call. A bookmark keeps its
+  labels when it is re-posted, and a label that no post carries is pruned from
+  the menu. A label row renders on post and note cards in the flat list only.
 - Keep the no-JS fallback working (`<noscript>` overrides in `pageShell`).
 
 ## Security

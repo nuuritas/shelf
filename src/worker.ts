@@ -35,6 +35,7 @@ import type {
   DeleteResult,
   Env,
   GetResult,
+  LabelListResult,
   ListResult,
   ReindexResult,
   SaveResult,
@@ -185,6 +186,10 @@ const worker: ExportedHandler<Env> = {
       return secure(await handleArchiveForm(request, env));
     }
 
+    if (request.method === 'POST' && url.pathname === '/labels') {
+      return secure(await handleLabelsForm(request, env));
+    }
+
     if (request.method === 'POST' && url.pathname === '/translate-missing') {
       return secure(await handleTranslateMissingForm(request, env));
     }
@@ -270,6 +275,30 @@ const worker: ExportedHandler<Env> = {
       return secure(await apiGuard(() => handleApiTopics(env)));
     }
 
+    if (request.method === 'GET' && url.pathname === '/api/labels') {
+      return secure(await apiGuard(() => handleApiLabels(env)));
+    }
+
+    const labelsMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9_-]{1,30})\/labels$/);
+    if (labelsMatch && request.method === 'PUT') {
+      return secure(await apiGuard(() => handleApiSetLabels(labelsMatch[1], env, request)));
+    }
+
+    const labelRemoveMatch = url.pathname.match(
+      /^\/api\/bookmarks\/([A-Za-z0-9_-]{1,30})\/labels\/([^/]{1,80})$/,
+    );
+    if (labelRemoveMatch && request.method === 'DELETE') {
+      return secure(
+        await apiGuard(() =>
+          handleApiRemoveLabel(
+            labelRemoveMatch[1],
+            decodeURIComponent(labelRemoveMatch[2]),
+            env,
+          ),
+        ),
+      );
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/calendar') {
       return secure(await apiGuard(() => handleApiCalendar(url, env)));
     }
@@ -287,6 +316,7 @@ export default worker;
 async function handleHome(url: URL, env: Env, look: Appearance): Promise<Response> {
   const query = (url.searchParams.get('q') || '').trim();
   const day = parseDay(url.searchParams.get('day'));
+  const label = (url.searchParams.get('label') || '').trim().slice(0, 40);
   const view = parseView(url.searchParams.get('view'));
   const settings = await readSettings(env);
   const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
@@ -296,12 +326,14 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
   const params = new URLSearchParams({ limit: String(limit), view });
   if (query) params.set('q', query);
   if (day) params.set('day', day);
+  if (label) params.set('label', label);
   if (source !== 'all') params.set('source', source);
 
   try {
-    const [data, topicData] = await Promise.all([
+    const [data, topicData, labelData] = await Promise.all([
       doJson<ListResult>(env, `/list?${params.toString()}`),
       doJson<TopicListResult>(env, '/topics').catch((): TopicListResult => ({ topics: [] })),
+      doJson<LabelListResult>(env, '/labels').catch((): LabelListResult => ({ labels: [] })),
     ]);
     return htmlResponse(
       renderPage({
@@ -310,6 +342,8 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         query,
         day,
         topics: topicData.topics,
+        labels: labelData.labels,
+        label,
         view,
         lang,
         layout,
@@ -332,6 +366,8 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         query,
         day,
         topics: [],
+        labels: [],
+        label,
         view,
         lang,
         layout,
@@ -401,6 +437,46 @@ async function handleTopicPage(
 
 async function handleApiTopics(env: Env): Promise<Response> {
   return jsonResponse(await doJson<TopicListResult>(env, '/topics'));
+}
+
+async function handleApiLabels(env: Env): Promise<Response> {
+  return jsonResponse(await doJson<LabelListResult>(env, '/labels'));
+}
+
+/** Replace a post's label set; `labels: []` clears it. */
+async function handleApiSetLabels(id: string, env: Env, request: Request): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Body must be JSON.' }, 400);
+  }
+  const raw = isRecord(body) ? body.labels : undefined;
+  if (!Array.isArray(raw) && typeof raw !== 'string') {
+    return jsonResponse(
+      { error: 'A "labels" array or a comma-separated string is required.' },
+      400,
+    );
+  }
+  const result = await doJson<GetResult>(env, '/labels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, labels: raw }),
+  });
+  return jsonResponse(result);
+}
+
+/** Drop one label from one post. */
+async function handleApiRemoveLabel(id: string, slug: string, env: Env): Promise<Response> {
+  if (!/^[\p{L}\p{N}-]{1,40}$/u.test(slug)) {
+    return jsonResponse({ error: 'Not a label slug.' }, 400);
+  }
+  const result = await doJson<GetResult>(env, '/labels/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, slug }),
+  });
+  return jsonResponse(result);
 }
 
 async function handleCalendarPage(url: URL, env: Env, look: Appearance): Promise<Response> {
@@ -597,6 +673,24 @@ async function handleArchiveForm(request: Request, env: Env): Promise<Response> 
   }
 }
 
+async function handleLabelsForm(request: Request, env: Env): Promise<Response> {
+  const form = await request.formData();
+  const id = String(form.get('id') || '');
+  if (!/^[A-Za-z0-9_-]{1,30}$/.test(id)) return redirect('/?error=Invalid+bookmark');
+  const back = safeReturn(form.get('returnTo'), '/');
+
+  try {
+    await doJson<GetResult>(env, '/labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, labels: String(form.get('labels') || '') }),
+    });
+    return redirect(withNotice(back, 'labeled'));
+  } catch (error) {
+    return redirect(`/?error=${encodeURIComponent(errorMessage(error))}`);
+  }
+}
+
 async function handleTranslateMissingForm(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const back = safeReturn(form.get('returnTo'), '/?lang=en');
@@ -638,6 +732,8 @@ async function handleApiList(url: URL, env: Env): Promise<Response> {
   if (q) params.set('q', q);
   const topic = (url.searchParams.get('topic') || '').trim();
   if (topic) params.set('topic', topic);
+  const label = (url.searchParams.get('label') || '').trim().slice(0, 40);
+  if (label) params.set('label', label);
   const day = parseDay(url.searchParams.get('day'));
   if (day) params.set('day', day);
   params.set('view', parseListView(url.searchParams.get('view')));

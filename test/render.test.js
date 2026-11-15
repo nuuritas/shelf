@@ -538,3 +538,108 @@ test('the stylesheet scales from one rem root and declares no px font size', () 
   assert.match(CSS, /\.settings-label \{/);
 });
 
+
+function labelledPost(overrides = {}) {
+  return {
+    ref: 'k7f3a',
+    tweetId: '1985100000000000000',
+    url: 'https://x.com/a/status/1985100000000000000',
+    text: 'A post about design systems.',
+    kind: 'post',
+    format: 'text',
+    title: null,
+    content: null,
+    agent: null,
+    sourceUrl: 'https://x.com/a/status/1985100000000000000',
+    createdAt: '2026-10-31T15:11:54.000Z',
+    savedAt: '2026-11-06T00:00:00.000Z',
+    provider: 'x',
+    author: { name: 'A', username: 'a', avatarUrl: null, verified: false },
+    media: [],
+    quote: null,
+    article: null,
+    links: [],
+    transcripts: [],
+    metrics: {},
+    summary: 'A useful summary.',
+    summaryStatus: 'done',
+    summaryError: null,
+    summarizedAt: '2026-11-06T00:01:00.000Z',
+    summaryEn: null,
+    summaryEnStatus: null,
+    summaryEnError: null,
+    summaryEnAt: null,
+    archivedAt: null,
+    topics: [],
+    labels: [],
+    ...overrides,
+  };
+}
+
+test('the library reads by label: a filter row, a heading and a card chip', () => {
+  const html = renderPage({
+    bookmarks: [
+      labelledPost({
+        labels: [
+          { slug: 'design', name: 'Design' },
+          { slug: 'reading', name: 'Reading' },
+        ],
+      }),
+    ],
+    total: 1,
+    query: '',
+    labels: [
+      { slug: 'design', name: 'Design', count: 2 },
+      { slug: 'reading', name: 'Reading', count: 1 },
+    ],
+    label: 'reading',
+    aiConfigured: true,
+  });
+
+  // The row is a filter over the same shelf, not a folder tree.
+  assert.match(html, /<nav class="view-switch label-switch" role="group" aria-label="Label filter">/);
+  assert.match(html, /href="\/\?label=design">Design<span>2<\/span>/);
+  assert.match(html, /class="active" href="\/\?label=reading">Reading<span>1<\/span>/);
+  // The selected label is the page's heading.
+  assert.match(html, /<h2>Reading<\/h2>/);
+  // A chip on the card opens that label's view.
+  assert.match(html, /<a class="label" href="\/\?label=reading">Reading<\/a>/);
+  // The editor rewrites the whole set and remembers the filtered view.
+  assert.match(html, /<form class="label-form" method="post" action="\/labels">/);
+  assert.match(html, /name="labels" value="Design, Reading"/);
+  assert.match(html, /name="returnTo" value="\/\?label=reading"/);
+});
+
+test('a card with no labels still offers the editor', () => {
+  const html = renderPage({
+    bookmarks: [labelledPost()],
+    total: 1,
+    query: '',
+    aiConfigured: true,
+  });
+
+  assert.match(html, /<summary>\+ Label<\/summary>/);
+  assert.match(html, /name="labels" value=""/);
+});
+
+test('a label name is escaped where it is shown', () => {
+  const html = renderPage({
+    bookmarks: [
+      labelledPost({ labels: [{ slug: 'x', name: '<img src=x onerror=alert(1)>' }] }),
+    ],
+    total: 1,
+    query: '',
+    labels: [{ slug: 'x', name: '<img src=x onerror=alert(1)>', count: 1 }],
+    label: 'x',
+    aiConfigured: true,
+  });
+
+  assert.doesNotMatch(html, /<img src=x onerror=/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+});
+
+test('the label styles read from tokens and stay off the page style attribute', () => {
+  assert.match(CSS, /\.card-labels \{[^}]*display: flex;/);
+  assert.match(CSS, /\.label \{[^}]*border: 1px solid var\(--line\);/);
+  assert.match(CSS, /\.label-form button \{[^}]*font-weight: 650;/);
+});
