@@ -27,6 +27,7 @@ import { parseYouTubeUrl, readYouTubePost } from './youtube.ts';
 import { readTranscripts } from './transcript.ts';
 import {
   clampInteger,
+  filingReadySql,
   jsonResponse,
   parseSource,
   recoverDisabledSummariesSql,
@@ -1464,7 +1465,8 @@ export class Bookmarks extends DurableObject<Env> {
     // query selects. Once AI is configured, move a bounded batch back to
     // `pending` so a recovered deployment picks the backlog up instead of
     // leaving it stuck. While AI stays off the helper returns null.
-    const recovery = recoverDisabledSummariesSql(isAiConfigured(this.env));
+    const aiConfigured = isAiConfigured(this.env);
+    const recovery = recoverDisabledSummariesSql(aiConfigured);
     if (recovery) this.sql.exec(recovery);
 
     const staleBefore = Date.now() - STALE_SUMMARY_MS;
@@ -1575,7 +1577,7 @@ export class Bookmarks extends DurableObject<Env> {
       const unfiled = this.sql
         .exec<BookmarkRow>(
           `SELECT * FROM bookmarks
-           WHERE summary_status = 'done' AND topics_status = 'pending'
+           WHERE ${filingReadySql(aiConfigured)} AND topics_status = 'pending'
            ORDER BY saved_at ASC
            LIMIT 1`,
         )
@@ -1611,6 +1613,7 @@ export class Bookmarks extends DurableObject<Env> {
     const hasTopics = Number(
       this.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM topics').toArray()[0]?.count ?? 0,
     );
+    const filingReady = filingReadySql(isAiConfigured(this.env));
 
     const pending = this.sql
       .exec<PendingCountsRow>(
@@ -1619,7 +1622,7 @@ export class Bookmarks extends DurableObject<Env> {
              WHERE summary_status = 'pending'
                AND (summary_retry_at IS NULL OR summary_retry_at <= ?)) AS summaries,
            (SELECT COUNT(*) FROM bookmarks
-             WHERE summary_status = 'done' AND topics_status = 'pending') AS filings,
+             WHERE ${filingReady} AND topics_status = 'pending') AS filings,
            (SELECT COUNT(*) FROM bookmarks WHERE version_status = 'pending') AS versions,
            (SELECT COUNT(*) FROM bookmarks WHERE summary_en_status = 'pending') AS translations,
            (SELECT COUNT(*) FROM topics t WHERE t.overview IS NULL OR t.overview_count != (

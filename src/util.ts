@@ -82,11 +82,27 @@ export function sourceFilterSql(source: Exclude<SourceFilter, 'all'>): string {
 }
 
 /**
+ * Rows the topic-filing pass may pick. A saved post is filed only once its
+ * summary is done, because the classifier reads it. A note is content on
+ * arrival, so it files from its own extracted text and never waits for an AI
+ * summary. While AI is unconfigured no filing can succeed, so only summarized
+ * posts are selected and notes stay pending for a configured deployment.
+ */
+export function filingReadySql(aiConfigured: boolean): string {
+  return aiConfigured
+    ? `(summary_status = 'done' OR COALESCE(kind, 'post') = 'note')`
+    : `summary_status = 'done'`;
+}
+
+/**
  * Re-queue `disabled` summaries once AI is configured. `disabled` means "saved
  * while AI was off", not a queue state, so no queue query selects it again and
- * those rows would stay stuck forever. The batch is bounded because the alarm
- * summarizes one row per pass; a large backlog drains over several passes
- * instead of stalling the queue. Returns null while AI stays unconfigured.
+ * those rows would stay stuck forever. An agent note that arrived without an
+ * abstract is also `disabled`, but it is complete as written and must never be
+ * summarized, so it stays out of this backlog. The batch is bounded because
+ * the alarm summarizes one row per pass; a large backlog drains over several
+ * passes instead of stalling the queue. Returns null while AI stays
+ * unconfigured.
  */
 export function recoverDisabledSummariesSql(aiConfigured: boolean): string | null {
   if (!aiConfigured) return null;
@@ -96,6 +112,7 @@ export function recoverDisabledSummariesSql(aiConfigured: boolean): string | nul
     WHERE tweet_id IN (
       SELECT tweet_id FROM bookmarks
       WHERE summary_status = 'disabled'
+        AND COALESCE(kind, 'post') != 'note'
       ORDER BY saved_at ASC
       LIMIT 10
     )`;
