@@ -60,6 +60,7 @@ import {
   jsonResponse,
   parseCookies,
   parseSource,
+  parseSourceList,
   redirect,
   sha256Hex,
 } from './util.ts';
@@ -362,18 +363,23 @@ export default worker;
 async function handleHome(url: URL, env: Env, look: Appearance): Promise<Response> {
   const query = (url.searchParams.get('q') || '').trim();
   const day = parseDay(url.searchParams.get('day'));
-  const label = (url.searchParams.get('label') || '').trim().slice(0, 40);
+  const labels = url.searchParams
+    .getAll('label')
+    .map(value => value.trim().slice(0, 40))
+    .filter(Boolean);
+  const label = labels[0] || '';
   const view = parseView(url.searchParams.get('view'));
   const settings = await readSettings(env);
   const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
   const layout = parseLayout(url.searchParams.get('layout'));
-  const source = parseSource(url.searchParams.get('source'));
+  const sources = parseSourceList(url.searchParams.getAll('source'));
+  const source = sources[0] ?? 'all';
   const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
   const params = new URLSearchParams({ limit: String(limit), view });
   if (query) params.set('q', query);
   if (day) params.set('day', day);
-  if (label) params.set('label', label);
-  if (source !== 'all') params.set('source', source);
+  for (const value of labels) params.append('label', value);
+  for (const value of sources) params.append('source', value);
 
   try {
     const [data, topicData, labelData] = await Promise.all([
@@ -777,15 +783,20 @@ async function handleApiList(url: URL, env: Env): Promise<Response> {
   const params = new URLSearchParams();
   const q = (url.searchParams.get('q') || '').trim();
   if (q) params.set('q', q);
-  const topic = (url.searchParams.get('topic') || '').trim();
-  if (topic) params.set('topic', topic);
-  const label = (url.searchParams.get('label') || '').trim().slice(0, 40);
-  if (label) params.set('label', label);
+  for (const value of url.searchParams.getAll('topic')) {
+    const topic = value.trim();
+    if (topic) params.append('topic', topic);
+  }
+  for (const value of url.searchParams.getAll('label')) {
+    const label = value.trim().slice(0, 40);
+    if (label) params.append('label', label);
+  }
   const day = parseDay(url.searchParams.get('day'));
   if (day) params.set('day', day);
   params.set('view', parseListView(url.searchParams.get('view')));
-  const source = parseSource(url.searchParams.get('source'));
-  if (source !== 'all') params.set('source', source);
+  for (const source of parseSourceList(url.searchParams.getAll('source'))) {
+    params.append('source', source);
+  }
   params.set('limit', String(clampInteger(url.searchParams.get('limit'), 50, 1, 100)));
   params.set('offset', String(clampInteger(url.searchParams.get('offset'), 0, 0, 10_000)));
   return jsonResponse(await doJson<ListResult>(env, `/list?${params.toString()}`));

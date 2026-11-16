@@ -68,6 +68,41 @@ export function parseSource(value: unknown): SourceFilter {
   return raw === 'x' || raw === 'linkedin' || raw === 'youtube' ? raw : 'all';
 }
 
+/**
+ * Repeated `source` query values → one deduplicated filter set. Each value runs
+ * through `parseSource`, so unknown values fall back to `all`; an `all` anywhere
+ * opens the cut back to every platform, which is what one unknown value does
+ * today. An empty list means no source filter.
+ */
+export function parseSourceList(values: Iterable<unknown>): Exclude<SourceFilter, 'all'>[] {
+  const sources: Exclude<SourceFilter, 'all'>[] = [];
+  for (const value of values) {
+    const source = parseSource(value);
+    if (source === 'all') return [];
+    if (!sources.includes(source)) sources.push(source);
+  }
+  return sources;
+}
+
+/** SQL predicate matching any of `sources`; empty when the cut is open. */
+export function sourceFiltersSql(sources: readonly Exclude<SourceFilter, 'all'>[]): string {
+  const parts = [...new Set(sources)].map(source => sourceFilterSql(source));
+  return parts.length ? `(${parts.join(' OR ')})` : '';
+}
+
+/**
+ * `column IN (?, ?, …)` for repeated filter values, duplicates dropped; null
+ * when no value is set, so the caller can skip that cut entirely.
+ */
+export function filterInSql(
+  column: string,
+  values: readonly string[],
+): { sql: string; args: string[] } | null {
+  const unique = [...new Set(values)];
+  if (!unique.length) return null;
+  return { sql: `${column} IN (${unique.map(() => '?').join(', ')})`, args: unique };
+}
+
 /** SQL predicate over a `url` column for one source, matching `sourceOfUrl`. */
 export function sourceFilterSql(source: Exclude<SourceFilter, 'all'>): string {
   const host = URL_HOST_SQL;
