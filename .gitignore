@@ -13,3 +13,5 @@ out/
 # Local deployment config: keeps your domains and provider settings out of the
 # public repository. Copy cloudflare.personal.example.json to start.
 cloudflare.personal.json
+# `cf deploy --mode personal` also reads this file for domains and overrides.
+wrangler.personal.jsonc

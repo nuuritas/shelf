@@ -1,17 +1,20 @@
 # Shelf
 
-Your own private reading archive for X, LinkedIn, YouTube and any web page, on
-your own Cloudflare account. Paste or share a link and it keeps the text, the
-quote, the full article, the images and the links, then writes a plain-language
-summary and files it into a folder. One Worker, one SQLite Durable Object, server-rendered
-HTML, no build step, no database to manage. The free plan is enough for personal
-use.
+Shelf is a self-hosted reading archive for X, LinkedIn, YouTube and any web
+page, running entirely on your own Cloudflare account. Paste or share a link and
+it keeps the text, the quote, the full article, the images and the links, then
+writes a plain-language summary and files it into a folder. One Worker, one
+SQLite Durable Object, server-rendered HTML, no build step, no database to
+manage. The free plan is enough for personal use.
 
-Everything it keeps stays in your own Cloudflare account; nothing is sent to a third-party service.
+It is open source under the MIT licence and built for one reader: one password,
+one library, no accounts, no telemetry. Everything it keeps stays in your own
+Cloudflare account; nothing is sent to a third-party service.
 
-## Default branch
+## Status
 
-`main` is the default branch. Open pull requests against `main`.
+Shelf is actively developed. `main` is the default branch and stays deployable;
+open pull requests against `main`.
 
 ## Install it with your AI
 
@@ -65,16 +68,17 @@ commands.
   the CLI. A label is not a folder: the same save can carry several, and the AI
   never writes one.
 - **Tune it** — a Settings page (web and the Android app) for the summary
-  prompt, language and notifications; new summaries pick up the change without
-  a redeploy.
+  prompt, the summary language, notifications, and the theme and text size of
+  this browser; new summaries pick up the prompt and language without a
+  redeploy.
 - **Get notified** — a browser notification when a summary is ready, and a
   background check in the Android app that posts a system notification.
 - **Reach it from AI tools** — a Bun CLI and a stdio MCP server, so Claude Code,
-  Codex, or Cursor can search the vault themselves (by label too), and `shelf add`
+  Codex, or Cursor can search the vault themselves (by label too). `shelf add`
   lets an agent save a finished research note (markdown, or sandboxed HTML) next
-  to your links, tagged with `--label`.
-  The authoring contract is in [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), also
-  available as `shelf guide` and the MCP `get_authoring_guide` tool.
+  to your links, tagged with `--label`. The authoring contract is in
+  [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), also available as `shelf guide` and
+  the MCP `get_authoring_guide` tool.
 
 ## What it costs
 
@@ -110,8 +114,17 @@ Nothing, for a personal archive:
 - [INSTALL.md](INSTALL.md) — the install checklist, for humans and agents.
 - [docs/PROGRESS.md](docs/PROGRESS.md) — architecture, API routes, measured
   usage, traps.
+- [docs/DESIGN.md](docs/DESIGN.md) — the design system: tokens, type, mark, layout.
+- [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md) — the contract for agents that save
+  notes.
 - [AGENTS.md](AGENTS.md) — rules for coding agents changing the code.
-- [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers
+local setup, the checks CI runs, and the code layout; [SECURITY.md](SECURITY.md)
+says how to report a vulnerability privately. The repository stays actively
+developed, and `main` is always the deployable branch.
 
 There is no hosted demo: every deployment is password-gated, so a public URL
 would only show a login page.
