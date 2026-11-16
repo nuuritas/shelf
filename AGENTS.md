@@ -266,9 +266,9 @@ API: see `docs/PROGRESS.md` §3.
 - Structured calls (`bootstrapTopics`, `classifyPost`) parse JSON leniently:
   strip code fences, take the outermost `{...}`. Treat the result as untrusted
   and validate slugs/ids against the database before writing.
-- Prompts are product decisions. The summary voice is natural Turkish prose
-  (3–5 paragraphs, no headings, no "Özet/Ana noktalar"), not a template. Keep it
-  that way unless explicitly asked.
+- Prompts are product decisions. The summary voice is natural prose in the
+  summary language (3–5 paragraphs, no headings, no "Özet/Ana noktalar"), not a
+  template. Keep it that way unless explicitly asked.
 - Video transcripts are read in `src/transcript.ts` before the summary call.
   X videos use the smallest MP4 variant from `video.twimg.com` and Workers AI
   `@cf/openai/whisper-large-v3-turbo` (binding `AI`; 10,000 free neurons/day is
@@ -295,7 +295,7 @@ API: see `docs/PROGRESS.md` §3.
   429 stops the run. This is the free path when no Supadata key is set; it is
   not part of the Worker request path.
 - `SUMMARY_LANGUAGE` is the **initial default** for the main summary language
-  (Turkish in production). The Settings page stores an override in the
+  (English unless set). The Settings page stores an override in the
   `settings` table, and the DO passes it to every AI helper through `aiEnv()`,
   so the language and prompt change without a redeploy.
 - The summary system prompt comes from the `settings` table (empty means the
