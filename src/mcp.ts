@@ -21,6 +21,11 @@
  *
  * Stateless by design: no session id, no server-initiated stream. A POST
  * carries one request and gets one JSON response, which the transport allows.
+ *
+ * We do not check `Origin` or `MCP-Protocol-Version`. The credential is the
+ * bearer password or a `SameSite=Lax` session cookie, and a stateless endpoint
+ * holds no session or data of its own, so Origin adds no gate a browser would
+ * not already apply. A future stateful transport has to revisit this.
  */
 import { labelSlug } from './labels.ts';
 import { normalizeNoteInput } from './notes.ts';
