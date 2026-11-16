@@ -3,10 +3,14 @@ import test from 'node:test';
 import { DEFAULT_SUMMARY_PROMPT, buildSummarySystemPrompt } from '../src/ai.ts';
 import {
   MAX_SUMMARY_PROMPT_LENGTH,
+  WORKSPACE_NAME_MAX,
   defaultSummaryLanguage,
+  normalizeSummariesEnabled,
   normalizeSummaryLanguage,
   normalizeSummaryPrompt,
+  normalizeWorkspaceName,
   validateSummaryPrompt,
+  workspaceNameError,
 } from '../src/settings.ts';
 
 test('the env language is the initial default, and English wins when unset', () => {
@@ -73,4 +77,27 @@ test('a new version keeps its angle wrapper in front of the custom prompt', () =
   });
   assert.match(prompt, /^You are writing a new version of an existing explanation/);
   assert.match(prompt, /Write in English\. Use short paragraphs\.$/);
+});
+
+test('the workspace name is trimmed and bounded like the hosted one', () => {
+  assert.equal(normalizeWorkspaceName('  My shelf  '), 'My shelf');
+  assert.equal(normalizeWorkspaceName('one\r\ntwo'), 'one\ntwo');
+  assert.equal(normalizeWorkspaceName(undefined), '');
+
+  assert.equal(workspaceNameError(''), 'workspace_empty');
+  assert.equal(workspaceNameError('   '), 'workspace_empty');
+  assert.equal(workspaceNameError('a'.repeat(WORKSPACE_NAME_MAX)), null);
+  assert.equal(workspaceNameError('a'.repeat(WORKSPACE_NAME_MAX + 1)), 'workspace_long');
+});
+
+test('the summaries toggle understands the stored string and the JSON boolean', () => {
+  assert.equal(normalizeSummariesEnabled(true, false), true);
+  assert.equal(normalizeSummariesEnabled(false, true), false);
+  assert.equal(normalizeSummariesEnabled('1', false), true);
+  assert.equal(normalizeSummariesEnabled('0', true), false);
+  assert.equal(normalizeSummariesEnabled('true', false), true);
+  assert.equal(normalizeSummariesEnabled('false', true), false);
+  // A row that was never written keeps the default instead of reading as off.
+  assert.equal(normalizeSummariesEnabled(undefined, true), true);
+  assert.equal(normalizeSummariesEnabled('', true), true);
 });

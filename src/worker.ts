@@ -27,6 +27,8 @@ import {
   normalizeSummaryLanguage,
   normalizeSummaryPrompt,
   validateSummaryPrompt,
+  workspaceNameError,
+  workspaceNameMessage,
 } from './settings.ts';
 import type {
   ArchiveResult,
@@ -269,6 +271,44 @@ const worker: ExportedHandler<Env> = {
 
     if (request.method === 'GET' && url.pathname === '/api/stats') {
       return secure(await apiGuard(() => handleApiStats(env)));
+    }
+
+    // The native apps draw their own Settings screen, so the one aggregate read
+    // the hosted service answers at `/api/settings` is answered here too. The
+    // shape is the hosted one; the plan and the key are the deployment's own.
+    if (request.method === 'GET' && url.pathname === '/api/settings') {
+      return secure(await apiGuard(() => handleApiSettings(env)));
+    }
+
+    if (request.method === 'PUT' && url.pathname === '/api/settings/language') {
+      return secure(await apiGuard(() => handleApiSetLanguage(env, request)));
+    }
+
+    if (request.method === 'PUT' && url.pathname === '/api/settings/ai-summaries') {
+      return secure(await apiGuard(() => handleApiSetAiSummaries(env, request)));
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/settings/ai-key') {
+      return secure(await apiGuard(() => handleApiAiKey(env)));
+    }
+
+    if (
+      (request.method === 'PUT' || request.method === 'DELETE') &&
+      url.pathname === '/api/settings/ai-key'
+    ) {
+      return secure(await apiGuard(() => handleApiWriteAiKey(request)));
+    }
+
+    if (request.method === 'PUT' && url.pathname === '/api/settings/workspace') {
+      return secure(await apiGuard(() => handleApiRenameWorkspace(env, request)));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/settings/plan/upgrade') {
+      return secure(await apiGuard(() => handleApiUpgradePlan()));
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/plans') {
+      return secure(jsonResponse(selfHostedPlans(env)));
     }
 
     if (request.method === 'GET' && url.pathname === '/api/topics') {
@@ -550,6 +590,7 @@ async function handleSettingsSave(request: Request, env: Env): Promise<Response>
     htmlResponse(
       renderSettings({
         settings: {
+          ...current,
           summaryPrompt: reset ? current.summaryPrompt : rawPrompt,
           summaryLanguage: language,
         },
@@ -969,6 +1010,184 @@ async function handleApiStats(env: Env): Promise<Response> {
   return jsonResponse(await doJson<StatsResult>(env, '/stats'));
 }
 
+// ---------------------------------------------------------------------------
+// Native settings API
+//
+// The apps in `nuuritas/shelf-cloud` draw Settings themselves and read one
+// aggregate object. The hosted service answers it from Postgres; here the
+// deployment's stored preferences and env are the whole truth: one library,
+// no tenant, no plan.
+// ---------------------------------------------------------------------------
+
+const SELF_PLAN = {
+  id: 'self',
+  name: 'Self-hosted',
+  bookmarkLimit: 0,
+  aiMonthly: 0,
+  priceCents: 0,
+  availability: 'available',
+};
+
+/** The catalogue the plan card reads; there is nothing to buy on your own Worker. */
+function selfHostedPlans(env: Env) {
+  return {
+    plans: [
+      {
+        ...SELF_PLAN,
+        managedAi: isAiConfigured(env),
+      },
+    ],
+    billing: {
+      status: 'self_hosted',
+      message: 'This server is self-hosted: there is no plan to buy and no limit to reach.',
+    },
+  };
+}
+
+function languageNative(tag: SummaryLanguage): string {
+  return tag === 'tr' ? 'Türkçe' : 'English';
+}
+
+function currentPeriodStart(): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
+function envCredential(env: Env) {
+  if (!isAiConfigured(env)) return null;
+  const config = aiConfig(env);
+  return {
+    provider: config.provider,
+    baseUrl: config.baseUrl,
+    model: config.model,
+    hint: 'server key',
+    // The key is a Worker secret, not a per-user row: the app shows it and
+    // hides the form instead of offering a save that would go nowhere.
+    readOnly: true,
+  };
+}
+
+async function handleApiSettings(env: Env): Promise<Response> {
+  const [settings, stats] = await Promise.all([
+    readSettings(env),
+    doJson<StatsResult>(env, '/stats').catch(() => null),
+  ]);
+  const configured = isAiConfigured(env);
+  return jsonResponse({
+    tenant: {
+      id: 'self',
+      name: settings.workspaceName || 'Your library',
+      slug: '',
+      planId: SELF_PLAN.id,
+    },
+    plan: { ...SELF_PLAN, managedAi: configured },
+    usage: {
+      periodStart: currentPeriodStart(),
+      aiSummaries: stats?.summarizedThisMonth ?? 0,
+      aiMonthly: 0,
+      ingestCalls: stats?.total ?? 0,
+    },
+    aiSummaries: { enabled: configured && settings.summariesEnabled },
+    credential: envCredential(env),
+    language: {
+      tag: settings.summaryLanguage,
+      native: languageNative(settings.summaryLanguage),
+    },
+  });
+}
+
+/** The deployment writes English or Turkish summaries; anything else is a 400. */
+function resolveSummaryLanguage(value: unknown): SummaryLanguage | null {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (text === 'en' || text === 'english') return 'en';
+  if (text === 'tr' || text === 'turkish' || text === 'türkçe' || text === 'turkce') return 'tr';
+  return null;
+}
+
+async function handleApiSetLanguage(env: Env, request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as { language?: unknown };
+  const tag = resolveSummaryLanguage(body.language);
+  if (!tag) {
+    return jsonResponse(
+      {
+        error: 'This server writes summaries in English or Turkish.',
+        code: 'language_unknown',
+      },
+      400,
+    );
+  }
+  const settings = await doJson<StoredSettings>(env, '/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summaryLanguage: tag }),
+  });
+  return jsonResponse({
+    language: {
+      tag: settings.summaryLanguage,
+      native: languageNative(settings.summaryLanguage),
+    },
+  });
+}
+
+async function handleApiSetAiSummaries(env: Env, request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as { enabled?: unknown };
+  if (typeof body.enabled !== 'boolean') {
+    return jsonResponse({ error: '"enabled" must be a boolean' }, 400);
+  }
+  const settings = await doJson<StoredSettings>(env, '/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summariesEnabled: body.enabled }),
+  });
+  return jsonResponse({ enabled: isAiConfigured(env) && settings.summariesEnabled });
+}
+
+async function handleApiAiKey(env: Env): Promise<Response> {
+  return jsonResponse({ credential: envCredential(env) });
+}
+
+async function handleApiWriteAiKey(request: Request): Promise<Response> {
+  const method = request.method === 'DELETE' ? 'remove' : 'save';
+  return jsonResponse(
+    {
+      error:
+        `This server's AI key is the AI_API_KEY secret in its environment. ` +
+        `To ${method} it, change the secret and redeploy; the app only displays it.`,
+      code: 'ai_key_managed',
+    },
+    409,
+  );
+}
+
+async function handleApiRenameWorkspace(env: Env, request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as { name?: unknown };
+  const raw = typeof body.name === 'string' ? body.name : '';
+  const invalid = workspaceNameError(raw);
+  if (invalid) {
+    return jsonResponse({ error: workspaceNameMessage(invalid), code: 'workspace_name' }, 400);
+  }
+  const stored = await doJson<StoredSettings>(env, '/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspaceName: raw.trim() }),
+  });
+  return jsonResponse({
+    tenant: {
+      id: 'self',
+      name: stored.workspaceName,
+      slug: '',
+      planId: SELF_PLAN.id,
+    },
+  });
+}
+
+async function handleApiUpgradePlan(): Promise<Response> {
+  return jsonResponse(
+    { error: 'This server is self-hosted: there is no plan to upgrade.', code: 'self_hosted' },
+    409,
+  );
+}
+
 async function apiGuard(handler: () => Promise<Response>): Promise<Response> {
   try {
     return await handler();
@@ -991,7 +1210,12 @@ async function readSettings(env: Env): Promise<StoredSettings> {
   try {
     return await doJson<StoredSettings>(env, '/settings');
   } catch {
-    return { summaryPrompt: '', summaryLanguage: defaultSummaryLanguage(env) };
+    return {
+      summaryPrompt: '',
+      summaryLanguage: defaultSummaryLanguage(env),
+      workspaceName: '',
+      summariesEnabled: true,
+    };
   }
 }
 

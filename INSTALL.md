@@ -223,11 +223,18 @@ at first launch:
 1. Server URL: the Worker URL from step 6.
 2. Password: the same `APP_PASSWORD`.
 
-The app tests the connection with `GET /healthz` and `GET /api/stats`, stores
-the session cookie, and opens the library in its own WebView. Sharing an X,
-LinkedIn or YouTube link to **Shelf** saves it in the background; a short toast
-reports the result. The Android build also polls for finished summaries and
-posts a system notification.
+The app tests the connection with `GET /healthz` and `GET /api/stats`, then
+keeps the password as a bearer token: the library is native views over the JSON
+API, not a WebView, so it looks the same against this Worker and against Shelf
+Cloud. Sharing an X, LinkedIn or YouTube link to **Shelf** saves it in the
+background; a short toast reports the result. The Android build also polls for
+finished summaries and posts a system notification.
+
+Settings in the app reads `GET /api/settings`, the same aggregate the hosted
+service answers: the workspace name, the summary language, the AI switch, and
+one plan card. Nodes that belong to a deployment are the deployment's own — the
+AI key is the `AI_API_KEY` secret, so the app shows it read-only, and the plan
+is **Self-hosted** with no caps and nothing to buy.
 
 The apps are dual-mode: no password or token is compiled in, and the one
 built-in host is the public Shelf Cloud default, which the first launch screen
@@ -244,7 +251,7 @@ stay in the Durable Object. `PUSH_CONTACT` can be a `mailto:` or `https:` URI
 that a push service can use to contact the owner; it defaults to the repository
 URL.
 
-The Android app cannot receive Web Push inside a WebView, so it polls the
+The Android app has no Web Push receiver, so it polls the
 Worker in the background (about every 15 minutes, plus a sooner check after a
 share) and posts a system notification. Android 13+ asks for the notification
 permission on first launch. The Settings page's **Send a test notification**
