@@ -100,9 +100,9 @@ Nothing, for a personal archive:
   posts a notification when a summary is ready, and an iOS app with a share
   extension. Both are dual-mode: enter your Worker URL and password, or sign in
   to Shelf Cloud. They are published as a signed build, so there is nothing to
-  compile here. The client source is **private** and lives with the hosted
-  service; it is not published for reuse. The web app still works as a PWA on
-  both platforms.
+  compile here. The current client source is private and lives with the hosted
+  service, so it is not maintained for reuse; an early v1 client remains in this
+  repository's history. The web app still works as a PWA on both platforms.
 - **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`.
 - **Custom domain** — a workers.dev URL works; a domain is one key in
   `cloudflare.personal.json`.
