@@ -391,10 +391,10 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         activeTotal: data.activeTotal,
         archivedTotal: data.archivedTotal,
         missingEnglish: data.missingEnglish,
-        bilingual: settings.summaryLanguage === 'tr' && aiOn(env, settings),
+        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
-        aiConfigured: aiOn(env, settings),
+        aiConfigured: isAiConfigured(env),
         appearance: look,
       }),
     );
@@ -414,10 +414,10 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         source,
         activeTotal: 0,
         archivedTotal: 0,
-        bilingual: settings.summaryLanguage === 'tr' && aiOn(env, settings),
+        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
         notice: null,
         error: errorMessage(error),
-        aiConfigured: aiOn(env, settings),
+        aiConfigured: isAiConfigured(env),
         appearance: look,
       }),
       502,
@@ -463,10 +463,10 @@ async function handleTopicPage(
         view,
         lang,
         source,
-        bilingual: settings.summaryLanguage === 'tr' && aiOn(env, settings),
+        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
-        aiConfigured: aiOn(env, settings),
+        aiConfigured: isAiConfigured(env),
         appearance: look,
       }),
     );
@@ -1203,11 +1203,6 @@ async function readPushState(env: Env): Promise<{ subscriptions: number }> {
   } catch {
     return { subscriptions: 0 };
   }
-}
-
-/** New saves summarize only while a key exists and the reader left summaries on. */
-function aiOn(env: Env, settings: StoredSettings): boolean {
-  return isAiConfigured(env) && settings.summariesEnabled;
 }
 
 /** Settings, with the env defaults when the Durable Object cannot answer. */

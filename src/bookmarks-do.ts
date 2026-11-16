@@ -1700,9 +1700,11 @@ export class Bookmarks extends DurableObject<Env> {
     // A row saved while AI was off is parked at `disabled`, which no queue
     // query selects. Once AI is configured, move a bounded batch back to
     // `pending` so a recovered deployment picks the backlog up instead of
-    // leaving it stuck. While AI stays off the helper returns null.
+    // leaving it stuck. While AI stays off the helper returns null. The reader's
+    // summaries switch gates this too, or a save made while it is off would be
+    // summarized by the next pass.
     const aiConfigured = isAiConfigured(this.env);
-    const recovery = recoverDisabledSummariesSql(aiConfigured);
+    const recovery = recoverDisabledSummariesSql(this.summariesOn());
     if (recovery) this.sql.exec(recovery);
 
     const staleBefore = Date.now() - STALE_SUMMARY_MS;
