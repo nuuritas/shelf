@@ -104,8 +104,10 @@ wall-clock is long but CPU stays low.
 
 - Silent Android share (translucent activity, Toast, auto-finish)
 - PWA shell with service worker (share target works on Chrome, not Brave)
-- AI summary: natural Turkish prose, 3–5 paragraphs; reads images as base64,
-  X Article bodies, quoted posts, up to two external links, and video transcripts
+- AI summary: natural prose in the configured summary language (English unless
+  the deployment sets `SUMMARY_LANGUAGE` or an override on `/settings`),
+  3–5 paragraphs; reads images as base64, X Article bodies, quoted posts, up to
+  two external links, and video transcripts
 - LinkedIn posts: a public post URL is collapsed to its `activity` id, the
   canonical page is read without cookies, and the post text comes from the
   `description`/`og:description` meta tag (falling back to the article body).
@@ -150,10 +152,12 @@ wall-clock is long but CPU stays low.
   Active view but keeps the row, summary, topics, and searchability. Active and
   Archived are a toggle on the library and on topic pages; re-sharing an
   archived post puts it back in the inbox
-- English board: the Turkish summary is primary; when it finishes, an English
-  translation is queued automatically into `summary_en`. The `Türkçe / English`
-  switch re-renders the same page; missing translations show a per-card button,
-  and one banner button queues every missing one
+- English board, only while the primary summary language is Turkish: the
+  Turkish summary is primary; when it finishes, an English translation is queued
+  automatically into `summary_en`. The `Türkçe / English` switch re-renders the
+  same page; missing translations show a per-card button, and one banner button
+  queues every missing one. With English as the primary language the second
+  board and the translation job are off
 - Notifications: a payload-less VAPID push wakes the service worker, which
   fetches the summary text from the Worker and shows a browser notification;
   the Android app polls the same endpoint in the background and posts a system
@@ -356,9 +360,11 @@ like a keynote and explains nothing. Concrete nouns and numbers are the fix.
 - Music bed and sentence-level caption timing for the video.
 - Optional `GET /api/export` for a full JSON backup.
 - Merge or hide single-item topics.
-- Topic syntheses are still Turkish-only; the English board translates bookmark
-  summaries, not the rolling topic syntheses.
-- Summary versions remain Turkish-only; only the primary summary is translated.
+- Topic syntheses are never translated: they are written in the summary
+  language, and the English board translates bookmark summaries, not the rolling
+  topic syntheses.
+- Summary versions are written in the summary language and are not translated;
+  only the primary summary has an English counterpart.
 - iOS share extension: shipped. The app and the Android client live in the
   maintainer's private `nuuritas/shelf-cloud/apps` and are distributed as signed
   builds, so iPhone users share into **Shelf** exactly like Android users do.
