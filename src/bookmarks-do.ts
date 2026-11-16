@@ -21,8 +21,10 @@ import {
 } from './push.ts';
 import {
   defaultSummaryLanguage,
+  normalizeSummariesEnabled,
   normalizeSummaryLanguage,
   normalizeSummaryPrompt,
+  normalizeWorkspaceName,
 } from './settings.ts';
 import { parseYouTubeUrl, readYouTubePost } from './youtube.ts';
 import { readTranscripts } from './transcript.ts';
@@ -187,6 +189,7 @@ type StatsRow = {
   total: number;
   archived: number | null;
   summarized: number | null;
+  summarized_this_month: number | null;
   translated: number | null;
   pending: number | null;
 };
@@ -427,12 +430,16 @@ export class Bookmarks extends DurableObject<Env> {
         values.get('summary_language'),
         defaultSummaryLanguage(this.env),
       ),
+      workspaceName: normalizeWorkspaceName(values.get('workspace_name')),
+      summariesEnabled: normalizeSummariesEnabled(values.get('summaries_enabled'), true),
     };
   }
 
   saveSettings(input: {
     summaryPrompt?: unknown;
     summaryLanguage?: unknown;
+    workspaceName?: unknown;
+    summariesEnabled?: unknown;
   }): StoredSettings {
     const current = this.settings();
     const prompt =
@@ -440,10 +447,25 @@ export class Bookmarks extends DurableObject<Env> {
         ? current.summaryPrompt
         : normalizeSummaryPrompt(input.summaryPrompt);
     const language = normalizeSummaryLanguage(input.summaryLanguage, current.summaryLanguage);
+    const workspaceName =
+      input.workspaceName === undefined
+        ? current.workspaceName
+        : normalizeWorkspaceName(input.workspaceName);
+    const summariesEnabled =
+      input.summariesEnabled === undefined
+        ? current.summariesEnabled
+        : normalizeSummariesEnabled(input.summariesEnabled, current.summariesEnabled);
     this.putSetting('summary_prompt', prompt);
     this.putSetting('summary_language', language);
+    this.putSetting('workspace_name', workspaceName);
+    this.putSetting('summaries_enabled', summariesEnabled ? '1' : '0');
 
-    return { summaryPrompt: prompt, summaryLanguage: language };
+    return { summaryPrompt: prompt, summaryLanguage: language, workspaceName, summariesEnabled };
+  }
+
+  /** New saves are summarized only when a key exists and the reader left it on. */
+  summariesOn(): boolean {
+    return isAiConfigured(this.env) && this.settings().summariesEnabled;
   }
 
   /** The language for new summaries, and the page default when there is no `?lang=`. */
@@ -634,6 +656,8 @@ export class Bookmarks extends DurableObject<Env> {
         const body = (await request.json()) as {
           summaryPrompt?: unknown;
           summaryLanguage?: unknown;
+          workspaceName?: unknown;
+          summariesEnabled?: unknown;
         };
         return jsonResponse(this.saveSettings(body));
       }
@@ -865,7 +889,7 @@ export class Bookmarks extends DurableObject<Env> {
       .toArray()[0];
 
     const now = new Date().toISOString();
-    const aiReady = isAiConfigured(this.env);
+    const aiReady = this.summariesOn();
     const articleJson = JSON.stringify(post.article ?? null);
     const contentChanged = Boolean(
       existing &&
@@ -1597,7 +1621,7 @@ export class Bookmarks extends DurableObject<Env> {
       id,
     );
 
-    const queued = isAiConfigured(this.env) && clean.some(transcript => transcript.status === 'done');
+    const queued = this.summariesOn() && clean.some(transcript => transcript.status === 'done');
     if (queued) {
       const englishReset = this.primaryLanguage() === 'tr'
         ? `, summary_en = NULL, summary_en_status = 'pending',
@@ -1618,15 +1642,22 @@ export class Bookmarks extends DurableObject<Env> {
   }
 
   stats(): StatsResult {
+    const monthStart = (() => {
+      const now = new Date();
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    })();
     const row = this.sql
       .exec<StatsRow>(
         `SELECT
           COUNT(*) AS total,
           SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived,
           SUM(CASE WHEN summary_status = 'done' THEN 1 ELSE 0 END) AS summarized,
+          SUM(CASE WHEN summary_status = 'done' AND summarized_at >= ? THEN 1 ELSE 0 END)
+            AS summarized_this_month,
           SUM(CASE WHEN summary_en_status = 'done' THEN 1 ELSE 0 END) AS translated,
           SUM(CASE WHEN summary_status IN ('pending', 'working') THEN 1 ELSE 0 END) AS pending
         FROM bookmarks`,
+        monthStart,
       )
       .toArray()[0];
 
@@ -1656,6 +1687,7 @@ export class Bookmarks extends DurableObject<Env> {
       total: Number(row?.total ?? 0),
       archived: Number(row?.archived ?? 0),
       summarized: Number(row?.summarized ?? 0),
+      summarizedThisMonth: Number(row?.summarized_this_month ?? 0),
       translated: Number(row?.translated ?? 0),
       pending: Number(row?.pending ?? 0),
       topics: rows.topics ?? 0,

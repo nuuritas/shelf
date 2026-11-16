@@ -73,6 +73,13 @@ export interface StoredSettings {
   /** Empty means the built-in prompt in `src/ai.ts`. */
   summaryPrompt: string;
   summaryLanguage: SummaryLanguage;
+  /**
+   * The name the native apps show for this deployment. Empty means the app's
+   * own "Your library" fallback; the library's link and address never change.
+   */
+  workspaceName: string;
+  /** The reader's switch for new summaries; the key itself still comes from env. */
+  summariesEnabled: boolean;
 }
 
 /** A browser or Android push endpoint, as stored in the DO. */
@@ -478,6 +485,8 @@ export interface StatsResult {
   total: number;
   archived: number;
   summarized: number;
+  /** Summaries written since the first day of the current UTC month. */
+  summarizedThisMonth: number;
   translated: number;
   pending: number;
   topics: number;

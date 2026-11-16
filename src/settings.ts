@@ -38,3 +38,38 @@ export function validateSummaryPrompt(prompt: string): void {
     );
   }
 }
+
+/**
+ * The same bound the hosted service puts on a workspace name. The self-hosted
+ * library has no URL slug, so the name is only a label the native apps show.
+ */
+export const WORKSPACE_NAME_MAX = 80;
+
+export type WorkspaceNameError = 'workspace_empty' | 'workspace_long';
+
+/** The rejection code for a submitted name, or null when it fits. */
+export function workspaceNameError(raw: string): WorkspaceNameError | null {
+  const name = raw.trim();
+  if (!name) return 'workspace_empty';
+  if (name.length > WORKSPACE_NAME_MAX) return 'workspace_long';
+  return null;
+}
+
+/** The English rejection sentence, so the JSON route and the app agree. */
+export function workspaceNameMessage(error: WorkspaceNameError): string {
+  return error === 'workspace_empty'
+    ? 'Enter a workspace name.'
+    : `Keep the workspace name to ${WORKSPACE_NAME_MAX} characters or fewer.`;
+}
+
+/** Absent or non-text keeps the stored name; otherwise the trimmed value. */
+export function normalizeWorkspaceName(value: unknown): string {
+  return String(value ?? '').replace(/\r\n/g, '\n').trim();
+}
+
+/** A stored `'0'`/`'false'` means off; anything else keeps the fallback. */
+export function normalizeSummariesEnabled(value: unknown, fallback: boolean): boolean {
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return fallback;
+}
