@@ -199,7 +199,7 @@ wall-clock is long but CPU stays low.
 
 | Method | Route | Notes |
 |---|---|---|
-| `GET` | `/api/bookmarks?q=&topic=&label=&day=&view=&source=&limit=&offset=` | list; `day=YYYY-MM-DD` limits to one saved day; `label=<slug>` narrows to one label; `view=active|archived|all` (default active); `source=x|linkedin|youtube` (default `all`, unknown values fall back to `all`) filters on the canonical URL host; `q` terms are ANDed and match text, author, both summaries, links, topic names and label names |
+| `GET` | `/api/bookmarks?q=&topic=&label=&day=&view=&source=&limit=&offset=` | list; repeating `source`, `topic` or `label` ORs the values of that cut while the cuts stay AND-ed; `day=YYYY-MM-DD` limits to one saved day; `view=active|archived|all` (default active); `source=x|linkedin|youtube` (default `all`, unknown values fall back to `all`) filters on the canonical URL host; `label=<slug>` filters by label slug; `q` terms are ANDed and match text, author, both summaries, links, topic names and label names |
 | `POST` | `/api/posts` | `{ format: "markdown"\|"html", content, title?, summary?, sourceUrl?, clientId?, ref?, agent?, labels? }` creates an agent note (`kind=note`, no fetch, no AI summary job); the same `clientId` updates one row and `ref` updates an existing note in place; `labels` is an array or a comma-separated line and a re-post adds to the note's set rather than replacing it; content caps are 256 KB markdown / 1 MB HTML |
 | `POST` | `/api/bookmarks` | `{ "url": ... }`; X, LinkedIn, YouTube, or any public http(s) page (`provider=web`, title and readable body stored in `article`); also accepts `SHARE_TOKEN` bearer |
 | `GET` | `/api/bookmarks/:id` | one bookmark by short ref (`k7f3`) or tweet id |

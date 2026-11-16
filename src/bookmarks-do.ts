@@ -31,10 +31,13 @@ import { readTranscripts } from './transcript.ts';
 import {
   clampInteger,
   filingReadySql,
+  filterInSql,
   jsonResponse,
   parseSource,
+  parseSourceList,
   recoverDisabledSummariesSql,
   sourceFilterSql,
+  sourceFiltersSql,
 } from './util.ts';
 import { readPost } from './x.ts';
 import type {
@@ -971,25 +974,35 @@ export class Bookmarks extends DurableObject<Env> {
 
   list(searchParams: URLSearchParams): ListResult {
     const query = (searchParams.get('q') || '').trim();
-    const topicSlug = (searchParams.get('topic') || '').trim();
-    const labelKey = (searchParams.get('label') || '').trim().slice(0, LABEL_LIMITS.slug);
+    const topics = searchParams
+      .getAll('topic')
+      .map(value => value.trim())
+      .filter(Boolean);
+    const labels = searchParams
+      .getAll('label')
+      .map(value => value.trim().slice(0, LABEL_LIMITS.slug))
+      .filter(Boolean);
+    const topicSlug = topics[0] || null;
+    const labelKey = labels[0] || null;
     const day = normalizeDay(searchParams.get('day'));
     const view = parseView(searchParams.get('view'));
-    const source = parseSource(searchParams.get('source'));
+    const sources = parseSourceList(searchParams.getAll('source'));
     const limit = clampInteger(searchParams.get('limit'), 50, 1, 100);
     const offset = clampInteger(searchParams.get('offset'), 0, 0, 10_000);
 
     const filters: string[] = [];
     const args: string[] = [];
 
-    if (topicSlug) {
-      filters.push('tweet_id IN (SELECT tweet_id FROM item_topics WHERE slug = ?)');
-      args.push(topicSlug);
+    const topicFilter = filterInSql('slug', topics);
+    if (topicFilter) {
+      filters.push(`tweet_id IN (SELECT tweet_id FROM item_topics WHERE ${topicFilter.sql})`);
+      args.push(...topicFilter.args);
     }
 
-    if (labelKey) {
-      filters.push('tweet_id IN (SELECT tweet_id FROM bookmark_labels WHERE slug = ?)');
-      args.push(labelKey);
+    const labelFilter = filterInSql('slug', labels);
+    if (labelFilter) {
+      filters.push(`tweet_id IN (SELECT tweet_id FROM bookmark_labels WHERE ${labelFilter.sql})`);
+      args.push(...labelFilter.args);
     }
 
     if (day) {
@@ -998,7 +1011,8 @@ export class Bookmarks extends DurableObject<Env> {
     }
 
     // Source is resolved from the canonical URL, not from `provider`.
-    if (source !== 'all') filters.push(sourceFilterSql(source));
+    const sourceFilter = sourceFiltersSql(sources);
+    if (sourceFilter) filters.push(sourceFilter);
 
     if (query) {
       // Every whitespace-separated term must match somewhere, so "claude code"
