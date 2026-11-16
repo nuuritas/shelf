@@ -9,6 +9,7 @@ import {
   type Appearance,
 } from './appearance.ts';
 import { Bookmarks } from './bookmarks-do.ts';
+import { handleMcpRequest, mcpBackend } from './mcp.ts';
 import { parseWebUrl } from './links.ts';
 import { normalizeNoteInput } from './notes.ts';
 import { parseLinkedInUrl } from './linkedin.ts';
@@ -104,7 +105,7 @@ const worker: ExportedHandler<Env> = {
     }
 
     if (!env.APP_PASSWORD) {
-      if (url.pathname.startsWith('/api/')) {
+      if (url.pathname.startsWith('/api/') || url.pathname === '/mcp') {
         return secure(jsonResponse({ error: 'APP_PASSWORD is not configured.' }, 503));
       }
       return secure(htmlResponse(renderSetup({ appearance: look }), 503));
@@ -134,11 +135,16 @@ const worker: ExportedHandler<Env> = {
       (await isShareTokenAuthorized(request, env));
 
     if (!authorized && !shareSave) {
-      if (url.pathname.startsWith('/api/')) {
+      if (url.pathname.startsWith('/api/') || url.pathname === '/mcp') {
         return secure(jsonResponse({ error: 'Authentication required.' }, 401));
       }
       const next = `${url.pathname}${url.search}`;
       return secure(redirect(`/login?next=${encodeURIComponent(next)}`));
+    }
+
+    // A hosted MCP endpoint: same bearer password as the API, JSON-RPC body.
+    if (url.pathname === '/mcp') {
+      return secure(await handleMcpRequest(request, mcpBackend(env)));
     }
 
     if (request.method === 'POST' && url.pathname === '/logout') {

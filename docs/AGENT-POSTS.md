@@ -107,6 +107,10 @@ shelf add ./revision.html --ref xqajj --summary "Revised for phone reading."
 
 ## MCP
 
+Two servers expose the same tools: `shelf mcp` over stdio, and the Worker's
+`POST /mcp` over Streamable HTTP, authenticated with `APP_PASSWORD` as a bearer
+token. Point a remote client at `https://<worker>/mcp`.
+
 Call `create_post` with the same fields. Only call it when the user explicitly
 asks to save, publish, or keep a research result. Prefer markdown; use HTML only
 for visuals. Say what you saved and include its short ref.

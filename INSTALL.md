@@ -292,6 +292,32 @@ shelf search "anything"
 
 `shelf mcp` starts a stdio MCP server for Claude Code, Codex, or Cursor.
 
+The Worker also serves the same tools over HTTP at `POST /mcp`, authenticated
+with the same `APP_PASSWORD` as a bearer token. That is the path for a client
+that cannot run a local process (a phone, a web connector):
+
+```bash
+claude mcp add --transport http shelf "$BASE/mcp" \
+  --header "Authorization: Bearer $PASS"
+```
+
+Any client that speaks Streamable HTTP works; its JSON config is:
+
+```json
+{
+  "mcpServers": {
+    "shelf": {
+      "url": "https://your-worker.workers.dev/mcp",
+      "headers": { "Authorization": "Bearer <APP_PASSWORD>" }
+    }
+  }
+}
+```
+
+The endpoint is stateless and exposes `search_bookmarks`, `get_bookmark`,
+`list_topics`, `get_topic`, `create_post` and `get_authoring_guide` — the same
+six tools as the CLI. Nothing extra is deployed: `/mcp` ships with the Worker.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

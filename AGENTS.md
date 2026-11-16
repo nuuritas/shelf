@@ -76,6 +76,7 @@ src/x.ts             X/FxTwitter normalization (posts, quotes, articles, media)
 src/links.ts         external link reading (GitHub API, readability extractor)
 src/markdown.ts      dependency-free markdown renderer for agent notes
 src/notes.ts         agent-note validation, ids, limits, extracted text
+src/mcp.ts           hosted MCP endpoint: POST /mcp, JSON-RPC over Streamable HTTP
 src/linkedin.ts      public LinkedIn post reader (guest page meta tags)
 src/youtube.ts       public YouTube video reader (oEmbed + watch page meta tags)
 src/transcript.ts    video transcripts (Whisper for X, Piped by default for YouTube)

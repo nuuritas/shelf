@@ -73,12 +73,14 @@ commands.
   redeploy.
 - **Get notified** — a browser notification when a summary is ready, and a
   background check in the Android app that posts a system notification.
-- **Reach it from AI tools** — a Bun CLI and a stdio MCP server, so Claude Code,
-  Codex, or Cursor can search the vault themselves (by label too). `shelf add`
-  lets an agent save a finished research note (markdown, or sandboxed HTML) next
-  to your links, tagged with `--label`. The authoring contract is in
-  [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), also available as `shelf guide` and
-  the MCP `get_authoring_guide` tool.
+- **Reach it from AI tools** — a hosted MCP endpoint at `POST /mcp` (point any
+  remote MCP client at `https://<worker>/mcp` with the password as a bearer
+  token), plus a Bun CLI and a stdio MCP server, so Claude Code, Codex, or
+  Cursor can search the vault themselves (by label too). `shelf add` and the
+  MCP `create_post` tool let an agent save a finished research note (markdown,
+  or sandboxed HTML) next to your links, tagged with a label. The authoring
+  contract is in [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), also available as
+  `shelf guide` and the MCP `get_authoring_guide` tool.
 
 ## What it costs
 
@@ -103,7 +105,8 @@ Nothing, for a personal archive:
   compile here. The current client source is private and lives with the hosted
   service, so it is not maintained for reuse; an early v1 client remains in this
   repository's history. The web app still works as a PWA on both platforms.
-- **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`.
+- **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`, and the hosted
+  `/mcp` endpoint for clients that cannot run a local process.
 - **Custom domain** — a workers.dev URL works; a domain is one key in
   `cloudflare.personal.json`.
 - **Transcript services** — `SUPADATA_API_KEY`, `TRANSCRIPT_API_URL`, or your own
