@@ -144,7 +144,7 @@ const worker: ExportedHandler<Env> = {
 
     // A hosted MCP endpoint: same bearer password as the API, JSON-RPC body.
     if (url.pathname === '/mcp') {
-      return secure(await handleMcpRequest(request, mcpBackend(env)));
+      return secure(await handleMcpRequest(request, mcpBackend(env, url.origin)));
     }
 
     if (request.method === 'POST' && url.pathname === '/logout') {

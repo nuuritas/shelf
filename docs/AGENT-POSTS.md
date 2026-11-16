@@ -6,7 +6,8 @@ else's page, use a normal link save (`POST /api/bookmarks`); Shelf fetches and
 reads that page itself.
 
 One source of truth: this file. `shelf guide` prints it, `shelf add --help`
-points at it, and the MCP server exposes it as `get_authoring_guide`.
+points at it, and the MCP server serves a compact copy of it as
+`get_authoring_guide`.
 
 ## Markdown or HTML?
 
@@ -115,7 +116,8 @@ Call `create_post` with the same fields. Only call it when the user explicitly
 asks to save, publish, or keep a research result. Prefer markdown; use HTML only
 for visuals. Say what you saved and include its short ref.
 
-`get_authoring_guide` returns this document for clients that cannot fetch URLs.
+`get_authoring_guide` serves a compact copy of this document for clients that
+cannot fetch URLs; this file remains the source of truth for `shelf guide`.
 
 ## Examples
 

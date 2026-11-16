@@ -307,6 +307,7 @@ Any client that speaks Streamable HTTP works; its JSON config is:
 {
   "mcpServers": {
     "shelf": {
+      "type": "http",
       "url": "https://your-worker.workers.dev/mcp",
       "headers": { "Authorization": "Bearer <APP_PASSWORD>" }
     }

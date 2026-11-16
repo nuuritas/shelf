@@ -5,8 +5,19 @@
  * store: point it at `https://<worker>/mcp` with the same bearer password the
  * web login uses.
  *
- * The six tools mirror `shelf mcp` in `cli/shelf.ts`, so a client that already
- * knows the CLI contract sees the same names, schemas and output.
+ * The six tools mirror `shelf mcp` in `cli/shelf.ts`: the same names and input
+ * schemas, so a client that already knows the CLI contract can call this one.
+ * The output is deliberately not identical in four places:
+ *
+ * - `get_authoring_guide` serves the compact `AUTHORING_GUIDE` below, not the
+ *   full `docs/AGENT-POSTS.md` that `shelf guide` prints. That file stays the
+ *   source of truth; the copy drops the CLI sections an MCP caller cannot use.
+ * - `list_topics` reports active and archived counts (`3 active, 1 archived`)
+ *   where the CLI prints a single item count.
+ * - The primary summary is headed `## AI summary`; the CLI labels it with the
+ *   summary's language (`## AI summary (Turkish)`) when a translation exists.
+ * - `create_post` ends with the note's `.../p/<ref>` URL, because a remote
+ *   client needs a link it can hand back, not just the ref.
  *
  * Stateless by design: no session id, no server-initiated stream. A POST
  * carries one request and gets one JSON response, which the transport allows.
@@ -172,8 +183,9 @@ const INSTRUCTIONS =
   'user asks to save, publish or keep it. Prefer markdown; HTML must be self-contained, script-free ' +
   'and is rendered sandboxed.';
 
-/** The guide `get_authoring_guide` serves, and `shelf guide` prints. Kept
- * compact because an MCP client reads it in a single tool result. */
+/** The compact guide `get_authoring_guide` serves. `docs/AGENT-POSTS.md` is
+ * the source of truth and what `shelf guide` prints; this copy drops the CLI
+ * sections that a remote MCP caller cannot use. Keep the two in step. */
 export const AUTHORING_GUIDE = `# Agent posts: writing a note into Shelf
 
 A note is content you wrote and saved, not a URL someone else wrote. To save
@@ -540,8 +552,9 @@ async function storage<T>(env: Env, path: string, init?: RequestInit): Promise<T
   return payload as T;
 }
 
-/** Bind the tools to this Worker's archive. */
-export function mcpBackend(env: Env): McpBackend {
+/** Bind the tools to this Worker's archive. `origin` is the public base URL of
+ * the request, used to link a note the tools just wrote. */
+export function mcpBackend(env: Env, origin = ''): McpBackend {
   return {
     async search(query, label, limit) {
       const params = new URLSearchParams({ q: query, view: 'all', limit: String(limit) });
@@ -622,10 +635,12 @@ export function mcpBackend(env: Env): McpBackend {
         body: JSON.stringify(note),
       });
       const bookmark = result.bookmark;
+      const ref = bookmark?.ref ?? '';
       return [
-        `${result.created ? 'Saved' : 'Updated'} note #${bookmark?.ref ?? '?'} (${bookmark?.format ?? note.format})`,
+        `${result.created ? 'Saved' : 'Updated'} note #${ref || '?'} (${bookmark?.format ?? note.format})`,
         bookmark?.title ? `Title: ${bookmark.title}` : '',
         `Id: ${bookmark?.tweetId ?? ''}`,
+        origin && ref ? `Read it at ${origin.replace(/\/$/, '')}/p/${ref}` : '',
       ]
         .filter(Boolean)
         .join('\n');

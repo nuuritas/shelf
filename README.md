@@ -79,8 +79,9 @@ commands.
   Cursor can search the vault themselves (by label too). `shelf add` and the
   MCP `create_post` tool let an agent save a finished research note (markdown,
   or sandboxed HTML) next to your links, tagged with a label. The authoring
-  contract is in [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), also available as
-  `shelf guide` and the MCP `get_authoring_guide` tool.
+  contract is in [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), printed by
+  `shelf guide` and served in compact form by the MCP `get_authoring_guide`
+  tool.
 
 ## What it costs
 

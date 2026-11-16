@@ -211,3 +211,47 @@ test('the backend reads the archive through the Durable Object', async () => {
   assert.match(text, /labels: Reading/);
   assert.match(text, /id: k7f3/);
 });
+
+test('the backend writes a note through the Durable Object', async () => {
+  const seen = [];
+  const env = {
+    BOOKMARKS: {
+      idFromName: () => 'library',
+      get: () => ({
+        fetch: async (url, init) => {
+          seen.push({ url: String(url), body: JSON.parse(init.body) });
+          return new Response(
+            JSON.stringify({
+              created: true,
+              bookmark: {
+                ref: 'k7f3',
+                tweetId: '1985100000000000001',
+                format: 'markdown',
+                title: 'Daily notes',
+              },
+            }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } },
+          );
+        },
+      }),
+    },
+  };
+
+  const text = await mcpBackend(env, 'https://shelf.example').createPost({
+    format: 'markdown',
+    content: '## Daily notes\n\n- one finding',
+    title: 'Daily notes',
+    summary: 'A short abstract.',
+    clientId: 'daily-2026-11-16',
+    agent: { name: 'Claude Code', model: 'claude-sonnet-4.5', tool: 'claude-code' },
+  });
+
+  assert.equal(seen.length, 1);
+  const url = new URL(seen[0].url);
+  assert.equal(url.pathname, '/notes');
+  assert.equal(seen[0].body.content, '## Daily notes\n\n- one finding');
+  assert.equal(seen[0].body.clientId, 'daily-2026-11-16');
+  assert.equal(seen[0].body.agent.tool, 'claude-code');
+  assert.match(text, /^Saved note #k7f3 \(markdown\)/);
+  assert.match(text, /Read it at https:\/\/shelf\.example\/p\/k7f3/);
+});
