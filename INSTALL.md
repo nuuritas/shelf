@@ -223,12 +223,13 @@ at first launch:
 1. Server URL: the Worker URL from step 6.
 2. Password: the same `APP_PASSWORD`.
 
-The app tests the connection with `GET /healthz` and `GET /api/stats`, then
-keeps the password as a bearer token: the library is native views over the JSON
-API, not a WebView, so it looks the same against this Worker and against Shelf
-Cloud. Sharing an X, LinkedIn or YouTube link to **Shelf** saves it in the
-background; a short toast reports the result. The Android build also polls for
-finished summaries and posts a system notification.
+Both apps run a preflight check before the first save: they test the connection
+with `GET /healthz` and `GET /api/stats`, then keep the password as a bearer
+token. The library is native views over the JSON API, not a WebView, so it looks
+the same against this Worker and against Shelf Cloud. Sharing an X, LinkedIn or
+YouTube link to **Shelf** saves it in the background; a short toast reports the
+result. The Android build also polls for finished summaries and posts a system
+notification.
 
 Settings in the app reads `GET /api/settings`, the same aggregate the hosted
 service answers: the workspace name, the summary language, the AI switch, and

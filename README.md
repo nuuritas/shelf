@@ -101,11 +101,13 @@ Nothing, for a personal archive:
 
 - **Mobile apps** — an Android share target that saves in the background and
   posts a notification when a summary is ready, and an iOS app with a share
-  extension. Both are dual-mode: enter your Worker URL and password, or sign in
-  to Shelf Cloud. They are published as a signed build, so there is nothing to
-  compile here. The current client source is private and lives with the hosted
-  service, so it is not maintained for reuse; an early v1 client remains in this
-  repository's history. The web app still works as a PWA on both platforms.
+  extension and the same preflight check. Both are dual-mode: point them at your
+  own Worker URL and password, which the app verifies with `GET /healthz` and
+  `GET /api/stats` before saving, or sign in to Shelf Cloud. They are published
+  as a signed build, so there is nothing to compile here. The current client
+  source is private and lives with the hosted service, so it is not maintained
+  for reuse; an early v1 client remains in this repository's history. The web app
+  still works as a PWA on both platforms.
 - **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`, and the hosted
   `/mcp` endpoint for clients that cannot run a local process.
 - **Custom domain** — a workers.dev URL works; a domain is one key in
