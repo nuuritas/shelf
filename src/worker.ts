@@ -9,6 +9,7 @@ import {
   type Appearance,
 } from './appearance.ts';
 import { Bookmarks } from './bookmarks-do.ts';
+import { CHANGELOG } from './changelog-data.ts';
 import { handleMcpRequest, mcpBackend } from './mcp.ts';
 import { parseWebUrl } from './links.ts';
 import { normalizeNoteInput } from './notes.ts';
@@ -17,6 +18,7 @@ import { parseYouTubeUrl } from './youtube.ts';
 import {
   CSS,
   renderCalendar,
+  renderChangelogPage,
   renderLogin,
   renderNotePage,
   renderPage,
@@ -168,6 +170,10 @@ const worker: ExportedHandler<Env> = {
 
     if (request.method === 'GET' && url.pathname === '/calendar') {
       return secure(await handleCalendarPage(url, env, look));
+    }
+
+    if (request.method === 'GET' && url.pathname === '/changelog') {
+      return secure(await handleChangelogPage(url, env, look));
     }
 
     const notePageMatch = url.pathname.match(/^\/p\/([A-Za-z0-9_-]{1,30})(\/frame)?$/);
@@ -579,6 +585,21 @@ async function handleCalendarPage(url: URL, env: Env, look: Appearance): Promise
       502,
     );
   }
+}
+
+/**
+ * The release history. The page is English like the rest of the Worker; the
+ * language only decides how the dates are written.
+ */
+async function handleChangelogPage(url: URL, env: Env, look: Appearance): Promise<Response> {
+  const settings = await readSettings(env);
+  return htmlResponse(
+    renderChangelogPage({
+      entries: CHANGELOG,
+      lang: parseUiLang(url.searchParams.get('lang'), settings.summaryLanguage),
+      appearance: look,
+    }),
+  );
 }
 
 async function handleSettingsPage(url: URL, env: Env, look: Appearance): Promise<Response> {

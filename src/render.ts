@@ -6,6 +6,13 @@ import {
   type Appearance,
 } from './appearance.ts';
 import { BRAND_CSS, BRAND_MARK, assetUrl } from './brand.ts';
+import { CHANGELOG } from './changelog-data.ts';
+import {
+  formatChangelogDate,
+  latestChangelogBullets,
+  renderChangelogBullet,
+  type ChangelogEntry,
+} from './changelog.ts';
 import { LABEL_TONE_COUNT, labelTone } from './labels.ts';
 import { LANGUAGE_TAG_MAX, languageOf, languageOptions } from './languages.ts';
 import { renderMarkdown } from './markdown.ts';
@@ -23,6 +30,7 @@ import type {
   SummaryLanguage,
   SummaryVersion,
   TopicSummary,
+  UiLang,
   VideoTranscript,
   XArticle,
 } from './types.ts';
@@ -807,6 +815,68 @@ function renderFolderGrid(
 }
 
 /**
+ * The release history, `/changelog`. A document page rather than a card list:
+ * one column, a date per release, the changes under it. The copy is English
+ * like the rest of the Worker; the language only decides how a date is written.
+ */
+export function renderChangelogPage({
+  entries,
+  lang = 'en',
+  appearance = DEFAULT_APPEARANCE,
+}: {
+  entries: ChangelogEntry[];
+  lang?: UiLang;
+  appearance?: Appearance;
+}): string {
+  const list = entries.length
+    ? entries
+        .map(
+          entry => `<article class="release">
+            <h2><time datetime="${escapeHtml(entry.date)}">${escapeHtml(
+              formatChangelogDate(entry.date, lang),
+            )}</time></h2>
+            <ul>${entry.bullets
+              .map(bullet => `<li>${renderChangelogBullet(bullet)}</li>`)
+              .join('')}</ul>
+          </article>`,
+        )
+        .join('\n          ')
+    : '<p class="lede">Every change a deploy carries gets a line here. Nothing is published yet.</p>';
+
+  return pageShell({
+    title: 'Changelog · Shelf',
+    bodyClass: 'home changelog-page',
+    head: '',
+    look: appearance,
+    body: `
+      <header class="topbar">
+        <a class="brand" href="/">
+          <span class="brand-mark">${BRAND_MARK}</span>
+          <span>Shelf</span>
+        </a>
+        <div class="top-actions">
+          <a class="bar-icon" href="/calendar" aria-label="Open the save calendar" title="Calendar">${CALENDAR_MARK}</a>
+          <a class="calendar-link" href="/settings">Settings</a>
+          <form method="post" action="/logout">
+            <button class="link-button" type="submit">Log out</button>
+          </form>
+        </div>
+      </header>
+
+      <main class="shell">
+        <section class="library changelog">
+          <p class="eyebrow">Changelog</p>
+          <h1>What a deploy carried</h1>
+          <p class="lede">Every change a deploy carries gets a line here, under the day it shipped. Newest first.</p>
+          ${list}
+          <p class="settings-foot"><a href="/">← Back to the library</a></p>
+        </section>
+      </main>
+    `,
+  });
+}
+
+/**
  * Full reading view for an agent note (`/p/:ref`). The note is the page: one
  * slim bar, one provenance line, then the document. An HTML note already has a
  * title in its own markup, so the page does not repeat it — it only keeps the
@@ -985,6 +1055,8 @@ export function renderSettings({
   const limit = MAX_SUMMARY_PROMPT_LENGTH.toLocaleString('en-US');
   const count = prompt.length.toLocaleString('en-US');
   const transport = TRANSPORT_LABELS[ai.transport] || ai.transport;
+  const whatsNew = latestChangelogBullets(CHANGELOG, 3);
+  const newestRelease = CHANGELOG.length ? formatChangelogDate(CHANGELOG[0].date, lang) : '';
 
   return pageShell({
     title: 'Settings · Shelf',
@@ -1106,6 +1178,21 @@ export function renderSettings({
               ${customPrompt ? '<button class="secondary" type="submit" name="action" value="reset" formnovalidate>Reset prompt to default</button>' : ''}
             </div>
           </form>
+
+          ${
+            whatsNew.length
+              ? `<section class="settings-card" id="whats-new">
+            <div class="settings-card-head">
+              <h3>What's new</h3>
+              <span class="settings-badge">${escapeHtml(newestRelease)}</span>
+            </div>
+            <ul class="settings-changelog">
+              ${whatsNew.map(bullet => `<li>${renderChangelogBullet(bullet)}</li>`).join('\n              ')}
+            </ul>
+            <p class="settings-changelog-more"><a href="/changelog">Read the changelog</a></p>
+          </section>`
+              : ''
+          }
 
           <p class="settings-foot"><a href="/">← Back to the library</a></p>
         </section>
@@ -1876,7 +1963,7 @@ export function renderSetup({
   });
 }
 
-function pageShell({
+export function pageShell({
   title,
   bodyClass,
   head,
@@ -1903,7 +1990,7 @@ function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=29">
+  <link rel="stylesheet" href="/style.css?v=30">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -3962,6 +4049,80 @@ body.settings-page .topbar {
 }
 
 .settings-foot a:hover { text-decoration: underline; }
+
+/* The changelog card is a preview: three bullets, no headings, and a link to
+   the page that has the rest. */
+.settings-changelog {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.settings-changelog li {
+  margin: 6px 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.settings-changelog code,
+.release code {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  font-family: var(--mono);
+  font-size: 0.85em;
+}
+
+.settings-changelog-more {
+  margin: 12px 0 0;
+  font-size: 0.8125rem;
+}
+
+.settings-changelog-more a {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.settings-changelog-more a:hover { text-decoration: underline; }
+
+/* The changelog page is a document, not a card list: one column, a date per
+   release and the changes under it. */
+.changelog { max-width: 720px; }
+
+.changelog h1 {
+  margin: 4px 0 8px;
+  font-size: clamp(1.625rem, 5.4vw, 2.125rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.changelog .lede {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.release { margin: 26px 0 0; }
+
+.release h2 {
+  margin: 0 0 10px;
+  font-size: 1.0625rem;
+  letter-spacing: -0.02em;
+}
+
+.release time { color: var(--muted); }
+
+.release ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.release li {
+  margin: 0 0 9px;
+  line-height: 1.6;
+}
 
 @media (max-width: 650px) {
   .shell, .topbar { width: min(100% - 24px, 820px); }
