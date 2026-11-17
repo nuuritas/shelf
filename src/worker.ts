@@ -453,12 +453,13 @@ async function handleTopicPage(
   const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
 
   try {
-    const [data, topicData] = await Promise.all([
+    const [data, topicData, labelData] = await Promise.all([
       doJson<TopicPageResult>(
         env,
         `/topic?slug=${encodeURIComponent(slug)}&view=${encodeURIComponent(view)}&source=${encodeURIComponent(source)}`,
       ),
       doJson<TopicListResult>(env, '/topics').catch((): TopicListResult => ({ topics: [] })),
+      doJson<LabelListResult>(env, '/labels').catch((): LabelListResult => ({ labels: [] })),
     ]);
 
     if (!data.topic) {
@@ -472,6 +473,9 @@ async function handleTopicPage(
         query: '',
         topics: topicData.topics,
         topic: data.topic,
+        // A folder page shows the same cards, so its label editors offer the
+        // same labels; without this list a reader could only retype a name.
+        labels: labelData.labels,
         view,
         lang,
         source,
