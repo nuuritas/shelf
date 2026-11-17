@@ -1141,8 +1141,8 @@ function renderBookmark(
 /**
  * An agent-written note on a library page. The author line stays as short as a
  * person's handle; the note title is the card's lede and the abstract sits in
- * plain body copy. An HTML note is a document, not card copy, so its body is
- * never embedded here — the title and the primary action both lead to `/p/:ref`.
+ * plain body copy. A note is a document, not card copy, so its body is never
+ * embedded here — the title and `Open artifact` both lead to `/p/:ref`.
  */
 function renderNoteCard(
   bookmark: Bookmark,
@@ -1164,11 +1164,10 @@ function renderNoteCard(
               ${renderParagraphs(bookmark.summary)}
             </section>`
     : '';
-  const preview = isHtml
-    ? !bookmark.summary && bookmark.text
+  const preview =
+    !bookmark.summary && bookmark.text
       ? `<p class="note-excerpt">${escapeHtml(truncate(bookmark.text, 260))}</p>`
-      : ''
-    : `<div class="note-body">${renderMarkdown(stripDuplicateHeading(bookmark.content || '', title))}</div>`;
+      : '';
 
   return `
     <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}">
@@ -1196,9 +1195,11 @@ function renderNoteCard(
           bookmark.tweetId,
           returnTo,
           archived,
-          sourceUrl
-            ? `<a class="x-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
-            : `<span class="x-link note-kind" title="${isHtml ? 'HTML document' : 'Note'}">${isHtml ? 'HTML' : 'Note'}</span>`,
+          `<a class="x-link" href="${href}">Open artifact ↗</a>${
+            sourceUrl
+              ? `<a class="x-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
+              : `<span class="x-link note-kind" title="${isHtml ? 'HTML document' : 'Note'}">${isHtml ? 'HTML' : 'Note'}</span>`
+          }`,
         )}
       </header>
 
