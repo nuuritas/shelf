@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SUMMARY_PROMPT, buildSummarySystemPrompt } from '../src/ai.ts';
-import { resolveLanguage } from '../src/languages.ts';
+import { languageOptions, resolveLanguage } from '../src/languages.ts';
 import { renderSettings } from '../src/render.ts';
 import {
   MAX_SUMMARY_PROMPT_LENGTH,
@@ -11,6 +11,7 @@ import {
   normalizeSummaryLanguage,
   normalizeSummaryPrompt,
   normalizeWorkspaceName,
+  resolveSettingsLanguage,
   validateSummaryPrompt,
   workspaceNameError,
 } from '../src/settings.ts';
@@ -65,6 +66,90 @@ test('the settings badge names the chosen summary language', () => {
   // `Intl` writes its own name lowercase, region in brackets: a badge should
   // still be the language's own name rather than a hardcoded pair.
   assert.match(html, /class="settings-badge is-on">[^<]*português[^<]*<\/span>/i);
+});
+
+/** The Summary language card on its own: the Appearance card keeps radios. */
+function summaryLanguageCard(html) {
+  const card = html
+    .split('<section class="settings-card"')
+    .find(chunk => chunk.includes('Summary language</h3>'));
+  assert.ok(card, 'the summary language card renders');
+  return card;
+}
+
+function languageRows(card) {
+  return [...card.matchAll(/<option value="([^"]+)"( selected)?>([^<]*)<\/option>/g)].map(
+    match => ({ tag: match[1], selected: Boolean(match[2]), label: match[3] }),
+  );
+}
+
+function settingsPage(summaryLanguage) {
+  return renderSettings({
+    settings: { summaryPrompt: '', summaryLanguage, workspaceName: '', summariesEnabled: true },
+    ai: { provider: 'custom', model: 'model-x', transport: 'http' },
+    aiConfigured: true,
+  });
+}
+
+test('a typed language wins over the chosen option, and junk is a refusal', () => {
+  assert.equal(resolveSettingsLanguage('en', 'pt-BR'), 'pt-BR');
+  assert.equal(resolveSettingsLanguage('en', 'Deutsch'), 'de');
+  assert.equal(resolveSettingsLanguage('tr', 'not a language'), null);
+  assert.equal(resolveSettingsLanguage('tr', 'zz'), null);
+  // An empty typed value falls back to the list; both empty names nothing.
+  assert.equal(resolveSettingsLanguage('tr', ''), 'tr');
+  assert.equal(resolveSettingsLanguage('tr', '   '), 'tr');
+  assert.equal(resolveSettingsLanguage('tr', undefined), 'tr');
+  assert.equal(resolveSettingsLanguage(undefined, ''), null);
+  assert.equal(resolveSettingsLanguage('', ''), null);
+});
+
+test('the menu lists every language by its own name and keeps a typed tag', () => {
+  const card = summaryLanguageCard(settingsPage('pt-BR'));
+  const rows = languageRows(card);
+
+  assert.match(card, /<select id="summary_language" name="summary_language">/);
+  assert.doesNotMatch(card, /radiogroup/);
+
+  // `pt-BR` is not one of the offered base tags, so it leads the list and
+  // carries the current choice: a save must not silently rewrite it.
+  assert.equal(rows[0].tag, 'pt-BR');
+  assert.equal(rows[0].selected, true);
+  assert.equal(rows[0].label.toLowerCase(), 'português (brasil) · brazilian portuguese');
+
+  const expected = [...languageOptions()].sort((a, b) =>
+    a.native.localeCompare(b.native, 'en'),
+  );
+  assert.deepEqual(rows.slice(1).map(row => row.tag), expected.map(language => language.tag));
+  assert.equal(
+    rows
+      .slice(1)
+      .filter(row => row.selected)
+      .length,
+    0,
+  );
+});
+
+test('Turkish is the selected option and the two-language radio pair is gone', () => {
+  const card = summaryLanguageCard(settingsPage('tr'));
+  const rows = languageRows(card);
+  const selected = rows.filter(row => row.selected);
+
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].tag, 'tr');
+  assert.match(selected[0].label, /^Türkçe · Turkish$/);
+  assert.doesNotMatch(card, /type="radio"/);
+
+  // Native names, not English ones: `Deutsch` comes before `English`.
+  const tags = rows.map(row => row.tag);
+  assert.deepEqual(
+    tags,
+    [...languageOptions()]
+      .sort((a, b) => a.native.localeCompare(b.native, 'en'))
+      .map(language => language.tag),
+  );
+  assert.ok(tags.indexOf('de') < tags.indexOf('en'));
+  assert.match(card, /name="summary_language_typed"/);
 });
 
 test('an empty or untouched prompt means the built-in default', () => {

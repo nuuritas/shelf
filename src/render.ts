@@ -7,7 +7,7 @@ import {
 } from './appearance.ts';
 import { BRAND_CSS, BRAND_MARK, assetUrl } from './brand.ts';
 import { LABEL_TONE_COUNT, labelTone } from './labels.ts';
-import { languageOf } from './languages.ts';
+import { LANGUAGE_TAG_MAX, languageOf, languageOptions } from './languages.ts';
 import { renderMarkdown } from './markdown.ts';
 import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
 import type {
@@ -801,6 +801,8 @@ export interface RenderSettingsOptions {
   notice?: string | null;
   error?: string | null;
   appearance?: Appearance;
+  /** The page's interface language; only English and Turkish have copy. */
+  lang?: 'tr' | 'en';
 }
 
 const SETTINGS_NOTICES: Record<string, string> = {
@@ -832,6 +834,38 @@ function segmentedOption(
   } aria-label="${escapeHtml(accessibleName)}"><span>${label}</span></label>`;
 }
 
+/**
+ * A language's own name, followed by its English name when the two read
+ * differently: a reader scanning for `Deutsch` should not have to know it is
+ * filed under German.
+ */
+function languageOptionLabel(language: { native: string; english: string }): string {
+  return language.native === language.english
+    ? language.native
+    : `${language.native} · ${language.english}`;
+}
+
+/**
+ * The summary language menu, alphabetised by each language's own name, with the
+ * saved tag kept as the first option when it is a typed variant the base list
+ * does not carry (`pt-BR`, `sr-Latn`). Otherwise the current choice would be
+ * invisible and a plain save would rewrite it to whatever the browser shows.
+ */
+function summaryLanguageOptions(saved: string, lang: 'tr' | 'en'): string {
+  const offered = [...languageOptions()].sort((a, b) => a.native.localeCompare(b.native, lang));
+  const key = saved.toLowerCase();
+  const listed = offered.some(language => language.tag.toLowerCase() === key);
+  const rows = listed ? offered : [languageOf(saved), ...offered];
+  return rows
+    .map(language => {
+      const selected = language.tag.toLowerCase() === key ? ' selected' : '';
+      return `<option value="${escapeHtml(language.tag)}"${selected}>${escapeHtml(
+        languageOptionLabel(language),
+      )}</option>`;
+    })
+    .join('\n                  ');
+}
+
 export function renderSettings({
   settings,
   ai,
@@ -840,6 +874,7 @@ export function renderSettings({
   notice,
   error,
   appearance = DEFAULT_APPEARANCE,
+  lang = 'en',
 }: RenderSettingsOptions): string {
   const customPrompt = Boolean(settings.summaryPrompt);
   const pushDetail =
@@ -927,17 +962,16 @@ export function renderSettings({
                 <h3>Summary language</h3>
                 <span class="settings-badge is-on">${escapeHtml(languageOf(settings.summaryLanguage).native)}</span>
               </div>
-              <p class="settings-note">New summaries are written in this language. Unless it is English, Shelf also writes an English version for the language switch. Existing summaries are left alone.</p>
-              <div class="settings-choice" role="radiogroup" aria-label="Summary language">
-                <label>
-                  <input type="radio" name="summary_language" value="tr"${settings.summaryLanguage === 'tr' ? ' checked' : ''}>
-                  <span><strong>Türkçe</strong><small>The main summary is Turkish, with an English version alongside it.</small></span>
-                </label>
-                <label>
-                  <input type="radio" name="summary_language" value="en"${settings.summaryLanguage === 'en' ? ' checked' : ''}>
-                  <span><strong>English</strong><small>Summaries are English only; the language switch is not shown.</small></span>
-                </label>
+              <p class="settings-note">New summaries are written in this language. Any language other than English also gets an English version for the language switch. Summaries that already exist keep their text until you summarize them again.</p>
+              <label class="sr-only" for="summary_language">Summary language</label>
+              <select id="summary_language" name="summary_language">
+                  ${summaryLanguageOptions(settings.summaryLanguage, lang)}
+              </select>
+              <div class="settings-field">
+                <label class="settings-label" for="summary_language_typed">Or type a language</label>
+                <input id="summary_language_typed" name="summary_language_typed" type="text" maxlength="${LANGUAGE_TAG_MAX}" placeholder="Deutsch, pt-BR, sr-Latn" autocomplete="off" spellcheck="false">
               </div>
+              <p class="settings-note">A name (<code>Deutsch</code>) or a tag (<code>pt-BR</code>, <code>sr-Latn</code>) typed here wins over the list. Leave it empty to keep the option chosen above.</p>
             </section>
 
             <section class="settings-card">
@@ -1761,7 +1795,7 @@ function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=28">
+  <link rel="stylesheet" href="/style.css?v=29">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -3667,39 +3701,37 @@ body.settings-page .topbar {
   color: var(--accent-ink);
 }
 
-.settings-choice {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.settings-choice label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 11px 12px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  font-size: 0.84375rem;
-  cursor: pointer;
-}
-
-.settings-choice label:has(input:checked) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.settings-choice input {
-  margin-top: 2px;
-  accent-color: var(--accent);
-}
-
-.settings-choice small {
+/* The language menu is a native select, so it carries its own search on every
+   platform; the typed field below it is the escape hatch for a tag the list
+   does not offer. Both keep the textarea's border and padding. */
+.settings-card select,
+.settings-field input {
   display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 0.75rem;
-  line-height: 1.45;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.84375rem;
+  outline: 0;
+}
+
+.settings-card select:focus,
+.settings-field input:focus { border-color: var(--accent); }
+
+.settings-field {
+  margin-top: 14px;
+}
+
+.settings-field .settings-label {
+  display: block;
+}
+
+.settings-field input {
+  margin-top: 7px;
 }
 
 /* Theme and text size are two short lists, so each reads as one row: a 96px
