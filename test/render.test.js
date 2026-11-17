@@ -472,7 +472,8 @@ test('the empty search state keeps the selected source', () => {
     source: 'youtube',
   });
 
-  assert.match(html, /class="view-switch source-switch"/);
+  assert.match(html, /<details class="filter-menu is-set">/);
+  assert.match(html, /<span class="filter-value">YouTube<\/span>/);
   assert.match(html, /<a class="small-button" href="\/\?source=youtube">Clear search<\/a>/);
 });
 
@@ -723,10 +724,17 @@ test('the library reads by label: a filter row, a heading and a card chip', () =
     aiConfigured: true,
   });
 
-  // The row is a filter over the same shelf, not a folder tree.
-  assert.match(html, /<nav class="view-switch label-switch" role="group" aria-label="Label filter">/);
-  assert.match(html, /href="\/\?label=design">Design<span>2<\/span>/);
-  assert.match(html, /class="active" href="\/\?label=reading">Reading<span>1<\/span>/);
+  // The row is a filter over the same shelf, not a folder tree: one menu whose
+  // trigger names the pick, and a panel row marked current for it.
+  assert.match(html, /<span class="filter-name">Labels<\/span><span class="filter-value">Reading<\/span>/);
+  assert.match(
+    html,
+    /<a href="\/\?label=reading&amp;label=design&amp;menu=labels"><span class="filter-label">Design<\/span><span class="filter-count">2<\/span><\/a>/,
+  );
+  assert.match(
+    html,
+    /<a href="\/\?menu=labels" aria-current="page"><span class="filter-label">Reading<\/span><span class="filter-count">1<\/span><\/a>/,
+  );
   // The selected label is the page's heading.
   assert.match(html, /<h2>Reading<\/h2>/);
   // A chip on the card opens that label's view, carrying the tone its slug
@@ -917,7 +925,7 @@ test('a finished library asks for no refresh at all', () => {
 test('the page loads the poll script with a cache buster', () => {
   const html = renderPage({ bookmarks: [], total: 0, query: '' });
 
-  assert.match(html, /<script src="\/app\.js\?v=3" defer><\/script>/);
+  assert.match(html, /<script src="\/app\.js\?v=4" defer><\/script>/);
   assert.doesNotMatch(html, /<script src="\/app\.js" defer>/);
 });
 
@@ -957,10 +965,167 @@ test('a filter link keeps every label pick, and one pick reads as it always did'
   assert.match(one, /href="\/\?label=design&amp;view=archived"/);
   assert.match(one, /<h2>Design<\/h2>/);
   assert.match(one, /Label · 12 active/);
-  assert.doesNotMatch(one, /label=design&amp;label=/);
+  // Nothing but the label menu's own row carries a second pick, so every link a
+  // reader bookmarked still reads the same.
+  assert.doesNotMatch(one, /returnTo" value="[^"]*label=design&amp;label=/);
+  assert.match(one, /href="\/\?label=design&amp;label=reading&amp;menu=labels"/);
 
   // The single-value option still works: it fills the array, it does not fight it.
   assert.equal(withPicks({ label: 'design' }), one);
+});
+
+const FILTER_TOPICS = [
+  {
+    slug: 'ai',
+    name: 'AI',
+    description: null,
+    overview: '',
+    overviewAt: null,
+    count: 4,
+    archivedCount: 1,
+  },
+];
+
+test('the filter bar is three named menus, not stacked chip rows', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: '',
+    topics: FILTER_TOPICS,
+    labels: [{ slug: 'design', name: 'Design', count: 2 }],
+  });
+
+  assert.equal((html.match(/<details class="filter-menu/g) || []).length, 3);
+  assert.match(html, /<span class="filter-name">Source<\/span>/);
+  assert.match(html, /<span class="filter-name">Folder<\/span>/);
+  assert.match(html, /<span class="filter-name">Labels<\/span>/);
+  assert.match(html, /<div class="library-bar">\s*<div class="library-switches">/);
+  assert.doesNotMatch(html, /source-switch|label-switch/);
+});
+
+test('the source menu reads both picks and toggles only its own value', () => {
+  const html = renderPage({ bookmarks: [], total: 0, query: '', sources: ['x', 'youtube'] });
+
+  assert.match(
+    html,
+    /<details class="filter-menu is-set">\s*<summary><span class="filter-name">Source<\/span><span class="filter-value">X, YouTube<\/span>/,
+  );
+  // Each row is the cut without its own value, followed by the panel's key.
+  assert.match(
+    html,
+    /<a href="\/\?source=youtube&amp;menu=source" aria-current="page"><span class="filter-label">X<\/span><\/a>/,
+  );
+  assert.match(
+    html,
+    /<a href="\/\?source=x&amp;menu=source" aria-current="page"><span class="filter-label">YouTube<\/span><\/a>/,
+  );
+  // A value that was not picked joins the two, and nothing else changes.
+  assert.match(
+    html,
+    /<a href="\/\?source=x&amp;source=youtube&amp;source=web&amp;menu=source"><span class="filter-label">Web<\/span><\/a>/,
+  );
+  // The menu offers every source value, the artifact included.
+  assert.match(html, /<span class="filter-label">Artifact<\/span>/);
+});
+
+test('a menu pick keeps every other pick, and the menu key comes last', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: 'claude',
+    topics: FILTER_TOPICS,
+    labels: [{ slug: 'design', name: 'Design', count: 2 }],
+    labelPicks: ['design'],
+    topicPicks: ['ai'],
+    sources: ['youtube'],
+    view: 'archived',
+    lang: 'en',
+  });
+
+  assert.match(
+    html,
+    /<a href="\/\?q=claude&amp;label=design&amp;view=archived&amp;lang=en&amp;source=youtube&amp;source=x&amp;topic=ai&amp;menu=source"><span class="filter-label">X<\/span><\/a>/,
+  );
+  // The clear row drops one group and keeps the panel open, as the cloud does.
+  assert.match(
+    html,
+    /<a href="\/\?q=claude&amp;label=design&amp;view=archived&amp;lang=en&amp;topic=ai&amp;menu=source">All sources<\/a>/,
+  );
+});
+
+test('an active filter is a token that drops only its own pick', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: '',
+    topics: FILTER_TOPICS,
+    labels: [{ slug: 'design', name: 'Design', count: 2 }],
+    labelPicks: ['design'],
+    topicPicks: ['ai'],
+    sources: ['x', 'youtube'],
+  });
+
+  assert.equal((html.match(/<a class="filter-token"/g) || []).length, 4);
+  assert.match(
+    html,
+    /<a class="filter-token" href="\/\?label=design&amp;source=youtube&amp;topic=ai" aria-label="Remove the X filter">X<i aria-hidden="true">×<\/i><\/a>/,
+  );
+  assert.match(
+    html,
+    /<a class="filter-token" href="\/\?label=design&amp;source=x&amp;topic=ai" aria-label="Remove the YouTube filter">/,
+  );
+  assert.match(
+    html,
+    /<a class="filter-token" href="\/\?label=design&amp;source=x&amp;source=youtube" aria-label="Remove the AI filter">/,
+  );
+  assert.match(
+    html,
+    /<a class="filter-token" href="\/\?source=x&amp;source=youtube&amp;topic=ai" aria-label="Remove the Design filter">/,
+  );
+  // More than one token offers the way out of all three groups at once.
+  assert.match(html, /<a class="clear-filters" href="\/">Clear filters<\/a>/);
+
+  const single = renderPage({ bookmarks: [], total: 0, query: '', sources: ['x'] });
+  assert.equal((single.match(/<a class="filter-token"/g) || []).length, 1);
+  assert.doesNotMatch(single, /class="clear-filters"/);
+});
+
+test('the menu a pick came from reopens, and no other does', () => {
+  const open = renderPage({ bookmarks: [], total: 0, query: '', sources: ['x'], menu: 'source' });
+  assert.match(open, /<details class="filter-menu is-set" open>/);
+  assert.equal((open.match(/<details class="filter-menu[^"]*" open>/g) || []).length, 1);
+
+  const closed = renderPage({ bookmarks: [], total: 0, query: '', sources: ['x'] });
+  assert.equal((closed.match(/<details class="filter-menu[^"]*" open>/g) || []).length, 0);
+
+  // Anything but the three keys opens nothing and reaches the markup as nothing.
+  const junk = renderPage({ bookmarks: [], total: 0, query: '', menu: '"><script>' });
+  assert.equal((junk.match(/<details class="filter-menu[^"]*" open>/g) || []).length, 0);
+  assert.doesNotMatch(junk, /<script>/);
+});
+
+test('a filter menu is a details, so it works without a script', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: '',
+    labels: [{ slug: 'design', name: 'Design', count: 2 }],
+  });
+
+  assert.match(
+    html,
+    /<details class="filter-menu">\s*<summary><span class="filter-name">Labels<\/span><span class="filter-value">All labels<\/span><span class="caret" aria-hidden="true">▾<\/span><\/summary>/,
+  );
+  assert.match(
+    html,
+    /<div class="filter-panel">\s*<p class="filter-panel-head">Labels<\/p>\s*<a href="\/\?menu=labels" aria-current="page">All labels<\/a>/,
+  );
+  // A row is a plain link: no button, and no script is needed to open the panel.
+  assert.match(
+    html,
+    /<a href="\/\?label=design&amp;menu=labels"><span class="filter-label">Design<\/span><span class="filter-count">2<\/span><\/a>/,
+  );
+  assert.doesNotMatch(html, /<button[^>]*>All labels/);
 });
 
 test('an empty label view names every pick it carries', () => {

@@ -111,6 +111,11 @@ export interface RenderPageOptions {
   source?: SourceFilter;
   /** The platforms the library is cut to; `source` is the single-pick form. */
   sources?: SourceFilter[];
+  /**
+   * The filter menu a pick came from (`source`, `folder` or `labels`), so the
+   * panel it was used in reopens on the reload. Any other value opens none.
+   */
+  menu?: string | null;
   activeTotal?: number;
   archivedTotal?: number;
   missingEnglish?: number;
@@ -127,6 +132,36 @@ const SOURCE_LABELS: Record<string, string> = {
   youtube: 'YouTube',
   other: 'Post',
 };
+
+/**
+ * The source menu, in the order the chips used to list it. `web` is a saved
+ * page and `note` an agent's artifact, so the last two name a row's shape
+ * rather than a platform.
+ */
+const SOURCE_FILTER_ITEMS: readonly { value: Exclude<SourceFilter, 'all'>; label: string }[] = [
+  { value: 'x', label: 'X' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'web', label: 'Web' },
+  { value: 'note', label: 'Artifact' },
+];
+
+/** The filter menus a pick can reopen; the URL's `menu` accepts only these. */
+type FilterMenuKey = 'source' | 'folder' | 'labels';
+
+interface FilterMenuOptions {
+  key: FilterMenuKey;
+  /** The group's name, on the trigger and at the top of the panel. */
+  name: string;
+  /** The chosen values, joined; empty when the group is not filtering. */
+  value: string;
+  isSet: boolean;
+  /** The link that drops this group. */
+  clearHref: string;
+  /** The clear row's text, which is also the value when nothing is picked. */
+  clearLabel: string;
+  items: { href: string; label: string; count?: number; current: boolean }[];
+}
 
 /** Short source name for a bookmark URL, used as the outbound link label. */
 function sourceName(url: string | null): string {
@@ -158,6 +193,16 @@ function uniquePicks(values: readonly string[]): string[] {
 }
 
 /**
+ * A pick toggles: the value joins the group when it is absent and leaves it
+ * when it is already picked, so two sources or two folders sit in one cut.
+ */
+function togglePick<T>(values: readonly T[], value: T): T[] {
+  return values.includes(value)
+    ? values.filter(entry => entry !== value)
+    : [...values, value];
+}
+
+/**
  * `“a”`, `“a” or “b”`, `“a”, “b” or “c”` — an empty state that names every
  * pick instead of only the first. Names are escaped here, so callers pass the
  * stored text as it is.
@@ -172,7 +217,8 @@ function quotedNames(names: readonly string[]): string {
  * Build a library/topic URL without empty or default parameters. A filter that
  * accepts several picks emits one parameter per pick (`label=a&label=b`), and
  * the order is fixed — `q`, `day`, `label…`, `view`, `lang`, `layout`,
- * `source…`, `topic…` — so a single pick produces the same URL it always did.
+ * `source…`, `topic…`, `menu` — so a single pick produces the same URL it
+ * always did, and the menu key a pick came from stays last.
  */
 function libraryHref(
   path: string,
@@ -185,6 +231,7 @@ function libraryHref(
     layout = 'saves',
     sources = [],
     topics = [],
+    menu = null,
   }: {
     query?: string;
     day?: string | null;
@@ -194,6 +241,7 @@ function libraryHref(
     layout?: 'folders' | 'saves';
     sources?: readonly SourceFilter[];
     topics?: readonly string[];
+    menu?: string | null;
   } = {},
 ): string {
   const params = new URLSearchParams();
@@ -207,6 +255,7 @@ function libraryHref(
     if (source !== 'all') params.append('source', source);
   }
   for (const topic of new Set(topics)) if (topic) params.append('topic', topic);
+  if (menu) params.set('menu', menu);
   const search = params.toString();
   return search ? `${path}?${search}` : path;
 }
@@ -230,6 +279,7 @@ export function renderPage({
   layout: layoutOption = 'saves',
   source: sourceOption = 'all',
   sources: sourcesOption = [],
+  menu: menuOption = null,
   activeTotal = 0,
   archivedTotal = 0,
   missingEnglish = 0,
@@ -258,6 +308,11 @@ export function renderPage({
     labelPicksOption.length ? labelPicksOption : labelOption ? [labelOption] : [],
   );
   const topicPicks = uniquePicks(topicPicksOption);
+  // Only the three menu keys are honoured; anything else opens no panel.
+  const openMenu: FilterMenuKey | null =
+    menuOption === 'source' || menuOption === 'folder' || menuOption === 'labels'
+      ? menuOption
+      : null;
   const pending = bookmarks.some(bookmark => cardHasPendingJob(bookmark, lang));
   const path = topic ? `/t/${topic.slug}` : '/';
   const currentQuery = topic ? '' : query;
@@ -285,70 +340,152 @@ export function renderPage({
     sources: sourcePicks,
     topics: currentTopicPicks,
   });
-  const sourceChips = (
-    [
-      ['all', 'All'],
-      ['x', 'X'],
-      ['linkedin', 'LinkedIn'],
-      ['youtube', 'YouTube'],
-      ['web', 'Web'],
-      ['note', 'Artifact'],
-    ] as const
-  )
-    .map(
-      ([value, label]) =>
-        `<a class="${
-          value === 'all' ? (sourcePicks.length ? '' : 'active') : sourcePicks.includes(value) ? 'active' : ''
-        }" href="${escapeHtml(
-          libraryHref(path, {
-            query: currentQuery,
-            day: currentDay,
-            labels: currentLabelPicks,
-            view,
-            lang,
-            layout: layoutParam,
-            sources: value === 'all' ? [] : [value],
-            topics: currentTopicPicks,
-          }),
-        )}">${label}</a>`,
-    )
-    .join('');
+  // A menu is a named trigger carrying the current value, a panel of items that
+  // toggle, and a clear row. Labels are the reader's tags, not folders — the
+  // same shelf cut another way — so the label menu lists only labels somebody
+  // actually used, while a folder list is the AI's own taxonomy.
+
+  /**
+   * A link inside the bar: the changes win over the page's own picks, every
+   * other pick stays, and `menu` names the panel a pick came from so the reload
+   * lands with it open. A clear row keeps the key too, so the panel survives the
+   * clear and the reader can pick another value without opening it again.
+   */
+  const filterHref = (
+    changes: {
+      labels?: readonly string[];
+      sources?: readonly SourceFilter[];
+      topics?: readonly string[];
+    } = {},
+    menu: string | null = null,
+  ): string =>
+    libraryHref(path, {
+      query: currentQuery,
+      day: currentDay,
+      labels: changes.labels ?? currentLabelPicks,
+      view,
+      lang,
+      layout: layoutParam,
+      sources: changes.sources ?? sourcePicks,
+      topics: changes.topics ?? currentTopicPicks,
+      menu,
+    });
+  const sourceFilterName = (value: SourceFilter): string =>
+    SOURCE_FILTER_ITEMS.find(item => item.value === value)?.label || value;
+  const filterMenu = (menu: FilterMenuOptions): string =>
+    `<details class="filter-menu${menu.isSet ? ' is-set' : ''}"${openMenu === menu.key ? ' open' : ''}>
+                  <summary><span class="filter-name">${escapeHtml(menu.name)}</span><span class="filter-value">${escapeHtml(
+                    menu.value || menu.clearLabel,
+                  )}</span><span class="caret" aria-hidden="true">▾</span></summary>
+                  <div class="filter-panel">
+                    <p class="filter-panel-head">${escapeHtml(menu.name)}</p>
+                    <a href="${escapeHtml(menu.clearHref)}"${menu.isSet ? '' : ' aria-current="page"'}>${escapeHtml(
+                      menu.clearLabel,
+                    )}</a>
+                    ${menu.items
+                      .map(
+                        item =>
+                          `<a href="${escapeHtml(item.href)}"${
+                            item.current ? ' aria-current="page"' : ''
+                          }><span class="filter-label">${escapeHtml(item.label)}</span>${
+                            item.count === undefined ? '' : `<span class="filter-count">${item.count}</span>`
+                          }</a>`,
+                      )
+                      .join('\n                    ')}
+                  </div>
+                </details>`;
+  const sourceMenu = filterMenu({
+    key: 'source',
+    name: 'Source',
+    value: sourcePicks.map(sourceFilterName).join(', '),
+    isSet: sourcePicks.length > 0,
+    clearHref: filterHref({ sources: [] }, 'source'),
+    clearLabel: 'All sources',
+    items: SOURCE_FILTER_ITEMS.map(item => ({
+      href: filterHref({ sources: togglePick(sourcePicks, item.value) }, 'source'),
+      label: item.label,
+      current: sourcePicks.includes(item.value),
+    })),
+  });
+  // A folder page is one folder already, so it gets no folder menu there.
+  const folderMenu =
+    !topic && topics.length
+      ? filterMenu({
+          key: 'folder',
+          name: 'Folder',
+          value: topicNames.join(', '),
+          isSet: currentTopicPicks.length > 0,
+          clearHref: filterHref({ topics: [] }, 'folder'),
+          clearLabel: 'All folders',
+          items: topics.map(entry => ({
+            href: filterHref({ topics: togglePick(currentTopicPicks, entry.slug) }, 'folder'),
+            label: entry.name,
+            count: entry.count,
+            current: currentTopicPicks.includes(entry.slug),
+          })),
+        })
+      : '';
+  const labelMenuMarkup = labels.length
+    ? filterMenu({
+        key: 'labels',
+        name: 'Labels',
+        value: labelNames.join(', '),
+        isSet: currentLabelPicks.length > 0,
+        clearHref: filterHref({ labels: [] }, 'labels'),
+        clearLabel: 'All labels',
+        items: labels.map(entry => ({
+          href: filterHref({ labels: togglePick(currentLabelPicks, entry.slug) }, 'labels'),
+          label: entry.name,
+          count: entry.count,
+          current: currentLabelPicks.includes(entry.slug),
+        })),
+      })
+    : '';
+  // An active filter is a token with an ×: the bar stays one line, and the
+  // reader can drop one pick without hunting for the menu that made it.
+  const filterToken = (name: string, removeHref: string): string =>
+    `<a class="filter-token" href="${escapeHtml(removeHref)}" aria-label="Remove the ${escapeHtml(
+      name,
+    )} filter">${escapeHtml(name)}<i aria-hidden="true">×</i></a>`;
+  const filterTokens: string[] = [];
+  for (const value of sourcePicks) {
+    filterTokens.push(
+      filterToken(
+        sourceFilterName(value),
+        filterHref({ sources: sourcePicks.filter(entry => entry !== value) }),
+      ),
+    );
+  }
+  for (const slug of currentTopicPicks) {
+    filterTokens.push(
+      filterToken(
+        topics.find(entry => entry.slug === slug)?.name || slug,
+        filterHref({ topics: currentTopicPicks.filter(entry => entry !== slug) }),
+      ),
+    );
+  }
+  for (const slug of currentLabelPicks) {
+    filterTokens.push(
+      filterToken(
+        labels.find(entry => entry.slug === slug)?.name || slug,
+        filterHref({ labels: currentLabelPicks.filter(entry => entry !== slug) }),
+      ),
+    );
+  }
+  const tokenRow = filterTokens.length
+    ? `<div class="filter-tokens">
+                  ${filterTokens.join('\n                  ')}
+                  ${
+                    filterTokens.length > 1
+                      ? `<a class="clear-filters" href="${escapeHtml(
+                          filterHref({ labels: [], sources: [], topics: [] }),
+                        )}">Clear filters</a>`
+                      : ''
+                  }
+                </div>`
+    : '';
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
-  // Labels are the reader's tags, not folders: the same shelf by another cut,
-  // so the row only lists labels somebody actually used. A label on no post is
-  // dropped by the store, which keeps the row from filling with dead words.
-  const labelChips = labels.length
-    ? `<nav class="view-switch label-switch" role="group" aria-label="Label filter">
-                <a class="${currentLabelPicks.length ? '' : 'active'}" href="${escapeHtml(
-                  libraryHref('/', {
-                    query: currentQuery,
-                    day: currentDay,
-                    view,
-                    lang,
-                    layout: 'saves',
-                    sources: sourcePicks,
-                    topics: currentTopicPicks,
-                  }),
-                )}">All labels</a>
-                ${labels
-                  .map(
-                    entry =>
-                      `<a class="${currentLabelPicks.includes(entry.slug) ? 'active' : ''}" href="${escapeHtml(
-                        libraryHref('/', {
-                          day: currentDay,
-                          labels: [entry.slug],
-                          view,
-                          lang,
-                          layout: 'saves',
-                          sources: sourcePicks,
-                          topics: currentTopicPicks,
-                        }),
-                      )}">${escapeHtml(entry.name)}<span>${entry.count}</span></a>`,
-                  )
-                  .join('')}
-              </nav>`
-    : '';
   const showTranslateBanner =
     lang === 'en' && bilingual && aiConfigured && missingEnglish > 0;
   const dayLabel = currentDay ? formatDate(`${currentDay}T00:00:00.000Z`) : '';
@@ -489,41 +626,45 @@ export function renderPage({
                 <button type="submit">Search</button>
                 ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, labels: currentLabelPicks, view, lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }))}">Clear</a>` : ''}
               </form>
-              <div class="library-switches">
-                ${
-                  !topic && topics.length
-                    ? `<nav class="view-switch layout-switch" role="group" aria-label="Library layout">
-                        <a class="${showingList ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref('/', { labels: currentLabelPicks, view, lang, layout: 'saves', sources: sourcePicks, topics: currentTopicPicks }),
-                        )}">All saves<span>${view === 'archived' ? archivedCount : activeCount}</span></a>
-                        <a class="${showingList ? '' : 'active'}" href="${escapeHtml(
-                          libraryHref('/', { view, lang, layout: 'folders', sources: sourcePicks }),
-                        )}">Folders<span>${folderTopics.length}</span></a>
-                      </nav>`
-                    : ''
-                }
-                <nav class="view-switch" role="group" aria-label="Archive filter">
-                  <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'active', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
-                  )}">Active<span>${activeCount}</span></a>
-                  <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'archived', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
-                  )}">Archived<span>${archivedCount}</span></a>
-                </nav>
-                <nav class="view-switch source-switch" role="group" aria-label="Source filter">${sourceChips}</nav>
-                ${labelChips}
-                ${
-                  bilingual
-                    ? `<nav class="lang-switch" role="group" aria-label="Summary language">
-                        <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view, lang: 'tr', layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
-                        )}">${escapeHtml(languageOf(summaryLanguage).native)}</a>
-                        <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view, lang: 'en', layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
-                        )}">English</a>
-                      </nav>`
-                    : ''
-                }
+              <div class="library-bar">
+                <div class="library-switches">
+                  ${
+                    !topic && topics.length
+                      ? `<nav class="view-switch layout-switch" role="group" aria-label="Library layout">
+                          <a class="${showingList ? 'active' : ''}" href="${escapeHtml(
+                            libraryHref('/', { labels: currentLabelPicks, view, lang, layout: 'saves', sources: sourcePicks, topics: currentTopicPicks }),
+                          )}">All saves<span>${view === 'archived' ? archivedCount : activeCount}</span></a>
+                          <a class="${showingList ? '' : 'active'}" href="${escapeHtml(
+                            libraryHref('/', { view, lang, layout: 'folders', sources: sourcePicks }),
+                          )}">Folders<span>${folderTopics.length}</span></a>
+                        </nav>`
+                      : ''
+                  }
+                  <nav class="view-switch" role="group" aria-label="Archive filter">
+                    <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
+                      libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'active', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
+                    )}">Active<span>${activeCount}</span></a>
+                    <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
+                      libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'archived', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
+                    )}">Archived<span>${archivedCount}</span></a>
+                  </nav>
+                  ${sourceMenu}
+                  ${folderMenu}
+                  ${labelMenuMarkup}
+                  ${
+                    bilingual
+                      ? `<nav class="lang-switch" role="group" aria-label="Summary language">
+                          <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
+                            libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view, lang: 'tr', layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
+                          )}">${escapeHtml(languageOf(summaryLanguage).native)}</a>
+                          <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
+                            libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view, lang: 'en', layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
+                          )}">English</a>
+                        </nav>`
+                      : ''
+                  }
+                </div>
+                ${tokenRow}
               </div>
             </div>
           </div>
@@ -1990,7 +2131,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=30">
+  <link rel="stylesheet" href="/style.css?v=31">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2004,7 +2145,7 @@ export function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=3" defer></script>
+  <script src="/app.js?v=4" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}
@@ -2351,6 +2492,16 @@ h1, h2, h3 {
   gap: 8px;
 }
 
+/* The bar is its own row under the search: a menu trigger carries the current
+   value, and only an open panel takes space, so a hundred labels never add a
+   second chip row. */
+.library-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .view-switch,
 .lang-switch {
   display: inline-flex;
@@ -2389,6 +2540,158 @@ h1, h2, h3 {
   font-variant-numeric: tabular-nums;
   opacity: 0.65;
 }
+
+/* One bar of named menus. The trigger carries the current value, and only the
+   open menu takes space, so a long label list stays one row. */
+.filter-menu { position: relative; }
+
+.filter-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+
+.filter-menu > summary::-webkit-details-marker { display: none; }
+
+.filter-menu > summary:hover,
+.filter-menu[open] > summary { border-color: var(--line-strong); color: var(--ink); }
+
+.filter-menu.is-set > summary { border-color: var(--line-strong); }
+
+.filter-menu .filter-value {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-menu.is-set .filter-value { color: var(--ink); }
+
+.filter-menu .caret {
+  color: var(--faint);
+  font-size: 0.625rem;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+.filter-menu[open] .caret { transform: rotate(180deg); }
+
+.filter-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(15rem, calc(100vw - 32px));
+  max-height: min(60vh, 20rem);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.filter-panel-head {
+  margin: 4px 8px 6px;
+  color: var(--faint);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.filter-panel a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.filter-panel a:hover { background: var(--surface-soft); }
+
+.filter-panel a[aria-current] {
+  background: var(--surface-soft);
+  font-weight: 650;
+}
+
+.filter-panel a[aria-current]::after {
+  content: '✓';
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.filter-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-count {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: 0.65625rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An active filter is a token with an ×, so one pick can be dropped without
+   hunting for the menu that made it. */
+.filter-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.filter-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.filter-token i {
+  font-style: normal;
+  color: var(--faint);
+  line-height: 1;
+}
+
+.filter-token:hover { border-color: var(--line-strong); }
+
+.clear-filters {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.clear-filters:hover { color: var(--ink); }
 
 .calendar-link {
   display: inline-flex;
@@ -3590,12 +3893,6 @@ h1, h2, h3 {
 /* Labels are the reader's own tags: a chip reads back as a filter, and the
    editor under it rewrites the whole set on that one card. Each chip carries
    the tone its slug hashes to, so a word keeps one colour everywhere. */
-.label-switch {
-  max-width: 100%;
-  flex-wrap: wrap;
-  border-radius: 14px;
-}
-
 .card-labels {
   display: flex;
   flex-wrap: wrap;
@@ -4138,7 +4435,21 @@ body.settings-page .topbar {
   .add-form button { width: 100%; }
   .library-head { align-items: flex-start; flex-direction: column; }
   .library-tools { width: 100%; align-items: stretch; }
-  .library-switches { justify-content: space-between; }
+  .library-bar { align-items: stretch; position: relative; }
+  .library-switches { justify-content: flex-start; }
+  /* A phone cannot hang a 240px panel off a trigger near the edge, so an open
+     menu becomes a sheet under the whole bar and the controls stay in place. */
+  .filter-menu { position: static; }
+  .filter-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    width: auto;
+    max-height: min(60vh, 20rem);
+    margin-top: 6px;
+  }
+  .filter-tokens { justify-content: flex-start; }
   .translate-banner { align-items: flex-start; flex-direction: column; }
   .search-form { width: 100%; }
   .search-form input { flex: 1; width: auto; }

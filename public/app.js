@@ -74,6 +74,34 @@ document.addEventListener('click', async event => {
   }, 1200);
 });
 
+// A filter panel closes on an outside tap, as the apps' panels do. A pick
+// reloads the page with `menu` in the URL, so the panel it came from stays up;
+// this adds the other half — any tap that is not inside that panel closes it,
+// and the key leaves the URL with it, so a reload does not bring back a panel
+// the reader dismissed.
+(() => {
+  document.addEventListener('click', event => {
+    const target = event.target;
+    if (!target || !target.closest) return;
+
+    const open = document.querySelectorAll('details.filter-menu[open]');
+    if (!open.length) return;
+
+    let closed = false;
+    for (const menu of open) {
+      if (menu.contains(target)) continue;
+      menu.removeAttribute('open');
+      closed = true;
+    }
+    if (!closed || !window.history || !window.history.replaceState) return;
+
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('menu')) return;
+    url.searchParams.delete('menu');
+    window.history.replaceState(null, '', url);
+  });
+})();
+
 // Labels are a tick list: the box the reader clicks is the save. The route
 // answers a redirect, and `fetch` follows it, so the body is the page the
 // browser would have landed on — the card's chips are cut out of it and the
