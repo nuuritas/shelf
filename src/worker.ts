@@ -74,12 +74,14 @@ export { Bookmarks };
 
 const SESSION_COOKIE = 'shelf_session';
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
+// `img-src` allows any https host because a saved page's own `og:image` is
+// hotlinked from wherever the page lives; `media-src` stays on X's video host.
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy':
-    "default-src 'self'; img-src 'self' https://pbs.twimg.com data:; media-src 'self' https://video.twimg.com; style-src 'self'; script-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "default-src 'self'; img-src 'self' https: data:; media-src 'self' https://video.twimg.com; style-src 'self'; script-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
 
 const worker: ExportedHandler<Env> = {

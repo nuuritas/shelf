@@ -13,6 +13,10 @@ const SKIP_HOSTS = new Set([
 const MAX_LINKS = 2;
 const MAX_TEXT = 25_000;
 const MAX_HTML = 2_000_000;
+const MAX_POSTER_URL = 2048;
+const MAX_POSTER_ALT = 600;
+const MIN_POSTER_PIXELS = 200;
+const MAX_POSTER_PIXELS = 20_000;
 
 /** The parts of a post this module reads links out of. */
 interface LinkPost {
@@ -267,6 +271,8 @@ export async function readWebPost(input: string, env: Partial<Env> = {}): Promis
     metrics: { replies: null, reposts: null, likes: null, quotes: null, views: null, bookmarks: null },
     quote: null,
     media: [],
+    posterUrl: read.posterUrl ?? null,
+    posterAlt: read.posterAlt ?? null,
     article: {
       id: null,
       title,
@@ -437,6 +443,7 @@ async function readWebPage(url: string, env: Partial<Env>): Promise<LinkRead> {
     metaContent(html, 'article:published_time') || metaContent(html, 'datePublished') || null;
   const articleHtml = extractMainHtml(html);
   const text = htmlToText(articleHtml).slice(0, MAX_TEXT);
+  const poster = readPoster(html);
 
   if (!text && !description) {
     throw new Error('Could not extract readable text from this page.');
@@ -453,6 +460,8 @@ async function readWebPage(url: string, env: Partial<Env>): Promise<LinkRead> {
     // navigation-sized leftovers when there is one.
     text: text.length >= 200 ? text : (description || text).slice(0, MAX_TEXT),
     publishedAt,
+    posterUrl: poster?.url ?? null,
+    posterAlt: poster?.alt ?? null,
   };
 }
 
@@ -529,6 +538,48 @@ function metaContent(html: string, name: string): string {
     if (content) return decodeHtmlEntities(content).replace(/\s+/g, ' ').trim();
   }
   return '';
+}
+
+/**
+ * Only an https URL can be hotlinked into a page served over TLS: an `http:`
+ * image would be blocked as mixed content, and a `data:` or `javascript:`
+ * value in a meta tag is not a picture at all. `metaContent` has already
+ * decoded the entities, so this trims only.
+ */
+function posterUrl(value: string | null | undefined): string | null {
+  const raw = (value ?? '').trim();
+  if (!raw || raw.length > MAX_POSTER_URL) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A pixel count from an `og:image:width`/`:height` tag, or null when it is not one. */
+function pixels(value: string): number | null {
+  const number = Number.parseInt(value, 10);
+  return Number.isFinite(number) && number > 0 && number <= MAX_POSTER_PIXELS
+    ? Math.round(number)
+    : null;
+}
+
+/**
+ * The `og:image` a page leads with, with the alt text it also declared. A 1×1
+ * tracking pixel and a favicon-size logo are not the page's art, so a declared
+ * size below 200 pixels either way rejects the image.
+ */
+export function readPoster(html: string): { url: string; alt: string | null } | null {
+  const url = posterUrl(metaContent(html, 'og:image'));
+  if (!url) return null;
+  const width = pixels(metaContent(html, 'og:image:width'));
+  const height = pixels(metaContent(html, 'og:image:height'));
+  if ((width !== null && width < MIN_POSTER_PIXELS) || (height !== null && height < MIN_POSTER_PIXELS)) {
+    return null;
+  }
+  const alt = metaContent(html, 'og:image:alt').slice(0, MAX_POSTER_ALT).trim();
+  return { url, alt: alt || null };
 }
 
 function cleanTitle(value: string): string {
