@@ -39,6 +39,8 @@ import {
   searchQuerySql,
   sourceFilterSql,
   sourceFiltersSql,
+  TOPIC_LIST_SQL,
+  TOPIC_PROMPT_LIMIT,
 } from './util.ts';
 import { readPost } from './x.ts';
 import type {
@@ -1309,19 +1311,16 @@ export class Bookmarks extends DurableObject<Env> {
     return bookmarks;
   }
 
-  topics() {
+  /**
+   * Topics with their counts, busiest first. Unbounded for the views that need
+   * every topic; `classifyRow` passes `TOPIC_PROMPT_LIMIT` so the filing prompt
+   * carries the taxonomy in use rather than the whole archive.
+   */
+  topics(limit?: number) {
+    const sql = limit === undefined ? TOPIC_LIST_SQL : `${TOPIC_LIST_SQL} LIMIT ?`;
+    const args = limit === undefined ? [] : [limit];
     return this.sql
-      .exec<TopicCountRow>(
-        `SELECT t.slug, t.name, t.description, t.overview, t.overview_at,
-                (SELECT COUNT(*) FROM item_topics it
-                 JOIN bookmarks b ON b.tweet_id = it.tweet_id
-                 WHERE it.slug = t.slug AND b.archived_at IS NULL) AS count,
-                (SELECT COUNT(*) FROM item_topics it
-                 JOIN bookmarks b ON b.tweet_id = it.tweet_id
-                 WHERE it.slug = t.slug AND b.archived_at IS NOT NULL) AS archived_count
-         FROM topics t
-         ORDER BY count DESC, t.name COLLATE NOCASE`,
-      )
+      .exec<TopicCountRow>(sql, ...args)
       .toArray()
       .map(row => ({
         slug: row.slug,
@@ -1966,7 +1965,7 @@ export class Bookmarks extends DurableObject<Env> {
   async classifyRow(row: BookmarkRow): Promise<void> {
     const tweetId = String(row.tweet_id);
     const bookmark = rowToBookmark(row);
-    const topics = this.topics();
+    const topics = this.topics(TOPIC_PROMPT_LIMIT);
 
     try {
       const result = await classifyPost(

@@ -181,6 +181,30 @@ export function filingReadySql(aiConfigured: boolean): string {
 }
 
 /**
+ * Every topic with its active and archived post counts, busiest first. The
+ * ordering lives in the SQL rather than in a caller because it is what makes
+ * `TOPIC_PROMPT_LIMIT` safe: the taxonomy the classifier sees is the part of it
+ * the archive actually uses. Callers that render the whole taxonomy (the folder
+ * grid, a topic page) run it unbounded; the filing prompt appends `LIMIT ?`.
+ */
+export const TOPIC_LIST_SQL = `SELECT t.slug, t.name, t.description, t.overview, t.overview_at,
+        (SELECT COUNT(*) FROM item_topics it
+         JOIN bookmarks b ON b.tweet_id = it.tweet_id
+         WHERE it.slug = t.slug AND b.archived_at IS NULL) AS count,
+        (SELECT COUNT(*) FROM item_topics it
+         JOIN bookmarks b ON b.tweet_id = it.tweet_id
+         WHERE it.slug = t.slug AND b.archived_at IS NOT NULL) AS archived_count
+ FROM topics t
+ ORDER BY count DESC, t.name COLLATE NOCASE`;
+
+/**
+ * How many existing topics the filing prompt lists, busiest first, so the
+ * classifier prompt stops growing with the archive. Matches the cloud's
+ * `TOPIC_LIMITS.prompt`.
+ */
+export const TOPIC_PROMPT_LIMIT = 40;
+
+/**
  * Re-queue `disabled` summaries once AI is configured. `disabled` means "saved
  * while AI was off", not a queue state, so no queue query selects it again and
  * those rows would stay stuck forever. An agent note that arrived without an
