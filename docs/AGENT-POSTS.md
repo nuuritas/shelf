@@ -108,13 +108,17 @@ paper (`#e8edf3` in light, `#1c242c` in dark) rather than blending with
 `color-mix`: the frame is opaque, so a blend computed against the wrong
 background is the seam you were trying to remove.
 
-### Do not key off the OS scheme
+### Do not key off the media query
 
-`prefers-color-scheme` describes the operating system, not the app. Shelf Cloud
-ignores it — light until the reader picks dark in Settings — so a note that
-follows the OS is dark inside a light app. The self-hosted Worker defaults to
-`system`, so its first paint can go either way. The frame cannot read the
-parent's `data-theme` either.
+`prefers-color-scheme` means different things on the two surfaces that read a
+note. On the web — the hosted service and the self-hosted Worker — it is the
+operating system's. Shelf Cloud ignores it and stays light until the reader picks
+dark in Settings. The self-hosted Worker defaults to `system`, so its first paint
+can go either way. The frame cannot read the parent's `data-theme` either. In the
+phone apps it is the app's: the iOS client sets the page's
+`overrideUserInterfaceStyle` from the look, and the Android client builds the
+note's `WebView` in a night-mode context. A document cannot tell which one it is
+in.
 
 Light as the default, plus a visible choice, is the only version that lands
 correctly on both.
