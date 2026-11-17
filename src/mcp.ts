@@ -230,9 +230,10 @@ object or embed.
 Give it three colour options - light, white and dark - picked inside the
 document. Scripts never run and form controls are stripped, so drive it from
 <details name="theme"> plus :has(), declaring the tokens on body rather than
-:root. Do not use prefers-color-scheme: the app ignores the OS scheme and stays
-light until the reader chooses dark, and the frame cannot see the parent theme.
-Light is the default.
+:root. Do not use prefers-color-scheme: on the web it is the OS scheme (Shelf
+Cloud stays light until the reader chooses dark, and the frame cannot see the
+parent theme), but in the phone apps it is the app's own theme, and a document
+cannot tell which surface it is on. Light is the default.
 
 Use the app's palette, not one of your own: paper #f4f6f9 / #0d1117, card
 #ffffff / #151b23, ink #0f1720 / #e8eef5, ink-soft #33404f / #c3cdd8, soft
