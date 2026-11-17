@@ -65,6 +65,9 @@ const NOTICES: Record<string, string> = {
   labeled: 'Labels saved.',
 };
 
+/** The calendar's top-bar icon: a month grid in the bar's own stroke weight. */
+const CALENDAR_MARK = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.2" y="4.6" width="17.6" height="16.8" rx="2.6"/><path d="M3.2 9.5h17.6M8 2.4v3.8M16 2.4v3.8"/><circle cx="8" cy="14.4" r="1.05" fill="currentColor" stroke="none"/><circle cx="12" cy="14.4" r="1.05" fill="currentColor" stroke="none"/><circle cx="16" cy="14.4" r="1.05" fill="currentColor" stroke="none"/></svg>`;
+
 export interface RenderPageOptions {
   bookmarks: Bookmark[];
   total: number;
@@ -317,7 +320,7 @@ export function renderPage({
           <span>Shelf</span>
         </a>
         <div class="top-actions">
-          <span class="count">${total} ${view === 'archived' ? 'archived' : 'active'}</span>
+          <a class="bar-icon" href="${escapeHtml(calendarHref)}" aria-label="Open the save calendar" title="Calendar">${CALENDAR_MARK}</a>
           <a class="calendar-link" href="/settings">Settings</a>
           <form method="post" action="/logout">
             <button class="link-button" type="submit">Log out</button>
@@ -400,7 +403,6 @@ export function renderPage({
                       </nav>`
                     : ''
                 }
-                <a class="calendar-link" href="${escapeHtml(calendarHref)}" aria-label="Open the save calendar">Calendar</a>
               </div>
             </div>
           </div>
@@ -1677,7 +1679,7 @@ function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=26">
+  <link rel="stylesheet" href="/style.css?v=27">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2094,6 +2096,28 @@ h1, h2, h3 {
 .calendar-link:hover {
   color: var(--ink);
   border-color: var(--line-strong);
+}
+
+.bar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.bar-icon:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.bar-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 .day-banner {
