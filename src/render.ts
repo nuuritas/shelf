@@ -1394,7 +1394,7 @@ function renderSummary(
   lang: 'tr' | 'en' = 'tr',
   bilingual = false,
 ): string {
-  const status = bookmark.summaryStatus || (aiConfigured ? 'pending' : 'disabled');
+  const status = bookmark.summaryStatus || (aiConfigured ? 'pending' : 'needs_key');
 
   if (status === 'done' && bookmark.summary) {
     const versions = Array.isArray(bookmark.versions) ? bookmark.versions : [];
@@ -1520,6 +1520,32 @@ function renderSummary(
     `;
   }
 
+  if (status === 'needs_key') {
+    return summaryNotConfigured();
+  }
+
+  if (status === 'idle') {
+    return `
+      <section class="summary disabled">
+        <div class="summary-head">
+          <span class="summary-mark">AI</span>
+          <h3>Summary waiting</h3>
+        </div>
+        <p class="summary-note">Automatic summaries are off, so this save waits for you. Start one now, or turn summaries on in Settings and the queue writes it on its next pass.</p>
+        <form method="post" action="/summarize" class="summary-retry">
+          <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
+          <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+          <button class="small-button" type="submit">Start now</button>
+        </form>
+      </section>
+    `;
+  }
+
+  return summaryNotConfigured();
+}
+
+/** No AI in this deployment, so no summary was ever possible for this save. */
+function summaryNotConfigured(): string {
   return `
     <section class="summary disabled">
       <div class="summary-head">

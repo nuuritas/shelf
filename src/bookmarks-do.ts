@@ -35,7 +35,7 @@ import {
   jsonResponse,
   parseSource,
   parseSourceList,
-  recoverDisabledSummariesSql,
+  recoverWaitingSummariesSql,
   searchQuerySql,
   sourceFilterSql,
   sourceFiltersSql,
@@ -815,7 +815,7 @@ export class Bookmarks extends DurableObject<Env> {
     const now = new Date().toISOString();
     const text = notePlainText(input.format, input.content);
     const summary = input.summary;
-    const summaryStatus = summary ? 'done' : 'disabled';
+    const summaryStatus = summary ? 'done' : isAiConfigured(this.env) ? 'idle' : 'needs_key';
     const url = input.sourceUrl || '';
     const agentJson = JSON.stringify(input.agent ?? null);
 
@@ -895,7 +895,9 @@ export class Bookmarks extends DurableObject<Env> {
       .toArray()[0];
 
     const now = new Date().toISOString();
-    const aiReady = this.summariesOn();
+    const aiConfigured = isAiConfigured(this.env);
+    const summariesOn = this.summariesOn();
+    const aiReady = aiConfigured && summariesOn;
     const articleJson = JSON.stringify(post.article ?? null);
     const contentChanged = Boolean(
       existing &&
@@ -907,7 +909,9 @@ export class Bookmarks extends DurableObject<Env> {
       ? existing?.summary_status || 'done'
       : shouldSummarize
         ? 'pending'
-        : 'disabled';
+        : aiConfigured
+          ? 'idle'
+          : 'needs_key';
 
     const values: (string | number | null)[] = [
       post.tweetId,
@@ -1685,14 +1689,15 @@ export class Bookmarks extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
-    // A row saved while AI was off is parked at `disabled`, which no queue
-    // query selects. Once AI is configured, move a bounded batch back to
-    // `pending` so a recovered deployment picks the backlog up instead of
-    // leaving it stuck. While AI stays off the helper returns null. The reader's
-    // summaries switch gates this too, or a save made while it is off would be
-    // summarized by the next pass.
+    // A row saved while AI was off is parked at `needs_key`; a row saved while
+    // the reader's summaries switch was off is parked at `idle`; older rows are
+    // parked at `disabled`. No queue query selects any of them. Once AI and the
+    // switch agree, move a bounded batch back to `pending` so a recovered
+    // deployment picks the backlog up instead of leaving it stuck. With AI on
+    // but summaries off, the helper only corrects `needs_key` to `idle`. While
+    // AI stays off it returns null.
     const aiConfigured = isAiConfigured(this.env);
-    const recovery = recoverDisabledSummariesSql(this.summariesOn());
+    const recovery = recoverWaitingSummariesSql(aiConfigured, this.summariesOn());
     if (recovery) this.sql.exec(recovery);
 
     const staleBefore = Date.now() - STALE_SUMMARY_MS;
@@ -2218,7 +2223,7 @@ export class Bookmarks extends DurableObject<Env> {
     if (!isAiConfigured(this.env)) {
       this.sql.exec(
         `UPDATE bookmarks
-         SET summary_status = 'disabled', summary_error = NULL, summary_started_at = NULL,
+         SET summary_status = 'needs_key', summary_error = NULL, summary_started_at = NULL,
              summary_en_status = NULL, summary_en_started_at = NULL
          WHERE tweet_id = ?`,
         tweetId,
