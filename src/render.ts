@@ -108,6 +108,20 @@ function sourceName(url: string | null): string {
   return SOURCE_LABELS[sourceOfUrl(url)] || 'Post';
 }
 
+/**
+ * Any AI job still writing for this bookmark: the summary, a new version of it,
+ * or the English translation the reader is looking at. The page polls while a
+ * card answers yes, so it has to count the same three jobs the old meta refresh
+ * did — a finished summary with a version still queued is not done.
+ */
+function cardHasPendingJob(bookmark: Bookmark, lang: 'tr' | 'en'): boolean {
+  return (
+    ['pending', 'working'].includes(bookmark.summaryStatus || '') ||
+    ['pending', 'working'].includes(bookmark.versionStatus || '') ||
+    (lang === 'en' && ['pending', 'working'].includes(bookmark.summaryEnStatus || ''))
+  );
+}
+
 /** Build a library/topic URL without empty or default parameters. */
 function libraryHref(
   path: string,
@@ -170,12 +184,7 @@ export function renderPage({
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(dayOption || '')) ? String(dayOption) : null;
   const label = String(labelOption || '');
   const currentLabel = labels.find(entry => entry.slug === label);
-  const pending = bookmarks.some(
-    bookmark =>
-      ['pending', 'working'].includes(bookmark.summaryStatus) ||
-      ['pending', 'working'].includes(bookmark.versionStatus || '') ||
-      (lang === 'en' && ['pending', 'working'].includes(bookmark.summaryEnStatus || '')),
-  );
+  const pending = bookmarks.some(bookmark => cardHasPendingJob(bookmark, lang));
   const path = topic ? `/t/${topic.slug}` : '/';
   const currentQuery = topic ? '' : query;
   const currentDay = topic ? null : day;
@@ -1082,7 +1091,7 @@ function renderBookmark(
   if (linkCount) extras.push(`${linkCount} ${linkCount === 1 ? 'link' : 'links'}`);
 
   return `
-    <article class="card is-collapsed${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}" data-ref="${escapeHtml(bookmark.ref || bookmark.tweetId)}" data-summary-status="${escapeHtml(bookmark.summaryStatus || '')}">
+    <article class="card is-collapsed${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}" data-ref="${escapeHtml(bookmark.ref || bookmark.tweetId)}" data-summary-status="${escapeHtml(bookmark.summaryStatus || '')}"${cardHasPendingJob(bookmark, lang) ? ' data-pending="1"' : ''}>
       <header class="card-head">
         <div class="author">
           ${
@@ -1172,7 +1181,7 @@ function renderNoteCard(
       : '';
 
   return `
-    <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}" data-ref="${escapeHtml(bookmark.ref || bookmark.tweetId)}" data-summary-status="${escapeHtml(bookmark.summaryStatus || '')}">
+    <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}" data-ref="${escapeHtml(bookmark.ref || bookmark.tweetId)}" data-summary-status="${escapeHtml(bookmark.summaryStatus || '')}"${cardHasPendingJob(bookmark, lang) ? ' data-pending="1"' : ''}>
       <header class="card-head">
         <div class="author">
           <span class="avatar avatar-fallback note-avatar" aria-hidden="true">AI</span>
@@ -1696,7 +1705,7 @@ function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=1" defer></script>
+  <script src="/app.js?v=2" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}

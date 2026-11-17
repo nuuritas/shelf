@@ -242,11 +242,14 @@ document.addEventListener('click', async event => {
 // drops a half-typed label, so the page asks for itself again instead and
 // swaps only the cards whose summary has landed.
 //
-// The poll runs while a card says `pending`/`working`, every fifteen seconds,
-// and stops on its own when none is left or after ten minutes. The cap is what
-// keeps a save whose job never finishes — a dead link, a stopped worker — from
-// turning the shelf into an endless poll. A browser without JavaScript gets the
-// <noscript> refresh in the page head instead.
+// The poll runs while a card carries `data-pending`, every fifteen seconds, and
+// stops on its own when none is left or after ten minutes. That flag covers
+// every job the card is waiting on — the summary, a queued version, the English
+// translation — so a finished summary with a version still being written keeps
+// the card updating. The cap is what keeps a save whose job never finishes — a
+// dead link, a stopped worker — from turning the shelf into an endless poll. A
+// browser without JavaScript gets the <noscript> refresh in the page head
+// instead.
 (() => {
   if (!window.fetch || !window.DOMParser) return;
 
@@ -255,12 +258,9 @@ document.addEventListener('click', async event => {
   const MAX_PASSES = 40;
   let passes = 0;
 
-  const inProgress = status => status === 'pending' || status === 'working';
+  const inProgress = card => card.hasAttribute('data-pending');
 
-  const pending = () =>
-    Array.from(document.querySelectorAll(CARD)).filter(card =>
-      inProgress(card.getAttribute('data-summary-status')),
-    );
+  const pending = () => Array.from(document.querySelectorAll(CARD)).filter(inProgress);
 
   /** Cards by ref, so a card that stayed pending is found and left alone. */
   const byRef = page => {
@@ -306,8 +306,9 @@ document.addEventListener('click', async event => {
           const updated = fresh[card.getAttribute('data-ref')];
           if (!updated || busy(card)) return;
           // Still being written: leave the pulse line alone, or it restarts
-          // its animation on every poll.
-          if (inProgress(updated.getAttribute('data-summary-status'))) return;
+          // its animation on every poll. `data-pending` covers the summary, a
+          // queued version and the English translation alike.
+          if (inProgress(updated)) return;
 
           const next = document.importNode(updated, true);
           if (!card.classList.contains('is-collapsed')) next.classList.remove('is-collapsed');

@@ -728,7 +728,7 @@ test('a post card carries the ref and summary status the poll swaps on', () => {
 
   assert.match(
     html,
-    /<article class="card is-collapsed" id="bookmark-123" data-ref="k7f3" data-summary-status="pending">/,
+    /<article class="card is-collapsed" id="bookmark-123" data-ref="k7f3" data-summary-status="pending" data-pending="1">/,
   );
 });
 
@@ -748,7 +748,36 @@ test('a card without a ref falls back to its tweet id', () => {
     query: '',
   });
 
-  assert.match(html, /data-ref="123" data-summary-status="working">/);
+  assert.match(html, /data-ref="123" data-summary-status="working" data-pending="1">/);
+});
+
+test('a card with a queued version or translation stays pending for the poll', () => {
+  // The summary is done, so a status-only check would stop the poll; the old
+  // meta refresh covered the version and the English translation too.
+  const version = renderPage({
+    bookmarks: [sampleBookmark({ summaryStatus: 'done', versionStatus: 'pending' })],
+    total: 1,
+    query: '',
+  });
+  assert.match(version, /data-summary-status="done" data-pending="1">/);
+  assert.match(version, /<noscript><meta http-equiv="refresh" content="4"><\/noscript>/);
+
+  const translation = renderPage({
+    bookmarks: [sampleBookmark({ summaryStatus: 'done', summaryEnStatus: 'working' })],
+    total: 1,
+    query: '',
+    lang: 'en',
+  });
+  assert.match(translation, /data-summary-status="done" data-pending="1">/);
+
+  // The English board is the only place the translation is shown, so it alone
+  // decides whether that job keeps the card pending.
+  const turkish = renderPage({
+    bookmarks: [sampleBookmark({ summaryStatus: 'done', summaryEnStatus: 'working' })],
+    total: 1,
+    query: '',
+  });
+  assert.doesNotMatch(turkish, /data-pending=/);
 });
 
 test('a pending summary refreshes only without JavaScript', () => {
@@ -777,7 +806,7 @@ test('a finished library asks for no refresh at all', () => {
 test('the page loads the poll script with a cache buster', () => {
   const html = renderPage({ bookmarks: [], total: 0, query: '' });
 
-  assert.match(html, /<script src="\/app\.js\?v=1" defer><\/script>/);
+  assert.match(html, /<script src="\/app\.js\?v=2" defer><\/script>/);
   assert.doesNotMatch(html, /<script src="\/app\.js" defer>/);
 });
 
