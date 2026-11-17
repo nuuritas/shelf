@@ -43,6 +43,9 @@ test('unknown source values fall back to all', () => {
   assert.equal(parseSource('x'), 'x');
   assert.equal(parseSource('LinkedIn'), 'linkedin');
   assert.equal(parseSource(' youtube '), 'youtube');
+  assert.equal(parseSource('note'), 'note');
+  assert.equal(parseSource('web'), 'web');
+  assert.equal(parseSource('Web'), 'web');
   assert.equal(parseSource('all'), 'all');
   assert.equal(parseSource('other'), 'all');
   assert.equal(parseSource('x; DROP TABLE bookmarks'), 'all');
@@ -51,8 +54,8 @@ test('unknown source values fall back to all', () => {
 
 test('the SQL filter agrees with sourceOfUrl', () => {
   const db = new DatabaseSync(':memory:');
-  db.exec('CREATE TABLE bookmarks (url TEXT)');
-  const insert = db.prepare('INSERT INTO bookmarks (url) VALUES (?)');
+  db.exec('CREATE TABLE bookmarks (url TEXT, kind TEXT)');
+  const insert = db.prepare('INSERT INTO bookmarks (url, kind) VALUES (?, NULL)');
   for (const url of urls) insert.run(url);
 
   for (const source of ['x', 'linkedin', 'youtube']) {
@@ -67,9 +70,44 @@ test('the SQL filter agrees with sourceOfUrl', () => {
   db.close();
 });
 
+test('web and note filter a row by its shape, not by its host', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE bookmarks (id TEXT, url TEXT, kind TEXT)');
+  const insert = db.prepare('INSERT INTO bookmarks (id, url, kind) VALUES (?, ?, ?)');
+  const rows = [
+    ['li-post', 'https://www.linkedin.com/posts/a', 'post'],
+    ['note-cites', 'https://example.com/paper', 'note'],
+    ['note-plain', '', 'note'],
+    ['page-null-kind', 'https://example.com/blog/post', null],
+    ['page-post', 'https://example.com/blog/other', 'post'],
+    ['x-post', 'https://x.com/a/status/1', 'post'],
+    ['yt-video', 'https://youtu.be/abc', 'post'],
+  ];
+  for (const row of rows) insert.run(...row);
+
+  const ids = sql =>
+    db
+      .prepare(`SELECT id FROM bookmarks WHERE ${sql} ORDER BY id`)
+      .all()
+      .map(row => row.id);
+
+  // A note that cites a page is an artifact, never a saved page.
+  assert.deepEqual(ids(sourceFilterSql('note')), ['note-cites', 'note-plain']);
+  assert.deepEqual(ids(sourceFilterSql('web')), ['page-null-kind', 'page-post']);
+  assert.deepEqual(ids(sourceFiltersSql(['web', 'note'])), [
+    'note-cites',
+    'note-plain',
+    'page-null-kind',
+    'page-post',
+  ]);
+
+  db.close();
+});
+
 test('repeated source values OR together and an unknown value opens the cut', () => {
   assert.deepEqual(parseSourceList(['x', 'youtube']), ['x', 'youtube']);
   assert.deepEqual(parseSourceList([' youtube ', 'X', 'youtube']), ['youtube', 'x']);
+  assert.deepEqual(parseSourceList(['web', 'note']), ['web', 'note']);
   assert.deepEqual(parseSourceList(['x', 'all']), []);
   assert.deepEqual(parseSourceList(['x', 'nope']), []);
   assert.deepEqual(parseSourceList([]), []);
