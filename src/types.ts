@@ -176,6 +176,9 @@ export interface XPost extends Quote {
   author: Author | null;
   metrics: Metrics;
   quote: Quote | null;
+  /** The page's own `og:image`, when a reader found one. */
+  posterUrl?: string | null;
+  posterAlt?: string | null;
 }
 
 export interface ParsedXUrl {
@@ -209,6 +212,9 @@ export interface LinkRead {
   description: string;
   text: string;
   publishedAt?: string | null;
+  /** The page's `og:image`, when it declared an https one. */
+  posterUrl?: string | null;
+  posterAlt?: string | null;
   error?: string;
 }
 
@@ -342,6 +348,9 @@ export interface Bookmark {
   quote: Quote | null;
   article: XArticle | null;
   links: LinkRead[];
+  /** The saved page's own picture, hotlinked; null when it declared none. */
+  posterUrl: string | null;
+  posterAlt: string | null;
   /** Spoken content from videos attached to or linked from the post. */
   transcripts: VideoTranscript[];
   metrics: Metrics;
@@ -408,6 +417,9 @@ export type BookmarkRow = {
   version_error?: string | null;
   topics_status: string;
   topics_at: string | null;
+  /** Absent until the poster migration ran, so old rows stay valid. */
+  poster_url?: string | null;
+  poster_alt?: string | null;
 };
 
 /* ------------------------------------------------------------------ *

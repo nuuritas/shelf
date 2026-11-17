@@ -351,6 +351,8 @@ export class Bookmarks extends DurableObject<Env> {
       "ALTER TABLE bookmarks ADD COLUMN version_instruction TEXT",
       'ALTER TABLE bookmarks ADD COLUMN version_started_at INTEGER',
       'ALTER TABLE bookmarks ADD COLUMN version_error TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN poster_url TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN poster_alt TEXT',
     ]) {
       try {
         this.sql.exec(statement);
@@ -931,6 +933,8 @@ export class Bookmarks extends DurableObject<Env> {
       articleJson,
       JSON.stringify(post.metrics ?? {}),
       summaryStatus,
+      post.posterUrl ?? null,
+      post.posterAlt ?? null,
     ];
 
     if (existing) {
@@ -946,7 +950,8 @@ export class Bookmarks extends DurableObject<Env> {
           author_verified = ?, text = ?, created_at = ?, saved_at = ?, provider = ?,
           media_json = ?, quote_json = ?, article_json = ?, metrics_json = ?,
           summary_status = ?, summary_error = NULL, summary_attempts = 0,
-          summary_retry_at = NULL, archived_at = NULL${englishReset}
+          summary_retry_at = NULL, archived_at = NULL,
+          poster_url = ?, poster_alt = ?${englishReset}
         WHERE tweet_id = ?`,
         ...values.slice(1),
         post.tweetId,
@@ -958,8 +963,9 @@ export class Bookmarks extends DurableObject<Env> {
         `INSERT INTO bookmarks (
           tweet_id, ref, url, author_name, author_username, author_avatar_url, author_verified,
           text, created_at, saved_at, provider, media_json, quote_json, article_json,
-          metrics_json, summary_status, summary_en_status, summary_started_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          metrics_json, summary_status, poster_url, poster_alt, summary_en_status,
+          summary_started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         values[0],
         this.uniqueRef(),
         ...values.slice(1),
@@ -2388,6 +2394,8 @@ function rowToBookmark(row: BookmarkRow): Bookmark {
     quote: parseJson<Quote | null>(row.quote_json, null),
     article: parseJson<XArticle | null>(row.article_json, null),
     links: parseJson<LinkRead[]>(row.links_json, []),
+    posterUrl: row.poster_url ?? null,
+    posterAlt: row.poster_alt ?? null,
     transcripts: parseJson<VideoTranscript[]>(row.transcripts_json, []),
     // Filled by attachLabels for a page of cards; a bare row has no tag yet.
     labels: [],

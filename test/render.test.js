@@ -100,6 +100,8 @@ function sampleBookmark(overrides = {}) {
     quote: null,
     article: null,
     links: [],
+    posterUrl: null,
+    posterAlt: null,
     transcripts: [],
     metrics: {},
     summary: 'Türkçe özet.',
@@ -167,6 +169,51 @@ test('a saved URL card does not link the note reading page', () => {
   // card must not offer a reading link that would answer 404.
   assert.doesNotMatch(html, /href="\/p\/k7f3"/);
   assert.doesNotMatch(html, />Open note</);
+});
+
+test('a saved page draws the picture it came with', () => {
+  const html = renderPage({
+    bookmarks: [
+      sampleBookmark({
+        url: 'https://example.com/a-page',
+        provider: 'web',
+        posterUrl: 'https://example.com/art/cover.png',
+        posterAlt: 'A "quoted" <cover>',
+      }),
+    ],
+    total: 1,
+    query: '',
+  });
+
+  const posters = html.match(/<figure class="card-poster">[\s\S]*?<\/figure>/g) || [];
+  assert.equal(posters.length, 1);
+  assert.match(posters[0], /href="https:\/\/example\.com\/a-page"/);
+  assert.match(posters[0], /target="_blank"/);
+  assert.match(posters[0], /rel="noopener noreferrer"/);
+  assert.match(posters[0], /src="https:\/\/example\.com\/art\/cover\.png"/);
+  assert.match(posters[0], /alt="A &quot;quoted&quot; &lt;cover&gt;"/);
+  assert.match(posters[0], /loading="lazy"/);
+  assert.match(posters[0], /referrerpolicy="no-referrer"/);
+  // It sits between the copy and the rest of the card.
+  const text = html.indexOf('<div class="tweet-text">');
+  assert.ok(text > -1 && html.indexOf('<figure class="card-poster">') > text);
+});
+
+test('a card without a picture draws no poster', () => {
+  const html = renderPage({ bookmarks: [sampleBookmark()], total: 1, query: '' });
+  assert.doesNotMatch(html, /class="card-poster"/);
+  assert.doesNotMatch(html, /posterUrl/);
+});
+
+test('a picture URL the renderer will not hotlink draws no poster', () => {
+  for (const value of ['javascript:alert(1)', 'http://example.com/a.png', 'data:image/png;base64,AA']) {
+    const html = renderPage({
+      bookmarks: [sampleBookmark({ url: 'https://example.com/a-page', posterUrl: value })],
+      total: 1,
+      query: '',
+    });
+    assert.doesNotMatch(html, /class="card-poster"/, `${value} must not be drawn`);
+  }
 });
 
 test('renders the English summary board when the translation exists', () => {
@@ -728,6 +775,8 @@ function labelledPost(overrides = {}) {
     quote: null,
     article: null,
     links: [],
+    posterUrl: null,
+    posterAlt: null,
     transcripts: [],
     metrics: {},
     summary: 'A useful summary.',

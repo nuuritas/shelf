@@ -1484,6 +1484,12 @@ function renderBookmark(
   const initial = escapeHtml((author.name || author.username || '?').slice(0, 1).toUpperCase());
   const archived = Boolean(bookmark.archivedAt);
   const outboundUrl = safeHttpUrl(bookmark.url);
+  // Only an https picture is drawn: the page is served over TLS, so an http
+  // one would be blocked as mixed content, and anything else is not a picture.
+  const posterUrl = safeHttpUrl(bookmark.posterUrl);
+  const poster = posterUrl?.startsWith('https://')
+    ? `<figure class="card-poster"><a href="${escapeHtml(outboundUrl || '#')}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(posterUrl)}" alt="${escapeHtml(bookmark.posterAlt || '')}" loading="lazy" referrerpolicy="no-referrer"></a></figure>`
+    : '';
   // A saved page is labelled by its site; a platform post by its platform.
   const source =
     bookmark.provider === 'web' && author.name
@@ -1532,6 +1538,7 @@ function renderBookmark(
         )}
       </header>
       <div class="tweet-text">${linkifyText(bookmark.text)}</div>
+      ${poster}
 
       ${
         bookmark.topics?.length
@@ -2136,7 +2143,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=32">
+  <link rel="stylesheet" href="/style.css?v=33">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -3134,6 +3141,25 @@ h1, h2, h3 {
 .media-grid.media-count-3 { grid-template-columns: repeat(3, 1fr); }
 .media-grid.media-count-4 { grid-template-columns: repeat(2, 1fr); }
 
+.card-poster {
+  margin: 0 0 16px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.card-poster a { display: block; }
+
+.card-poster img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: 520px;
+  object-fit: cover;
+}
+
 .media-cell {
   margin: 0;
   min-width: 0;
@@ -3860,6 +3886,7 @@ h1, h2, h3 {
 }
 
 .card.is-collapsed .media-grid,
+.card.is-collapsed .card-poster,
 .card.is-collapsed .quote,
 .card.is-collapsed .link-stack,
 .card.is-collapsed .linked-article,
