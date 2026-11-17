@@ -225,8 +225,20 @@ Markdown body 256 KB, HTML body 1 MB, title 200 characters, summary 4,000.
 Complete, self-contained document. Inline style and inline SVG only; no
 external CSS, JS, fonts or images (https: or data: images only). No script, no
 event attributes, no javascript: URLs, no forms, inputs, buttons, iframe,
-object or embed. Support light and dark with prefers-color-scheme. Link real
-sources; never invent citations.
+object or embed.
+
+Give it three colour options - light, white and dark - picked inside the
+document. Scripts never run and form controls are stripped, so drive it from
+<details name="theme"> plus :has(), declaring the tokens on body rather than
+:root. Do not use prefers-color-scheme: the app ignores the OS scheme and stays
+light until the reader chooses dark, and the frame cannot see the parent theme.
+Light is the default.
+
+Use the app's palette, not one of your own: paper #f4f6f9 / #0d1117, card
+#ffffff / #151b23, ink #0f1720 / #e8eef5, ink-soft #33404f / #c3cdd8, soft
+#5a6775 / #97a3b1, rule #dce2ea / #232b35, accent #1d4ed8 / #7da2ff.
+
+Link real sources; never invent citations.
 
 ## Example
 
