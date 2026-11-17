@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { collectYoutubeIds, parseTranscriptBody, youtubeVideoId } from '../src/transcript.ts';
 import { labelSlug } from '../src/labels.ts';
+import { commandLogin, commandLogout } from './login.ts';
 import type {
   Bookmark,
   GetResult,
@@ -1410,6 +1411,8 @@ Usage:
   shelf stats [--json]                         archive counts
   shelf youtube [--limit 20] [--gap 5] [--dry-run]  fetch missing YouTube transcripts locally
   shelf config [--password <pw>] [--url <u>]   show or write credentials
+  shelf login [--url <u>]                      sign in through the browser
+  shelf logout                                 forget the saved credential
   shelf mcp                                    stdio MCP server for AI clients
 
 Configuration:
@@ -1471,6 +1474,10 @@ async function main(): Promise<void> {
       return commandExport(args);
     case 'config':
       return commandConfig(args);
+    case 'login':
+      return commandLogin(args.flags);
+    case 'logout':
+      return commandLogout();
     case 'mcp':
       return runMcp();
     default:
