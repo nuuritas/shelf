@@ -247,6 +247,56 @@ test('keeps the not-configured copy while AI is still off', () => {
   assert.doesNotMatch(html, /class="summary-retry"/);
 });
 
+test('a save made without an AI key says so and offers no button', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ summary: null, summaryStatus: 'needs_key' })],
+    total: 1,
+    query: '',
+    view: 'active',
+    lang: 'tr',
+    activeTotal: 1,
+    archivedTotal: 0,
+    aiConfigured: false,
+  });
+
+  assert.match(html, /Summary not configured/);
+  assert.match(html, /Bind Workers AI as AI, or add an AI_API_KEY secret/);
+  assert.doesNotMatch(html, /class="summary-retry"/);
+  assert.doesNotMatch(html, /Start now/);
+
+  // A row with no stored status and no key is the same state.
+  const unset = renderPage({
+    bookmarks: [sampleBookmark({ summary: null, summaryStatus: null })],
+    total: 1,
+    query: '',
+    aiConfigured: false,
+  });
+  assert.match(unset, /Summary not configured/);
+  assert.doesNotMatch(unset, /Start now/);
+});
+
+test('a save parked while summaries are off offers to start one now', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ summary: null, summaryStatus: 'idle' })],
+    total: 1,
+    query: '',
+    view: 'active',
+    lang: 'tr',
+    activeTotal: 1,
+    archivedTotal: 0,
+    aiConfigured: true,
+  });
+
+  assert.match(html, /Summary waiting/);
+  assert.match(html, /Automatic summaries are off/);
+  assert.match(html, /in Settings/);
+  assert.match(html, /<form method="post" action="\/summarize" class="summary-retry">/);
+  assert.match(html, /name="id" value="123"/);
+  assert.match(html, /name="returnTo" value="[^"]*"/);
+  assert.match(html, />Start now<\/button>/);
+  assert.doesNotMatch(html, /Bind Workers AI/);
+});
+
 test('renders a video transcript with language, duration, and source', () => {
   const html = renderPage({
     bookmarks: [

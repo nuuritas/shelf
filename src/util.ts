@@ -231,23 +231,42 @@ export const TOPIC_LIST_SQL = `SELECT t.slug, t.name, t.description, t.overview,
 export const TOPIC_PROMPT_LIMIT = 40;
 
 /**
- * Re-queue `disabled` summaries once AI is configured. `disabled` means "saved
- * while AI was off", not a queue state, so no queue query selects it again and
- * those rows would stay stuck forever. An agent note that arrived without an
- * abstract is also `disabled`, but it is complete as written and must never be
- * summarized, so it stays out of this backlog. The batch is bounded because
- * the alarm summarizes one row per pass; a large backlog drains over several
- * passes instead of stalling the queue. Returns null while AI stays
- * unconfigured.
+ * Move summaries that were parked because of AI state back into the queue.
+ * Three states are parked, none of them is a queue state, so no queue query
+ * selects them again and without this pass they would stay stuck forever:
+ * `disabled` is the legacy value written before the two causes were split,
+ * `needs_key` means the deployment had no AI at all, and `idle` means AI is
+ * configured but the reader turned automatic summaries off.
+ *
+ * The two modes differ because they answer different questions. With summaries
+ * on, every parked row is work waiting to happen, so the batch goes back to
+ * `pending`. With summaries off, a row parked `needs_key` still has to be
+ * corrected once a key appears, but re-queueing it would summarize something
+ * the reader asked to leave alone: it becomes `idle` instead, which records the
+ * truth and leaves the start to the reader. `idle` and `disabled` already say
+ * the right thing in that mode, so they are not touched.
+ *
+ * An agent note that arrived without an abstract is parked the same way, but it
+ * is complete as written and must never be summarized, so notes stay out of
+ * this backlog. The batch is bounded because the alarm summarizes one row per
+ * pass; a large backlog drains over several passes instead of stalling the
+ * queue. Returns null while AI stays unconfigured, when nothing can be written.
  */
-export function recoverDisabledSummariesSql(aiConfigured: boolean): string | null {
+export function recoverWaitingSummariesSql(
+  aiConfigured: boolean,
+  summariesOn: boolean,
+): string | null {
   if (!aiConfigured) return null;
+  const waiting = summariesOn
+    ? `summary_status IN ('disabled', 'idle', 'needs_key')`
+    : `summary_status = 'needs_key'`;
+  const next = summariesOn ? 'pending' : 'idle';
   return `UPDATE bookmarks
-    SET summary_status = 'pending', summary_error = NULL, summary_started_at = NULL,
+    SET summary_status = '${next}', summary_error = NULL, summary_started_at = NULL,
         summary_attempts = 0, summary_retry_at = NULL
     WHERE tweet_id IN (
       SELECT tweet_id FROM bookmarks
-      WHERE summary_status = 'disabled'
+      WHERE ${waiting}
         AND COALESCE(kind, 'post') != 'note'
       ORDER BY saved_at ASC
       LIMIT 10
