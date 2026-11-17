@@ -236,3 +236,94 @@ document.addEventListener('click', async event => {
     }
   });
 })();
+
+// A summary is written after the page is painted. Reloading the document to
+// pick it up throws the reader back to the top, loses every open card, and
+// drops a half-typed label, so the page asks for itself again instead and
+// swaps only the cards whose summary has landed.
+//
+// The poll runs while a card carries `data-pending`, every fifteen seconds, and
+// stops on its own when none is left or after ten minutes. That flag covers
+// every job the card is waiting on — the summary, a queued version, the English
+// translation — so a finished summary with a version still being written keeps
+// the card updating. The cap is what keeps a save whose job never finishes — a
+// dead link, a stopped worker — from turning the shelf into an endless poll. A
+// browser without JavaScript gets the <noscript> refresh in the page head
+// instead.
+(() => {
+  if (!window.fetch || !window.DOMParser) return;
+
+  const CARD = '.card[data-ref]';
+  const DELAY_MS = 15000;
+  const MAX_PASSES = 40;
+  let passes = 0;
+
+  const inProgress = card => card.hasAttribute('data-pending');
+
+  const pending = () => Array.from(document.querySelectorAll(CARD)).filter(inProgress);
+
+  /** Cards by ref, so a card that stayed pending is found and left alone. */
+  const byRef = page => {
+    const map = {};
+    page.querySelectorAll(CARD).forEach(card => {
+      map[card.getAttribute('data-ref')] = card;
+    });
+    return map;
+  };
+
+  /**
+   * A reader who is typing a label, or who opened a card, is in the middle of
+   * something: the card is skipped this pass and tried again on the next.
+   */
+  const busy = card =>
+    card.contains(document.activeElement) || Boolean(card.querySelector('details[open]'));
+
+  /** Put the reader back where they were if a card above them changed height. */
+  const holdScroll = top => {
+    if (window.scrollY === top) return;
+    const shell = document.documentElement;
+    const previous = shell.style.scrollBehavior;
+    shell.style.scrollBehavior = 'auto';
+    window.scrollTo(window.scrollX, top);
+    shell.style.scrollBehavior = previous;
+  };
+
+  const pass = () => {
+    const cards = pending();
+    if (!cards.length || passes >= MAX_PASSES) return;
+    passes += 1;
+
+    fetch(location.href, { cache: 'no-store', credentials: 'same-origin' })
+      .then(response => {
+        if (!response.ok) throw new Error('cards');
+        return response.text();
+      })
+      .then(html => {
+        const fresh = byRef(new DOMParser().parseFromString(html, 'text/html'));
+        const top = window.scrollY;
+
+        cards.forEach(card => {
+          const updated = fresh[card.getAttribute('data-ref')];
+          if (!updated || busy(card)) return;
+          // Still being written: leave the pulse line alone, or it restarts
+          // its animation on every poll. `data-pending` covers the summary, a
+          // queued version and the English translation alike.
+          if (inProgress(updated)) return;
+
+          const next = document.importNode(updated, true);
+          if (!card.classList.contains('is-collapsed')) next.classList.remove('is-collapsed');
+          card.parentNode.replaceChild(next, card);
+        });
+
+        holdScroll(top);
+        window.setTimeout(pass, DELAY_MS);
+      })
+      .catch(() => {
+        // A dropped request is not worth a page reload either: the card keeps
+        // its pending state and the next pass tries again.
+        window.setTimeout(pass, DELAY_MS);
+      });
+  };
+
+  if (pending().length) window.setTimeout(pass, DELAY_MS);
+})();

@@ -700,3 +700,113 @@ test('the label styles read from tokens and stay off the page style attribute', 
   assert.match(CSS, /\.label \{[^}]*border: 1px solid var\(--line\);/);
   assert.match(CSS, /\.label-form button \{[^}]*font-weight: 650;/);
 });
+
+function noteCard(overrides = {}) {
+  return labelledPost({
+    ref: 'n7t3a',
+    tweetId: '1985200000000000000',
+    url: 'https://www.bloomberg.com/news/articles/2026-11-16/x',
+    text: 'The note body, which the card does not print.',
+    kind: 'note',
+    format: 'markdown',
+    title: 'A filed artifact',
+    content: '# A filed artifact\n\nThe body.',
+    agent: { name: 'Claude Code', model: 'claude-sonnet-4-5', tool: 'shelf' },
+    sourceUrl: 'https://www.bloomberg.com/news/articles/2026-11-16/x',
+    provider: 'note',
+    summary: 'The abstract.',
+    ...overrides,
+  });
+}
+
+test('a post card carries the ref and summary status the poll swaps on', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ summaryStatus: 'pending', summary: null })],
+    total: 1,
+    query: '',
+  });
+
+  assert.match(
+    html,
+    /<article class="card is-collapsed" id="bookmark-123" data-ref="k7f3" data-summary-status="pending" data-pending="1">/,
+  );
+});
+
+test('a note card carries the ref and summary status the poll swaps on', () => {
+  const html = renderPage({ bookmarks: [noteCard()], total: 1, query: '' });
+
+  assert.match(
+    html,
+    /<article class="card note-card" id="bookmark-1985200000000000000" data-ref="n7t3a" data-summary-status="done">/,
+  );
+});
+
+test('a card without a ref falls back to its tweet id', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ ref: '', summaryStatus: 'working', summary: null })],
+    total: 1,
+    query: '',
+  });
+
+  assert.match(html, /data-ref="123" data-summary-status="working" data-pending="1">/);
+});
+
+test('a card with a queued version or translation stays pending for the poll', () => {
+  // The summary is done, so a status-only check would stop the poll; the old
+  // meta refresh covered the version and the English translation too.
+  const version = renderPage({
+    bookmarks: [sampleBookmark({ summaryStatus: 'done', versionStatus: 'pending' })],
+    total: 1,
+    query: '',
+  });
+  assert.match(version, /data-summary-status="done" data-pending="1">/);
+  assert.match(version, /<noscript><meta http-equiv="refresh" content="4"><\/noscript>/);
+
+  const translation = renderPage({
+    bookmarks: [sampleBookmark({ summaryStatus: 'done', summaryEnStatus: 'working' })],
+    total: 1,
+    query: '',
+    lang: 'en',
+  });
+  assert.match(translation, /data-summary-status="done" data-pending="1">/);
+
+  // The English board is the only place the translation is shown, so it alone
+  // decides whether that job keeps the card pending.
+  const turkish = renderPage({
+    bookmarks: [sampleBookmark({ summaryStatus: 'done', summaryEnStatus: 'working' })],
+    total: 1,
+    query: '',
+  });
+  assert.doesNotMatch(turkish, /data-pending=/);
+});
+
+test('a pending summary refreshes only without JavaScript', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ summaryStatus: 'pending', summary: null })],
+    total: 1,
+    query: '',
+  });
+
+  assert.match(html, /<noscript><meta http-equiv="refresh" content="4"><\/noscript>/);
+  // The bare tag would reload the page under the running poll; the only one on
+  // the page has to be the <noscript> fallback.
+  assert.doesNotMatch(
+    html.replace('<noscript><meta http-equiv="refresh" content="4"></noscript>', ''),
+    /http-equiv="refresh"/,
+  );
+});
+
+test('a finished library asks for no refresh at all', () => {
+  const html = renderPage({ bookmarks: [sampleBookmark()], total: 1, query: '' });
+
+  assert.doesNotMatch(html, /http-equiv="refresh"/);
+  assert.doesNotMatch(html, /<noscript><meta/);
+});
+
+test('the page loads the poll script with a cache buster', () => {
+  const html = renderPage({ bookmarks: [], total: 0, query: '' });
+
+  assert.match(html, /<script src="\/app\.js\?v=2" defer><\/script>/);
+  assert.doesNotMatch(html, /<script src="\/app\.js" defer>/);
+});
+
