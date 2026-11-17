@@ -79,8 +79,19 @@ export interface RenderPageOptions {
   topic?: TopicSummary | null;
   /** The reader's labels, most carried first; the card chips link here too. */
   labels?: LabelSummary[];
+  /**
+   * The label slugs the library is cut to. `labels` above is the menu, so the
+   * selection keeps its own name; `label` is the single-pick form it falls back
+   * to, kept for callers that predate the arrays.
+   */
+  labelPicks?: string[];
   /** A label slug, when the library is filtered to one label. */
   label?: string | null;
+  /**
+   * The folder slugs the library is cut to. `topics` above is the menu; the
+   * `topic` page keeps its own path instead of a parameter.
+   */
+  topicPicks?: string[];
   notice?: string | null;
   error?: string | null;
   aiConfigured?: boolean;
@@ -90,6 +101,8 @@ export interface RenderPageOptions {
   layout?: 'folders' | 'saves';
   /** Platform filter; `all` (the default) shows every source. */
   source?: SourceFilter;
+  /** The platforms the library is cut to; `source` is the single-pick form. */
+  sources?: SourceFilter[];
   activeTotal?: number;
   archivedTotal?: number;
   missingEnglish?: number;
@@ -126,35 +139,66 @@ function cardHasPendingJob(bookmark: Bookmark, lang: 'tr' | 'en'): boolean {
   );
 }
 
-/** Build a library/topic URL without empty or default parameters. */
+/** Trim a repeated filter parameter: blanks dropped, repeats kept once. */
+function uniquePicks(values: readonly string[]): string[] {
+  const picks: string[] = [];
+  for (const value of values) {
+    const pick = String(value ?? '').trim();
+    if (pick && !picks.includes(pick)) picks.push(pick);
+  }
+  return picks;
+}
+
+/**
+ * `“a”`, `“a” or “b”`, `“a”, “b” or “c”` — an empty state that names every
+ * pick instead of only the first. Names are escaped here, so callers pass the
+ * stored text as it is.
+ */
+function quotedNames(names: readonly string[]): string {
+  const quoted = names.map(name => `“${escapeHtml(name)}”`);
+  if (quoted.length <= 1) return quoted[0] || '';
+  return `${quoted.slice(0, -1).join(', ')} or ${quoted[quoted.length - 1]}`;
+}
+
+/**
+ * Build a library/topic URL without empty or default parameters. A filter that
+ * accepts several picks emits one parameter per pick (`label=a&label=b`), and
+ * the order is fixed — `q`, `day`, `label…`, `view`, `lang`, `layout`,
+ * `source…`, `topic…` — so a single pick produces the same URL it always did.
+ */
 function libraryHref(
   path: string,
   {
     query = '',
     day = null,
-    label = '',
+    labels = [],
     view = 'active',
     lang = 'tr',
     layout = 'saves',
-    source = 'all',
+    sources = [],
+    topics = [],
   }: {
     query?: string;
     day?: string | null;
-    label?: string | null;
+    labels?: readonly string[];
     view?: 'active' | 'archived';
     lang?: 'tr' | 'en';
     layout?: 'folders' | 'saves';
-    source?: SourceFilter;
+    sources?: readonly SourceFilter[];
+    topics?: readonly string[];
   } = {},
 ): string {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
   if (day) params.set('day', day);
-  if (label) params.set('label', label);
+  for (const label of new Set(labels)) if (label) params.append('label', label);
   if (view === 'archived') params.set('view', 'archived');
   if (lang === 'en') params.set('lang', 'en');
   if (layout === 'folders') params.set('layout', 'folders');
-  if (source !== 'all') params.set('source', source);
+  for (const source of new Set(sources)) {
+    if (source !== 'all') params.append('source', source);
+  }
+  for (const topic of new Set(topics)) if (topic) params.append('topic', topic);
   const search = params.toString();
   return search ? `${path}?${search}` : path;
 }
@@ -168,6 +212,8 @@ export function renderPage({
   topic = null,
   labels = [],
   label: labelOption = null,
+  labelPicks: labelPicksOption = [],
+  topicPicks: topicPicksOption = [],
   notice,
   error,
   aiConfigured = false,
@@ -175,6 +221,7 @@ export function renderPage({
   lang: langOption = 'tr',
   layout: layoutOption = 'saves',
   source: sourceOption = 'all',
+  sources: sourcesOption = [],
   activeTotal = 0,
   archivedTotal = 0,
   missingEnglish = 0,
@@ -191,13 +238,31 @@ export function renderPage({
   const layout = layoutOption === 'folders' ? 'folders' : 'saves';
   const source = parseSource(sourceOption);
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(dayOption || '')) ? String(dayOption) : null;
-  const label = String(labelOption || '');
-  const currentLabel = labels.find(entry => entry.slug === label);
+  // One spelling feeds the other: the picks win when given, and the singular
+  // option fills them in when a caller has not moved to arrays yet. `all` never
+  // becomes a parameter, so an open cut renders no `source` at all.
+  const sourcePicks: Exclude<SourceFilter, 'all'>[] = [];
+  for (const value of sourcesOption.length ? sourcesOption : source === 'all' ? [] : [source]) {
+    const pick = parseSource(value);
+    if (pick !== 'all' && !sourcePicks.includes(pick)) sourcePicks.push(pick);
+  }
+  const labelPicks = uniquePicks(
+    labelPicksOption.length ? labelPicksOption : labelOption ? [labelOption] : [],
+  );
+  const topicPicks = uniquePicks(topicPicksOption);
   const pending = bookmarks.some(bookmark => cardHasPendingJob(bookmark, lang));
   const path = topic ? `/t/${topic.slug}` : '/';
   const currentQuery = topic ? '' : query;
   const currentDay = topic ? null : day;
-  const currentLabelKey = topic ? '' : label;
+  // A folder page is its own path, so its links carry no folder parameter.
+  const currentLabelPicks = topic ? [] : labelPicks;
+  const currentTopicPicks = topic ? [] : topicPicks;
+  const labelNames = currentLabelPicks.map(
+    slug => labels.find(entry => entry.slug === slug)?.name || slug,
+  );
+  const topicNames = currentTopicPicks.map(
+    slug => topics.find(entry => entry.slug === slug)?.name || slug,
+  );
   const activeCount = (topic ? topic.count : activeTotal) ?? 0;
   const archivedCount = (topic ? topic.archivedCount : archivedTotal) ?? 0;
   /** Topic pages never carry the folder layout, so their links stay clean. */
@@ -205,11 +270,12 @@ export function renderPage({
   const returnTo = libraryHref(path, {
     query: currentQuery,
     day: currentDay,
-    label: currentLabelKey,
+    labels: currentLabelPicks,
     view,
     lang,
     layout: layoutParam,
-    source,
+    sources: sourcePicks,
+    topics: currentTopicPicks,
   });
   const sourceChips = (
     [
@@ -223,15 +289,18 @@ export function renderPage({
   )
     .map(
       ([value, label]) =>
-        `<a class="${source === value ? 'active' : ''}" href="${escapeHtml(
+        `<a class="${
+          value === 'all' ? (sourcePicks.length ? '' : 'active') : sourcePicks.includes(value) ? 'active' : ''
+        }" href="${escapeHtml(
           libraryHref(path, {
             query: currentQuery,
             day: currentDay,
-            label: currentLabelKey,
+            labels: currentLabelPicks,
             view,
             lang,
             layout: layoutParam,
-            source: value,
+            sources: value === 'all' ? [] : [value],
+            topics: currentTopicPicks,
           }),
         )}">${label}</a>`,
     )
@@ -243,27 +312,29 @@ export function renderPage({
   // dropped by the store, which keeps the row from filling with dead words.
   const labelChips = labels.length
     ? `<nav class="view-switch label-switch" role="group" aria-label="Label filter">
-                <a class="${currentLabelKey ? '' : 'active'}" href="${escapeHtml(
+                <a class="${currentLabelPicks.length ? '' : 'active'}" href="${escapeHtml(
                   libraryHref('/', {
                     query: currentQuery,
                     day: currentDay,
                     view,
                     lang,
                     layout: 'saves',
-                    source,
+                    sources: sourcePicks,
+                    topics: currentTopicPicks,
                   }),
                 )}">All labels</a>
                 ${labels
                   .map(
                     entry =>
-                      `<a class="${entry.slug === currentLabelKey ? 'active' : ''}" href="${escapeHtml(
+                      `<a class="${currentLabelPicks.includes(entry.slug) ? 'active' : ''}" href="${escapeHtml(
                         libraryHref('/', {
                           day: currentDay,
-                          label: entry.slug,
+                          labels: [entry.slug],
                           view,
                           lang,
                           layout: 'saves',
-                          source,
+                          sources: sourcePicks,
+                          topics: currentTopicPicks,
                         }),
                       )}">${escapeHtml(entry.name)}<span>${entry.count}</span></a>`,
                   )
@@ -279,7 +350,8 @@ export function renderPage({
     (layout === 'saves' ||
       Boolean(currentQuery) ||
       Boolean(currentDay) ||
-      Boolean(currentLabelKey));
+      currentLabelPicks.length > 0 ||
+      currentTopicPicks.length > 0);
   const showFolders = !topic && !showingList && topics.length > 0;
 
   const folderTopics = [...topics].sort((left, right) => {
@@ -287,6 +359,16 @@ export function renderPage({
     const rightCount = (view === 'archived' ? right.archivedCount : right.count) ?? 0;
     return rightCount - leftCount || left.name.localeCompare(right.name, 'tr');
   });
+
+  // Two picks must not read as one: the eyebrow counts the cut ("2 labels")
+  // and the heading names every one of them.
+  const cutKinds = [
+    labelNames.length === 1 ? 'Label' : labelNames.length ? `${labelNames.length} labels` : '',
+    topicNames.length === 1 ? 'Folder' : topicNames.length ? `${topicNames.length} folders` : '',
+  ].filter(Boolean);
+  const cutEyebrow = cutKinds.length
+    ? `${cutKinds.join(' and ')} · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
+    : '';
 
   const eyebrow = topic
     ? `Folder · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
@@ -296,8 +378,8 @@ export function renderPage({
         }`
       : currentDay
         ? `Day · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
-        : currentLabelKey
-          ? `Label · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`
+        : cutEyebrow
+          ? cutEyebrow
           : view === 'archived'
             ? `Archive · ${archivedCount} saved`
             : `Library · ${activeCount} active${archivedCount ? ` · ${archivedCount} archived` : ''}`;
@@ -310,26 +392,30 @@ export function renderPage({
       ? `Saved on ${escapeHtml(dayLabel)}`
       : topic
         ? escapeHtml(topic.name)
-        : currentLabel
-          ? escapeHtml(currentLabel.name)
-          : showFolders
-            ? 'Browse by folder'
-            : view === 'archived'
-              ? 'Archived bookmarks'
-              : 'Latest saves';
+        : labelNames.length
+          ? labelNames.map(escapeHtml).join(', ')
+          : topicNames.length
+            ? topicNames.map(escapeHtml).join(', ')
+            : showFolders
+              ? 'Browse by folder'
+              : view === 'archived'
+                ? 'Archived bookmarks'
+                : 'Latest saves';
 
   return pageShell({
     title: topic
       ? `${topic.name} · Shelf`
-      : currentLabel
-        ? `${currentLabel.name} · Shelf`
-        : showFolders
-          ? 'Folders · Shelf'
-          : currentDay
-            ? `${dayLabel} · Shelf`
-            : view === 'archived'
-              ? 'Archive · Shelf'
-              : 'Shelf',
+      : labelNames.length
+        ? `${labelNames.join(', ')} · Shelf`
+        : topicNames.length
+          ? `${topicNames.join(', ')} · Shelf`
+          : showFolders
+            ? 'Folders · Shelf'
+            : currentDay
+              ? `${dayLabel} · Shelf`
+              : view === 'archived'
+                ? 'Archive · Shelf'
+                : 'Shelf',
     bodyClass: 'home',
     head: pending ? '<noscript><meta http-equiv="refresh" content="4"></noscript>' : '',
     look: appearance,
@@ -366,7 +452,7 @@ export function renderPage({
           ${
             topic
               ? `<nav class="folder-crumbs" aria-label="Folders">
-                  <a href="${escapeHtml(libraryHref('/', { view, lang, layout: 'folders', source }))}">← All folders</a>
+                  <a href="${escapeHtml(libraryHref('/', { view, lang, layout: 'folders', sources: sourcePicks }))}">← All folders</a>
                 </nav>`
               : ''
           }
@@ -378,35 +464,42 @@ export function renderPage({
             <div class="library-tools">
               <form class="search-form" method="get" action="/">
                 ${currentDay ? `<input type="hidden" name="day" value="${escapeHtml(currentDay)}">` : ''}
-                ${currentLabelKey ? `<input type="hidden" name="label" value="${escapeHtml(currentLabelKey)}">` : ''}
+                ${currentLabelPicks
+                  .map(pick => `<input type="hidden" name="label" value="${escapeHtml(pick)}">`)
+                  .join('')}
                 ${view === 'archived' ? '<input type="hidden" name="view" value="archived">' : ''}
                 ${lang === 'en' ? '<input type="hidden" name="lang" value="en">' : ''}
-                ${source !== 'all' ? `<input type="hidden" name="source" value="${source}">` : ''}
+                ${sourcePicks
+                  .map(pick => `<input type="hidden" name="source" value="${escapeHtml(pick)}">`)
+                  .join('')}
+                ${currentTopicPicks
+                  .map(pick => `<input type="hidden" name="topic" value="${escapeHtml(pick)}">`)
+                  .join('')}
                 ${!topic && layout === 'folders' ? '<input type="hidden" name="layout" value="folders">' : ''}
                 <label class="sr-only" for="q">Search bookmarks</label>
                 <input id="q" name="q" type="search" placeholder="Search text or author" value="${escapeHtml(query || '')}">
                 <button type="submit">Search</button>
-                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, label: currentLabelKey, view, lang, layout: layoutParam, source }))}">Clear</a>` : ''}
+                ${query ? `<a class="clear-search" href="${escapeHtml(libraryHref(path, { day: currentDay, labels: currentLabelPicks, view, lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }))}">Clear</a>` : ''}
               </form>
               <div class="library-switches">
                 ${
                   !topic && topics.length
                     ? `<nav class="view-switch layout-switch" role="group" aria-label="Library layout">
                         <a class="${showingList ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref('/', { label: currentLabelKey, view, lang, layout: 'saves', source }),
+                          libraryHref('/', { labels: currentLabelPicks, view, lang, layout: 'saves', sources: sourcePicks, topics: currentTopicPicks }),
                         )}">All saves<span>${view === 'archived' ? archivedCount : activeCount}</span></a>
                         <a class="${showingList ? '' : 'active'}" href="${escapeHtml(
-                          libraryHref('/', { view, lang, layout: 'folders', source }),
+                          libraryHref('/', { view, lang, layout: 'folders', sources: sourcePicks }),
                         )}">Folders<span>${folderTopics.length}</span></a>
                       </nav>`
                     : ''
                 }
                 <nav class="view-switch" role="group" aria-label="Archive filter">
                   <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view: 'active', lang, layout: layoutParam, source }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'active', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
                   )}">Active<span>${activeCount}</span></a>
                   <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
-                    libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view: 'archived', lang, layout: layoutParam, source }),
+                    libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'archived', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
                   )}">Archived<span>${archivedCount}</span></a>
                 </nav>
                 <nav class="view-switch source-switch" role="group" aria-label="Source filter">${sourceChips}</nav>
@@ -415,10 +508,10 @@ export function renderPage({
                   bilingual
                     ? `<nav class="lang-switch" role="group" aria-label="Summary language">
                         <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view, lang: 'tr', layout: layoutParam, source }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view, lang: 'tr', layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
                         )}">${escapeHtml(languageOf(summaryLanguage).native)}</a>
                         <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
-                          libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view, lang: 'en', layout: layoutParam, source }),
+                          libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view, lang: 'en', layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
                         )}">English</a>
                       </nav>`
                     : ''
@@ -431,7 +524,7 @@ export function renderPage({
             currentDay
               ? `<div class="day-banner">
                   <span>Showing ${total} ${view === 'archived' ? 'archived' : 'active'} of ${activeCount + archivedCount} ${activeCount + archivedCount === 1 ? 'save' : 'saves'} from <strong>${escapeHtml(dayLabel)}</strong>.</span>
-                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, label: currentLabelKey, view, lang, layout: layoutParam, source }))}">Clear date</a>
+                  <a href="${escapeHtml(libraryHref(path, { query: currentQuery, labels: currentLabelPicks, view, lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }))}">Clear date</a>
                 </div>`
               : ''
           }
@@ -471,7 +564,7 @@ export function renderPage({
 
           ${
             showFolders
-              ? renderFolderGrid(folderTopics, { view, lang, source })
+              ? renderFolderGrid(folderTopics, { view, lang, sources: sourcePicks })
               : layout === 'folders' && !topic && !currentQuery && !currentDay
                 ? `<p class="folder-hint">Folders form themselves once a few saves have been summarized. Until then, the latest saves are below.</p>`
                 : ''
@@ -486,25 +579,31 @@ export function renderPage({
                       renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual, view, labels, primaryTag),
                     )
                     .join('')}</div>`
-                : currentLabelKey && !query
+                : currentLabelPicks.length && !query
                   ? `<div class="empty">
                       <p class="empty-mark">⌁</p>
-                      <h3>Nothing ${view === 'archived' ? 'archived ' : ''}carries “${escapeHtml(
-                        currentLabel?.name || currentLabelKey,
-                      )}”</h3>
+                      <h3>Nothing ${view === 'archived' ? 'archived ' : ''}carries ${quotedNames(
+                        labelNames,
+                      )}</h3>
                       <p>${
                         view === 'archived'
-                          ? 'A label only lists what it is put on, and this one is not on an archived save yet.'
-                          : 'Every save that carries it is archived, or the label was changed from a card.'
+                          ? `A label only lists what it is put on, and ${
+                              labelNames.length === 1 ? 'this one is' : 'these are'
+                            } not on an archived save yet.`
+                          : `Every save that carries ${
+                              labelNames.length === 1 ? 'it' : 'them'
+                            } is archived, or the ${
+                              labelNames.length === 1 ? 'label was' : 'labels were'
+                            } changed from a card.`
                       }</p>
                       <a class="small-button" href="${escapeHtml(
-                        libraryHref('/', { label: currentLabelKey, view: view === 'archived' ? 'active' : 'archived', lang, source }),
+                        libraryHref('/', { labels: currentLabelPicks, view: view === 'archived' ? 'active' : 'archived', lang, sources: sourcePicks, topics: currentTopicPicks }),
                       )}">${view === 'archived' ? 'Look in the active saves' : 'Look in the archive'}</a>
                       <a class="small-button" href="${escapeHtml(
-                        libraryHref('/', { view, lang, layout: 'saves', source }),
+                        libraryHref('/', { view, lang, layout: 'saves', sources: sourcePicks, topics: currentTopicPicks }),
                       )}">All labels</a>
                     </div>`
-                  : renderEmpty(query, view, currentDay, Boolean(topic), source, layout)
+                  : renderEmpty(query, view, currentDay, topic ? 1 : currentTopicPicks.length, sourcePicks, layout)
           }
 
           ${
@@ -677,8 +776,8 @@ function renderFolderGrid(
   {
     view,
     lang,
-    source,
-  }: { view: 'active' | 'archived'; lang: 'tr' | 'en'; source: SourceFilter },
+    sources,
+  }: { view: 'active' | 'archived'; lang: 'tr' | 'en'; sources: readonly SourceFilter[] },
 ): string {
   return `<div class="folder-grid" aria-label="Folders">${topics
     .map(entry => {
@@ -689,7 +788,7 @@ function renderFolderGrid(
           ? `${count} archived`
           : `${count} ${count === 1 ? 'save' : 'saves'}${archived ? ` · ${archived} archived` : ''}`;
       return `
-        <a class="folder-card" href="${escapeHtml(libraryHref(`/t/${entry.slug}`, { view, lang, source }))}">
+        <a class="folder-card" href="${escapeHtml(libraryHref(`/t/${entry.slug}`, { view, lang, sources }))}">
           <span class="folder-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
               <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/>
@@ -1058,7 +1157,7 @@ function renderLabels(
     .map(
       label =>
         `<a class="label tone-${labelTone(label.slug)}" href="${escapeHtml(
-          libraryHref('/', { label: label.slug, view, lang }),
+          libraryHref('/', { labels: [label.slug], view, lang }),
         )}">${escapeHtml(label.name)}</a>`,
     )
     .join('');
@@ -1648,8 +1747,8 @@ function renderEmpty(
   query: string,
   view: 'active' | 'archived' = 'active',
   day: string | null = null,
-  inFolder = false,
-  source: SourceFilter = 'all',
+  folders = 0,
+  sources: readonly SourceFilter[] = [],
   layout: 'folders' | 'saves' = 'saves',
 ): string {
   if (query) {
@@ -1658,22 +1757,31 @@ function renderEmpty(
         <p class="empty-mark">∅</p>
         <h3>${view === 'archived' ? 'No matches in the archive' : 'No matches'}</h3>
         <p>Nothing ${view === 'archived' ? 'archived ' : ''}in the library matches “${escapeHtml(query)}”${day ? ' on this day' : ''}.</p>
-        <a class="small-button" href="${escapeHtml(libraryHref('/', { day, view, layout, source }))}">Clear search</a>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { day, view, layout, sources }))}">Clear search</a>
       </div>
     `;
   }
 
-  if (inFolder) {
+  if (folders > 0) {
+    const many = folders > 1;
     return `
       <div class="empty">
         <p class="empty-mark">▢</p>
-        <h3>${view === 'archived' ? 'Nothing archived in this folder' : 'Nothing in this folder yet'}</h3>
+        <h3>${
+          view === 'archived'
+            ? many
+              ? 'Nothing archived in these folders'
+              : 'Nothing archived in this folder'
+            : many
+              ? 'Nothing in these folders yet'
+              : 'Nothing in this folder yet'
+        }</h3>
         <p>${
           view === 'archived'
-            ? 'Archive a bookmark from this folder to keep it here for later.'
+            ? `Archive a bookmark from ${many ? 'these folders' : 'this folder'} to keep it here for later.`
             : 'Save a post and the filing step will put it in a folder that fits. You can also browse every save.'
         }</p>
-        <a class="small-button" href="${escapeHtml(libraryHref('/', { view, layout: 'folders', source }))}">Browse folders</a>
+        <a class="small-button" href="${escapeHtml(libraryHref('/', { view, layout: 'folders', sources }))}">Browse folders</a>
       </div>
     `;
   }
