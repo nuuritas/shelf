@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SUMMARY_PROMPT, buildSummarySystemPrompt } from '../src/ai.ts';
+import { resolveLanguage } from '../src/languages.ts';
+import { renderSettings } from '../src/render.ts';
 import {
   MAX_SUMMARY_PROMPT_LENGTH,
   WORKSPACE_NAME_MAX,
@@ -18,13 +20,51 @@ test('the env language is the initial default, and English wins when unset', () 
   assert.equal(defaultSummaryLanguage({ SUMMARY_LANGUAGE: 'en' }), 'en');
   assert.equal(defaultSummaryLanguage({ SUMMARY_LANGUAGE: 'tr' }), 'tr');
   assert.equal(defaultSummaryLanguage({ SUMMARY_LANGUAGE: 'TR' }), 'tr');
+  assert.equal(defaultSummaryLanguage({ SUMMARY_LANGUAGE: 'pt-BR' }), 'pt-BR');
+  assert.equal(defaultSummaryLanguage({ SUMMARY_LANGUAGE: 'Deutsch' }), 'de');
+  // Junk, an empty value and a tag Intl cannot name all fall back to English.
+  assert.equal(defaultSummaryLanguage({ SUMMARY_LANGUAGE: '' }), 'en');
+  assert.equal(defaultSummaryLanguage({ SUMMARY_LANGUAGE: 'zz' }), 'en');
+  assert.equal(defaultSummaryLanguage({ SUMMARY_LANGUAGE: 'notalanguage' }), 'en');
 });
 
 test('an unknown stored language falls back to the deployment default', () => {
   assert.equal(normalizeSummaryLanguage('tr', 'en'), 'tr');
   assert.equal(normalizeSummaryLanguage('en', 'tr'), 'en');
-  assert.equal(normalizeSummaryLanguage('de', 'tr'), 'tr');
+  assert.equal(normalizeSummaryLanguage('pt-BR', 'en'), 'pt-BR');
+  assert.equal(normalizeSummaryLanguage('Portuguese', 'en'), 'pt');
+  assert.equal(normalizeSummaryLanguage('not a language', 'tr'), 'tr');
+  assert.equal(normalizeSummaryLanguage('zz', 'tr'), 'tr');
   assert.equal(normalizeSummaryLanguage(undefined, 'en'), 'en');
+});
+
+test('a language needs a name to be stored, not just a well-formed tag', () => {
+  assert.equal(resolveLanguage('pt-BR'), 'pt-BR');
+  assert.equal(resolveLanguage('Deutsch'), 'de');
+  assert.equal(resolveLanguage('sr-Latn'), 'sr-Latn');
+  assert.equal(resolveLanguage('Turkish'), 'tr');
+  // `Intl.getCanonicalLocales` accepts `zz`, but `Intl.DisplayNames` only echoes
+  // the tag back: it names no language, so it is refused rather than stored.
+  assert.equal(resolveLanguage('zz'), null);
+  assert.equal(resolveLanguage('not a language'), null);
+  assert.equal(resolveLanguage(''), null);
+  assert.equal(resolveLanguage(null), null);
+});
+
+test('the settings badge names the chosen summary language', () => {
+  const html = renderSettings({
+    settings: {
+      summaryPrompt: '',
+      summaryLanguage: 'pt-BR',
+      workspaceName: '',
+      summariesEnabled: true,
+    },
+    ai: { provider: 'custom', model: 'model-x', transport: 'http' },
+    aiConfigured: true,
+  });
+  // `Intl` writes its own name lowercase, region in brackets: a badge should
+  // still be the language's own name rather than a hardcoded pair.
+  assert.match(html, /class="settings-badge is-on">[^<]*português[^<]*<\/span>/i);
 });
 
 test('an empty or untouched prompt means the built-in default', () => {

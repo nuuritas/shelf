@@ -25,7 +25,7 @@ const env = {
 };
 
 /** Stub the OpenAI-compatible endpoint and return the system message it saw. */
-async function systemMessageFor(options) {
+async function systemMessageFor(options, envOverrides = {}) {
   const original = globalThis.fetch;
   let body = null;
   globalThis.fetch = async (_url, init) => {
@@ -39,7 +39,7 @@ async function systemMessageFor(options) {
   };
 
   try {
-    const result = await summarizePost(post, env, options);
+    const result = await summarizePost(post, { ...env, ...envOverrides }, options);
     assert.equal(result.text, 'A short summary.');
   } finally {
     globalThis.fetch = original;
@@ -58,6 +58,12 @@ test('without an override the built-in prompt is sent', async () => {
   assert.match(system, /^You are a perceptive analyst and explainer\./);
   assert.match(system, /Write in English/);
   assert.match(system, /Return plain text, not Markdown\./);
+});
+
+test('a regional language names itself in the prompt', async () => {
+  const system = await systemMessageFor({}, { SUMMARY_LANGUAGE: 'pt-BR' });
+  assert.match(system, /Write in .*Portuguese/);
+  assert.doesNotMatch(system, /Write in Turkish/);
 });
 
 test('the language setting still applies to a custom prompt', async () => {

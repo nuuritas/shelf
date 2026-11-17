@@ -1,4 +1,5 @@
 import { DEFAULT_SUMMARY_PROMPT } from './ai.ts';
+import { resolveLanguage } from './languages.ts';
 import type { Env, SummaryLanguage } from './types.ts';
 
 /** Long enough for a detailed voice, short enough to keep a summary request sane. */
@@ -6,14 +7,15 @@ export const MAX_SUMMARY_PROMPT_LENGTH = 8_000;
 
 /** `SUMMARY_LANGUAGE` remains the initial default for deployments without settings. */
 export function defaultSummaryLanguage(env: Partial<Env>): SummaryLanguage {
-  return String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'en' : 'tr';
+  return resolveLanguage(env.SUMMARY_LANGUAGE) ?? 'en';
 }
 
+/** A stored or submitted tag, or the fallback when it names no language. */
 export function normalizeSummaryLanguage(
   value: unknown,
   fallback: SummaryLanguage,
 ): SummaryLanguage {
-  return value === 'en' || value === 'tr' ? value : fallback;
+  return resolveLanguage(String(value ?? '')) ?? fallback;
 }
 
 /**

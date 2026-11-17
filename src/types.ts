@@ -65,8 +65,19 @@ export interface WorkersAi {
   run(model: string, input: Record<string, unknown>): Promise<unknown>;
 }
 
-/** Language of the primary summary and the default for the library. */
-export type SummaryLanguage = 'tr' | 'en';
+/**
+ * Language of the primary summary and the default for the library, as a
+ * BCP-47 tag (`en`, `tr`, `pt-BR`, `sr-Latn`). Any tag `Intl` can name is
+ * valid, not just the two the interface is translated into.
+ */
+export type SummaryLanguage = string;
+
+/**
+ * The interface language. Separate from `SummaryLanguage`: only English and
+ * Turkish copy exists, so a reader outside those two changes what Shelf writes
+ * rather than how it reads.
+ */
+export type UiLang = 'tr' | 'en';
 
 /** Per-deployment preferences stored in the Durable Object, not in env. */
 export interface StoredSettings {
