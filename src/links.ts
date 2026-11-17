@@ -543,11 +543,11 @@ function metaContent(html: string, name: string): string {
 /**
  * Only an https URL can be hotlinked into a page served over TLS: an `http:`
  * image would be blocked as mixed content, and a `data:` or `javascript:`
- * value in a meta tag is not a picture at all. The value is decoded first,
- * because `og:image` arrives HTML-escaped.
+ * value in a meta tag is not a picture at all. `metaContent` has already
+ * decoded the entities, so this trims only.
  */
 function posterUrl(value: string | null | undefined): string | null {
-  const raw = decodeHtmlEntities(value ?? '').trim();
+  const raw = (value ?? '').trim();
   if (!raw || raw.length > MAX_POSTER_URL) return null;
   try {
     const url = new URL(raw);
