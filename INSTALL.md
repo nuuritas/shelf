@@ -287,9 +287,13 @@ Vars such as `PIPED_API_URL` go in the `"vars"` object of
 
 ```bash
 ln -sf "$PWD/cli/shelf.ts" ~/.local/bin/shelf
-shelf config --url "$BASE" --password "$PASS"
+shelf login --url "$BASE"
 shelf search "anything"
 ```
+
+`shelf login` asks for `APP_PASSWORD` with the terminal echo off and writes it
+to `~/.config/shelf/config.json`; add `--password` when a script must sign in
+without a prompt.
 
 `shelf mcp` starts a stdio MCP server for Claude Code, Codex, or Cursor.
 
