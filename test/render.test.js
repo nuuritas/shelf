@@ -190,7 +190,28 @@ test('renders the English summary board when the translation exists', () => {
   assert.match(html, /class="lang-switch"/);
   assert.match(html, /An English explanation\./);
   assert.doesNotMatch(html, /Türkçe özet\./);
-  assert.match(html, /Translated from the Turkish summary\./);
+  assert.match(html, /Translated from the original summary\./);
+});
+
+test('a deployment outside English and Turkish names its own language', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark()],
+    total: 1,
+    query: '',
+    view: 'active',
+    lang: 'en',
+    activeTotal: 1,
+    archivedTotal: 0,
+    bilingual: true,
+    summaryLanguage: 'pt-BR',
+  });
+
+  // Neither the board switch nor the card tag may say Turkish when the primary
+  // summary is Portuguese; the switch still links to `lang=tr`, which is the
+  // interface language that shows the original.
+  assert.doesNotMatch(html, />Türkçe</);
+  assert.match(html, /class="lang-switch"[\s\S]*?>português \(Brasil\)</i);
+  assert.match(html, /class="lang-tag">PT</);
 });
 
 test('offers to write a missing English summary', () => {

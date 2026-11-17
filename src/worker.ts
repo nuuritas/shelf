@@ -23,6 +23,7 @@ import {
   renderSettings,
   renderSetup,
 } from './render.ts';
+import { LANGUAGE_UNKNOWN_MESSAGE, languageOf, resolveLanguage } from './languages.ts';
 import {
   defaultSummaryLanguage,
   normalizeSummaryLanguage,
@@ -50,6 +51,7 @@ import type {
   TopicListResult,
   TopicPageResult,
   TranslateAllResult,
+  UiLang,
   VideoTranscript,
 } from './types.ts';
 import {
@@ -370,7 +372,7 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
   const label = labels[0] || '';
   const view = parseView(url.searchParams.get('view'));
   const settings = await readSettings(env);
-  const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
+  const lang = parseUiLang(url.searchParams.get('lang'), settings.summaryLanguage);
   const layout = parseLayout(url.searchParams.get('layout'));
   const sources = parseSourceList(url.searchParams.getAll('source'));
   const source = sources[0] ?? 'all';
@@ -403,7 +405,8 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         activeTotal: data.activeTotal,
         archivedTotal: data.archivedTotal,
         missingEnglish: data.missingEnglish,
-        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
+        bilingual: settings.summaryLanguage !== 'en' && isAiConfigured(env),
+        summaryLanguage: settings.summaryLanguage,
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
         aiConfigured: isAiConfigured(env),
@@ -426,7 +429,8 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         source,
         activeTotal: 0,
         archivedTotal: 0,
-        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
+        bilingual: settings.summaryLanguage !== 'en' && isAiConfigured(env),
+        summaryLanguage: settings.summaryLanguage,
         notice: null,
         error: errorMessage(error),
         aiConfigured: isAiConfigured(env),
@@ -450,7 +454,7 @@ async function handleTopicPage(
   const view = parseView(url.searchParams.get('view'));
   const source = parseSource(url.searchParams.get('source'));
   const settings = await readSettings(env);
-  const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
+  const lang = parseUiLang(url.searchParams.get('lang'), settings.summaryLanguage);
 
   try {
     const [data, topicData, labelData] = await Promise.all([
@@ -479,7 +483,8 @@ async function handleTopicPage(
         view,
         lang,
         source,
-        bilingual: settings.summaryLanguage === 'tr' && isAiConfigured(env),
+        bilingual: settings.summaryLanguage !== 'en' && isAiConfigured(env),
+        summaryLanguage: settings.summaryLanguage,
         notice: url.searchParams.get('notice'),
         error: url.searchParams.get('error'),
         aiConfigured: isAiConfigured(env),
@@ -538,7 +543,7 @@ async function handleApiRemoveLabel(id: string, slug: string, env: Env): Promise
 async function handleCalendarPage(url: URL, env: Env, look: Appearance): Promise<Response> {
   const month = (url.searchParams.get('month') || '').trim();
   const settings = await readSettings(env);
-  const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
+  const lang = parseUiLang(url.searchParams.get('lang'), settings.summaryLanguage);
 
   try {
     const query = month ? `?month=${encodeURIComponent(month)}` : '';
@@ -1073,7 +1078,7 @@ function selfHostedPlans(env: Env) {
 }
 
 function languageNative(tag: SummaryLanguage): string {
-  return tag === 'tr' ? 'Türkçe' : 'English';
+  return languageOf(tag).native;
 }
 
 function currentPeriodStart(): string {
@@ -1124,12 +1129,9 @@ async function handleApiSettings(env: Env): Promise<Response> {
   });
 }
 
-/** The deployment writes English or Turkish summaries; anything else is a 400. */
+/** Any language `Intl` can name; the shared resolver refuses a typo. */
 function resolveSummaryLanguage(value: unknown): SummaryLanguage | null {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (text === 'en' || text === 'english') return 'en';
-  if (text === 'tr' || text === 'turkish' || text === 'türkçe' || text === 'turkce') return 'tr';
-  return null;
+  return resolveLanguage(String(value ?? ''));
 }
 
 async function handleApiSetLanguage(env: Env, request: Request): Promise<Response> {
@@ -1138,7 +1140,7 @@ async function handleApiSetLanguage(env: Env, request: Request): Promise<Respons
   if (!tag) {
     return jsonResponse(
       {
-        error: 'This server writes summaries in English or Turkish.',
+        error: LANGUAGE_UNKNOWN_MESSAGE,
         code: 'language_unknown',
       },
       400,
@@ -1421,9 +1423,14 @@ function parseListView(value: string | null): ArchiveView {
   return value === 'archived' || value === 'all' ? value : 'active';
 }
 
-function parseLang(value: string | null, fallback: SummaryLanguage = 'tr'): SummaryLanguage {
+/**
+ * The interface language, which stays `tr` or `en`: only those two have copy.
+ * An explicit `?lang=` wins; otherwise the summary language decides, so a
+ * Turkish deployment opens in Turkish and every other one in English.
+ */
+function parseUiLang(value: string | null, fallback: SummaryLanguage = 'tr'): UiLang {
   if (value === 'en' || value === 'tr') return value;
-  return fallback;
+  return fallback === 'tr' ? 'tr' : 'en';
 }
 
 function secure(response: Response): Response {

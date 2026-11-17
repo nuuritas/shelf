@@ -9,6 +9,7 @@ import {
 } from './ai.ts';
 import { parseWebUrl, readExternalLinks, readWebPost } from './links.ts';
 import { LABEL_LIMITS, parseLabelNames } from './labels.ts';
+import { resolveLanguage } from './languages.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
 import { NoteInputError, noteIdFor, notePlainText } from './notes.ts';
 import {
@@ -487,8 +488,9 @@ export class Bookmarks extends DurableObject<Env> {
   /** The env object the AI helpers read `SUMMARY_LANGUAGE` from. */
   aiEnv(): Env {
     const language = this.primaryLanguage();
-    const configured = String(this.env.SUMMARY_LANGUAGE || 'en').toLowerCase();
-    return configured === language ? this.env : { ...this.env, SUMMARY_LANGUAGE: language };
+    return resolveLanguage(this.env.SUMMARY_LANGUAGE) === language
+      ? this.env
+      : { ...this.env, SUMMARY_LANGUAGE: language };
   }
 
   private putSetting(key: string, value: string): void {
@@ -933,7 +935,7 @@ export class Bookmarks extends DurableObject<Env> {
 
     if (existing) {
       const englishReset =
-        shouldSummarize && this.primaryLanguage() === 'tr'
+        shouldSummarize && this.primaryLanguage() !== 'en'
           ? `, summary_en = NULL, summary_en_status = 'pending',
              summary_en_error = NULL, summary_en_started_at = NULL`
           : '';
@@ -951,7 +953,7 @@ export class Bookmarks extends DurableObject<Env> {
       );
     } else {
       const initialEnglishStatus =
-        shouldSummarize && this.primaryLanguage() === 'tr' ? 'pending' : null;
+        shouldSummarize && this.primaryLanguage() !== 'en' ? 'pending' : null;
       this.sql.exec(
         `INSERT INTO bookmarks (
           tweet_id, ref, url, author_name, author_username, author_avatar_url, author_verified,
@@ -1496,7 +1498,7 @@ export class Bookmarks extends DurableObject<Env> {
     if (!isAiConfigured(this.env)) {
       throw new Error('AI_API_KEY is not configured.');
     }
-    if (this.primaryLanguage() !== 'tr') return { queued: 0 };
+    if (this.primaryLanguage() === 'en') return { queued: 0 };
 
     const where = `summary_status = 'done' AND summary IS NOT NULL AND summary != ''
       AND (summary_en IS NULL OR summary_en = '')
@@ -1557,7 +1559,7 @@ export class Bookmarks extends DurableObject<Env> {
         id,
       );
     } else {
-      const englishReset = this.primaryLanguage() === 'tr'
+      const englishReset = this.primaryLanguage() !== 'en'
         ? `, summary_en = NULL, summary_en_status = 'pending',
            summary_en_error = NULL, summary_en_started_at = NULL`
         : '';
@@ -1615,7 +1617,7 @@ export class Bookmarks extends DurableObject<Env> {
 
     const queued = this.summariesOn() && clean.some(transcript => transcript.status === 'done');
     if (queued) {
-      const englishReset = this.primaryLanguage() === 'tr'
+      const englishReset = this.primaryLanguage() !== 'en'
         ? `, summary_en = NULL, summary_en_status = 'pending',
            summary_en_error = NULL, summary_en_started_at = NULL`
         : '';
@@ -2271,7 +2273,7 @@ export class Bookmarks extends DurableObject<Env> {
         prompt: this.summaryPrompt(),
       });
       const english =
-        this.primaryLanguage() === 'tr'
+        this.primaryLanguage() !== 'en'
           ? `, summary_en = NULL, summary_en_status = 'pending',
              summary_en_error = NULL, summary_en_started_at = NULL`
           : '';

@@ -13,6 +13,7 @@ import type {
   SummaryResult,
   TopicOverviewInput,
 } from './types.ts';
+import { englishLanguageName } from './languages.ts';
 import { arrayBufferToBase64, isAbortError, slugify, truncate } from './util.ts';
 import { collectImages } from './x.ts';
 
@@ -296,7 +297,7 @@ export async function summarizePost(
           image_url: { url: `data:${image.mediaType};base64,${image.data}`, detail: 'high' as const },
         }))
       : [];
-  const language = String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
+  const language = englishLanguageName(env.SUMMARY_LANGUAGE);
 
   const systemPrompt = buildSummarySystemPrompt({
     prompt: options.prompt,
@@ -1013,5 +1014,5 @@ function parseJsonReply(raw: unknown): unknown {
 }
 
 function summaryLanguage(env: Partial<Env>): string {
-  return String(env.SUMMARY_LANGUAGE || 'en').toLowerCase() === 'en' ? 'English' : 'Turkish';
+  return englishLanguageName(env.SUMMARY_LANGUAGE);
 }

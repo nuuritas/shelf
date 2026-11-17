@@ -7,6 +7,7 @@ import {
 } from './appearance.ts';
 import { BRAND_CSS, BRAND_MARK, assetUrl } from './brand.ts';
 import { LABEL_TONE_COUNT, labelTone } from './labels.ts';
+import { languageOf } from './languages.ts';
 import { renderMarkdown } from './markdown.ts';
 import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
 import type {
@@ -19,6 +20,7 @@ import type {
   Quote,
   SourceFilter,
   StoredSettings,
+  SummaryLanguage,
   SummaryVersion,
   TopicSummary,
   VideoTranscript,
@@ -92,6 +94,8 @@ export interface RenderPageOptions {
   archivedTotal?: number;
   missingEnglish?: number;
   bilingual?: boolean;
+  /** The deployment's summary language; the board switch and the tag name it. */
+  summaryLanguage?: SummaryLanguage;
   /** The reader's theme and text size, read from the cookie before rendering. */
   appearance?: Appearance;
 }
@@ -175,10 +179,15 @@ export function renderPage({
   archivedTotal = 0,
   missingEnglish = 0,
   bilingual = false,
+  summaryLanguage: summaryLanguageOption = 'en',
   appearance = DEFAULT_APPEARANCE,
 }: RenderPageOptions): string {
   const view = viewOption === 'archived' ? 'archived' : 'active';
   const lang = langOption === 'en' ? 'en' : 'tr';
+  // The primary summary is written in the deployment's own language, so the
+  // card's tag and the board switch name that, not a hardcoded Turkish.
+  const summaryLanguage = String(summaryLanguageOption || 'en');
+  const primaryTag = summaryLanguage === 'en' ? '' : summaryLanguage.split('-')[0].toUpperCase();
   const layout = layoutOption === 'folders' ? 'folders' : 'saves';
   const source = parseSource(sourceOption);
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(dayOption || '')) ? String(dayOption) : null;
@@ -407,7 +416,7 @@ export function renderPage({
                     ? `<nav class="lang-switch" role="group" aria-label="Summary language">
                         <a class="${lang === 'tr' ? 'active' : ''}" href="${escapeHtml(
                           libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view, lang: 'tr', layout: layoutParam, source }),
-                        )}">Türkçe</a>
+                        )}">${escapeHtml(languageOf(summaryLanguage).native)}</a>
                         <a class="${lang === 'en' ? 'active' : ''}" href="${escapeHtml(
                           libraryHref(path, { query: currentQuery, day: currentDay, label: currentLabelKey, view, lang: 'en', layout: layoutParam, source }),
                         )}">English</a>
@@ -438,7 +447,7 @@ export function renderPage({
                   }
                   ${
                     lang === 'en' && topic.overview
-                      ? '<p class="topic-language-note">Folder syntheses are written in Turkish.</p>'
+                      ? '<p class="topic-language-note">Folder syntheses are written in the summary language.</p>'
                       : ''
                   }
                 </div>`
@@ -474,7 +483,7 @@ export function renderPage({
               : bookmarks.length
                 ? `<div class="cards">${bookmarks
                     .map(bookmark =>
-                      renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual, view, labels),
+                      renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual, view, labels, primaryTag),
                     )
                     .join('')}</div>`
                 : currentLabelKey && !query
@@ -916,9 +925,9 @@ export function renderSettings({
             <section class="settings-card">
               <div class="settings-card-head">
                 <h3>Summary language</h3>
-                <span class="settings-badge is-on">${settings.summaryLanguage === 'tr' ? 'Türkçe' : 'English'}</span>
+                <span class="settings-badge is-on">${escapeHtml(languageOf(settings.summaryLanguage).native)}</span>
               </div>
-              <p class="settings-note">New summaries are written in this language. With Türkçe, Shelf also writes an English version for the language switch. Existing summaries are left alone.</p>
+              <p class="settings-note">New summaries are written in this language. Unless it is English, Shelf also writes an English version for the language switch. Existing summaries are left alone.</p>
               <div class="settings-choice" role="radiogroup" aria-label="Summary language">
                 <label>
                   <input type="radio" name="summary_language" value="tr"${settings.summaryLanguage === 'tr' ? ' checked' : ''}>
@@ -1098,6 +1107,7 @@ function renderBookmark(
   bilingual = false,
   view: 'active' | 'archived' = 'active',
   labels: LabelSummary[] = [],
+  primaryTag = '',
 ): string {
   if (bookmark.kind === 'note') return renderNoteCard(bookmark, returnTo, view, lang, labels);
 
@@ -1172,7 +1182,7 @@ function renderBookmark(
       ${renderMedia(bookmark.media, 'main')}
       ${bookmark.quote ? renderQuote(bookmark.quote) : ''}
       ${bookmark.links?.length ? renderLinks(bookmark.links) : ''}
-      ${renderSummary(bookmark, aiConfigured, returnTo, lang, bilingual)}
+      ${renderSummary(bookmark, aiConfigured, returnTo, lang, bilingual, primaryTag)}
 
       ${extras.length ? `<p class="peek-meta">${escapeHtml(extras.join(' · '))}</p>` : ''}
 
@@ -1435,6 +1445,7 @@ function renderSummary(
   returnTo = '/',
   lang: 'tr' | 'en' = 'tr',
   bilingual = false,
+  primaryTag = '',
 ): string {
   const status = bookmark.summaryStatus || (aiConfigured ? 'pending' : 'needs_key');
 
@@ -1447,7 +1458,7 @@ function renderSummary(
     const englishFailed = bookmark.summaryEnStatus === 'failed';
     const useEnglish = preferEnglish && englishReady;
     const shownSummary = useEnglish ? String(bookmark.summaryEn) : bookmark.summary;
-    const languageTag = useEnglish ? 'EN' : bilingual ? 'TR' : '';
+    const languageTag = useEnglish ? 'EN' : bilingual ? primaryTag : '';
 
     const translateForm =
       preferEnglish && !englishReady && aiConfigured
@@ -1461,14 +1472,14 @@ function renderSummary(
 
     const englishNote = preferEnglish
       ? englishBusy
-        ? '<p class="summary-note">The English version is being written. The Turkish original is shown below.</p>'
+        ? '<p class="summary-note">The English version is being written. The original summary is shown below.</p>'
         : englishFailed
           ? `<p class="summary-note error">English translation failed: ${escapeHtml(
               truncate(bookmark.summaryEnError || 'unknown error', 200),
             )}</p>${translateForm}`
           : useEnglish
-            ? '<p class="summary-note">Translated from the Turkish summary.</p>'
-            : `<p class="summary-note">No English version yet. The Turkish original is shown below.</p>${translateForm}`
+            ? '<p class="summary-note">Translated from the original summary.</p>'
+            : `<p class="summary-note">No English version yet. The original summary is shown below.</p>${translateForm}`
       : '';
 
     return `
@@ -1488,7 +1499,7 @@ function renderSummary(
         ${versions.length ? `<div class="versions">${versions.map(renderVersion).join('')}</div>` : ''}
         ${
           versions.length && preferEnglish
-            ? '<p class="version-language-note">Alternative versions are in Turkish.</p>'
+            ? '<p class="version-language-note">Alternative versions are in the original language.</p>'
             : ''
         }
         ${busy ? `<p class="version-note">Writing version ${versions.length + 2}…</p>` : ''}
@@ -1510,7 +1521,7 @@ function renderSummary(
             <input class="regen-input" id="instruction-${escapeHtml(bookmark.tweetId)}" name="instruction" maxlength="500" placeholder="Optional: explain the tradeoffs, the history, what to do…">
             <button type="submit">Write</button>
           </form>
-          <p class="regen-note">The original summary stays as it is. Each request becomes a new version, written in Turkish.</p>
+          <p class="regen-note">The original summary stays as it is. Each request becomes a new version, written in the summary language.</p>
         </details>
       </section>
     `;
