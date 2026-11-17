@@ -103,6 +103,57 @@ export function filterInSql(
   return { sql: `${column} IN (${unique.map(() => '?').join(', ')})`, args: unique };
 }
 
+/** Bound arguments one search term needs: every `?` in `SEARCH_TERM_SQL`. */
+const SEARCH_ARG_COUNT = 14;
+
+/** How many whitespace-separated terms a search may AND together. */
+const SEARCH_TERM_CAP = 8;
+
+/** One AND-ed group: a single term must match somewhere in the row. */
+const SEARCH_TERM_SQL = `(
+  instr(lower(text), lower(?)) > 0
+  OR instr(lower(COALESCE(author_name, '')), lower(?)) > 0
+  OR instr(lower(COALESCE(author_username, '')), lower(?)) > 0
+  OR instr(lower(COALESCE(summary, '')), lower(?)) > 0
+  OR instr(lower(COALESCE(summary_en, '')), lower(?)) > 0
+  OR instr(lower(COALESCE(links_json, '')), lower(?)) > 0
+  OR instr(lower(COALESCE(article_json, '')), lower(?)) > 0
+  OR instr(lower(COALESCE(title, '')), lower(?)) > 0
+  OR instr(lower(COALESCE(agent_json, '')), lower(?)) > 0
+  OR instr(lower(COALESCE(url, '')), lower(?)) > 0
+  OR tweet_id IN (
+    SELECT it.tweet_id
+    FROM item_topics it
+    JOIN topics t ON t.slug = it.slug
+    WHERE instr(lower(t.name), lower(?)) > 0
+       OR instr(lower(t.slug), lower(?)) > 0
+  )
+  OR tweet_id IN (
+    SELECT bl.tweet_id
+    FROM bookmark_labels bl
+    JOIN labels l ON l.slug = bl.slug
+    WHERE instr(lower(l.name), lower(?)) > 0
+       OR instr(lower(l.slug), lower(?)) > 0
+  )
+)`;
+
+/**
+ * Search predicate: every term must match somewhere, so "claude code" is an AND
+ * search instead of one literal substring, and the terms are AND-ed as separate
+ * groups. A term also matches the `url` column, which is where a note keeps the
+ * page it cites, so a note is found by its source page. Null when no term is set.
+ */
+export function searchQuerySql(
+  terms: readonly string[],
+): { sql: string; args: string[] } | null {
+  const capped = terms.filter(Boolean).slice(0, SEARCH_TERM_CAP);
+  if (!capped.length) return null;
+  return {
+    sql: capped.map(() => SEARCH_TERM_SQL).join(' AND '),
+    args: capped.flatMap(term => Array.from({ length: SEARCH_ARG_COUNT }, () => term)),
+  };
+}
+
 /** SQL predicate over a `url` column for one source, matching `sourceOfUrl`. */
 export function sourceFilterSql(source: Exclude<SourceFilter, 'all'>): string {
   const host = URL_HOST_SQL;
