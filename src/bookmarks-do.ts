@@ -36,6 +36,7 @@ import {
   parseSource,
   parseSourceList,
   recoverDisabledSummariesSql,
+  searchQuerySql,
   sourceFilterSql,
   sourceFiltersSql,
 } from './util.ts';
@@ -1014,38 +1015,12 @@ export class Bookmarks extends DurableObject<Env> {
     const sourceFilter = sourceFiltersSql(sources);
     if (sourceFilter) filters.push(sourceFilter);
 
-    if (query) {
-      // Every whitespace-separated term must match somewhere, so "claude code"
-      // behaves like an AND search instead of a single literal substring.
-      const terms = query.split(/\s+/).filter(Boolean).slice(0, 8);
-      for (const term of terms) {
-        filters.push(`(
-          instr(lower(text), lower(?)) > 0
-          OR instr(lower(COALESCE(author_name, '')), lower(?)) > 0
-          OR instr(lower(COALESCE(author_username, '')), lower(?)) > 0
-          OR instr(lower(COALESCE(summary, '')), lower(?)) > 0
-          OR instr(lower(COALESCE(summary_en, '')), lower(?)) > 0
-          OR instr(lower(COALESCE(links_json, '')), lower(?)) > 0
-          OR instr(lower(COALESCE(article_json, '')), lower(?)) > 0
-          OR instr(lower(COALESCE(title, '')), lower(?)) > 0
-          OR instr(lower(COALESCE(agent_json, '')), lower(?)) > 0
-          OR tweet_id IN (
-            SELECT it.tweet_id
-            FROM item_topics it
-            JOIN topics t ON t.slug = it.slug
-            WHERE instr(lower(t.name), lower(?)) > 0
-               OR instr(lower(t.slug), lower(?)) > 0
-          )
-          OR tweet_id IN (
-            SELECT bl.tweet_id
-            FROM bookmark_labels bl
-            JOIN labels l ON l.slug = bl.slug
-            WHERE instr(lower(l.name), lower(?)) > 0
-               OR instr(lower(l.slug), lower(?)) > 0
-          )
-        )`);
-        args.push(term, term, term, term, term, term, term, term, term, term, term, term, term);
-      }
+    // Every whitespace-separated term must match somewhere, so "claude code"
+    // behaves like an AND search instead of a single literal substring.
+    const querySql = searchQuerySql(query.split(/\s+/).filter(Boolean));
+    if (querySql) {
+      filters.push(querySql.sql);
+      args.push(...querySql.args);
     }
 
     // Counts for the Active/Archived switch: same query, topic, and day, both sides.
