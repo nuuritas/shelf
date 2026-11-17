@@ -58,14 +58,99 @@ Write a complete, self-contained document:
 - No forms, inputs, buttons, `<iframe>`, `<object>`, `<embed>`, or
   `<meta http-equiv="refresh">`.
 - Responsive and accessible: semantic headings, alt text, sufficient contrast.
-- Support light and dark: use `prefers-color-scheme` and avoid fixed white
-  backgrounds.
+- Three colour options — light, white and dark — chosen inside the document,
+  with the app's own palette. See **Colour and themes** below.
 - No invented citations. Link real sources and list them at the end.
 
 Shelf stores the document after best-effort sanitation and serves it from
 `/p/<ref>/frame` with a strict CSP inside `<iframe sandbox>`. The sandbox and CSP
 are the security boundary; the sanitizer is defense in depth. A note that tries
 to break out is still rendered inert, but it will look broken.
+
+## Colour and themes
+
+A note is read inside the app, in a frame that cannot see which theme the app is
+in. So the note carries its own choice — and it borrows the app's colours instead
+of inventing a palette. A document in its own colours looks pasted in; a document
+in ours disappears into the page, which is the point.
+
+### Ship three options
+
+Light, white and dark, switched by a small control at the top of the document.
+
+- **Light** is the default. It is the app's own light theme.
+- **White** is the same ink on a pure sheet, for printing or a plain screen.
+- **Dark** is the app's dark theme, token for token — not a near-black chosen by
+  eye. A warm or grey "dark" beside the app's blue-black one reads as a different
+  product.
+
+### The palette
+
+Both services share one brand block — `src/brand.ts` here and in `shelf-cloud`,
+mirrored in the Android and iOS clients — so these values are the same
+everywhere. Read that file rather than sampling a screenshot.
+
+| Token | Light | Dark | Paints |
+| --- | --- | --- | --- |
+| `--paper` | `#f4f6f9` | `#0d1117` | page background |
+| `--card` | `#ffffff` | `#151b23` | cards, panels, stat cells |
+| `--ink` | `#0f1720` | `#e8eef5` | body text |
+| `--ink-soft` | `#33404f` | `#c3cdd8` | secondary text |
+| `--soft` | `#5a6775` | `#97a3b1` | captions, meta, labels |
+| `--rule` | `#dce2ea` | `#232b35` | hairlines and borders |
+| `--rule-strong` | `#c3ccd8` | `#323c48` | emphasised borders |
+| `--accent` | `#1d4ed8` | `#7da2ff` | links, numbers, markers |
+
+White is `#ffffff` paper, `#fbfcfd` cards, `#e6ebf1` rules and the light ink.
+
+For a rule that should be softer than `--rule`, pick a value one step toward the
+paper (`#e8edf3` in light, `#1c242c` in dark) rather than blending with
+`color-mix`: the frame is opaque, so a blend computed against the wrong
+background is the seam you were trying to remove.
+
+### Do not key off the OS scheme
+
+`prefers-color-scheme` describes the operating system, not the app. Shelf Cloud
+ignores it — light until the reader picks dark in Settings — so a note that
+follows the OS is dark inside a light app. The self-hosted Worker defaults to
+`system`, so its first paint can go either way. The frame cannot read the
+parent's `data-theme` either.
+
+Light as the default, plus a visible choice, is the only version that lands
+correctly on both.
+
+### The control
+
+Scripts never run, and the sanitizer strips `<form>`, `<input>`, `<button>`,
+`<select>` and `<textarea>`, so a radio group is not available. Open and closed on
+`<details>` is native behaviour with no script, `:has()` reads it, and the `name`
+attribute makes the group exclusive. That is the whole mechanism:
+
+```html
+<div class="themes">
+  <details class="sw" id="th-light" name="theme"><summary>Light</summary></details>
+  <details class="sw" id="th-white" name="theme"><summary>White</summary></details>
+  <details class="sw" id="th-dark" name="theme"><summary>Dark</summary></details>
+</div>
+```
+
+```css
+:root { /* light tokens: the default */ }
+
+body:has(#th-white[open]) { /* white tokens */ }
+body:has(#th-dark[open])  { /* dark tokens  */ color-scheme: dark; }
+
+.sw > summary { cursor: pointer; list-style: none; }
+.sw > summary::-webkit-details-marker { display: none; }
+```
+
+Declare the theme on `body`, not on `:root`: the chosen block has to beat the
+`:root` default for every descendant, and a `body` rule does that without
+`!important`. Light needs no block — it is the default, so closing the group
+returns to it.
+
+Do not use `:target` for this. A fragment link resets the target, so the theme
+falls off the moment the reader clicks a footnote or a source marker.
 
 ## API
 
