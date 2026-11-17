@@ -921,3 +921,110 @@ test('the page loads the poll script with a cache buster', () => {
   assert.doesNotMatch(html, /<script src="\/app\.js" defer>/);
 });
 
+test('a filter link keeps every label pick, and one pick reads as it always did', () => {
+  const withPicks = (picks, extra = {}) =>
+    renderPage({
+      bookmarks: [labelledPost()],
+      total: 1,
+      query: '',
+      labels: [
+        { slug: 'design', name: 'Design', count: 2 },
+        { slug: 'reading', name: 'Reading', count: 1 },
+      ],
+      activeTotal: 12,
+      archivedTotal: 3,
+      bilingual: true,
+      ...picks,
+      ...extra,
+    });
+
+  const two = withPicks({ labelPicks: ['design', 'reading'] });
+
+  // Archive, language and layout controls carry both picks, in one order.
+  assert.match(two, /href="\/\?label=design&amp;label=reading"/);
+  assert.match(two, /href="\/\?label=design&amp;label=reading&amp;view=archived"/);
+  assert.match(two, /href="\/\?label=design&amp;label=reading&amp;lang=en"/);
+  // The search form posts one hidden input per pick, so a search keeps the cut.
+  assert.match(two, /<input type="hidden" name="label" value="design">/);
+  assert.match(two, /<input type="hidden" name="label" value="reading">/);
+  // Two picks are named in full, never as the first one of the two.
+  assert.match(two, /<h2>Design, Reading<\/h2>/);
+  assert.match(two, /2 labels · 12 active/);
+
+  // A single pick renders exactly the URL it rendered before picks existed.
+  const one = withPicks({ labelPicks: ['design'] });
+  assert.match(one, /href="\/\?label=design"/);
+  assert.match(one, /href="\/\?label=design&amp;view=archived"/);
+  assert.match(one, /<h2>Design<\/h2>/);
+  assert.match(one, /Label · 12 active/);
+  assert.doesNotMatch(one, /label=design&amp;label=/);
+
+  // The single-value option still works: it fills the array, it does not fight it.
+  assert.equal(withPicks({ label: 'design' }), one);
+});
+
+test('an empty label view names every pick it carries', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: '',
+    labels: [
+      { slug: 'design', name: 'Design', count: 2 },
+      { slug: 'reading', name: 'Reading', count: 1 },
+    ],
+    labelPicks: ['design', 'reading'],
+  });
+
+  assert.match(html, /Nothing carries “Design” or “Reading”/);
+  // The way out keeps both picks too.
+  assert.match(html, /href="\/\?label=design&amp;label=reading&amp;view=archived"/);
+});
+
+test('a folder pick survives every link, and two folders keep both', () => {
+  const topics = [
+    {
+      slug: 'ai',
+      name: 'AI',
+      description: null,
+      overview: '',
+      overviewAt: null,
+      count: 4,
+      archivedCount: 1,
+    },
+    {
+      slug: 'design',
+      name: 'Design',
+      description: null,
+      overview: '',
+      overviewAt: null,
+      count: 2,
+      archivedCount: 0,
+    },
+  ];
+  const html = renderPage({
+    bookmarks: [labelledPost()],
+    total: 1,
+    query: '',
+    topics,
+    topicPicks: ['ai', 'design'],
+    activeTotal: 6,
+    archivedTotal: 1,
+  });
+
+  assert.match(html, /<h2>AI, Design<\/h2>/);
+  assert.match(html, /2 folders · 6 active/);
+  assert.match(html, /href="\/\?topic=ai&amp;topic=design"/);
+  assert.match(html, /<input type="hidden" name="topic" value="ai">/);
+  assert.match(html, /<input type="hidden" name="topic" value="design">/);
+
+  // An empty cut says "folders" in the plural, not "this folder".
+  const empty = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: '',
+    topics,
+    topicPicks: ['ai', 'design'],
+  });
+  assert.match(empty, /Nothing in these folders yet/);
+});
+

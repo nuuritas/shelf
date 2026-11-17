@@ -369,19 +369,29 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
     .getAll('label')
     .map(value => value.trim().slice(0, 40))
     .filter(Boolean);
-  const label = labels[0] || '';
   const view = parseView(url.searchParams.get('view'));
   const settings = await readSettings(env);
   const lang = parseUiLang(url.searchParams.get('lang'), settings.summaryLanguage);
   const layout = parseLayout(url.searchParams.get('layout'));
   const sources = parseSourceList(url.searchParams.getAll('source'));
-  const source = sources[0] ?? 'all';
+  // Folders are a filter too: repeated `topic` values narrow the flat list, and
+  // the DO's /list already matches any of them (filterInSql) the way it does
+  // labels. Deduplicated here because every link and form repeats them.
+  const topics = [
+    ...new Set(
+      url.searchParams
+        .getAll('topic')
+        .map(value => value.trim().slice(0, 60))
+        .filter(Boolean),
+    ),
+  ];
   const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
   const params = new URLSearchParams({ limit: String(limit), view });
   if (query) params.set('q', query);
   if (day) params.set('day', day);
   for (const value of labels) params.append('label', value);
   for (const value of sources) params.append('source', value);
+  for (const value of topics) params.append('topic', value);
 
   try {
     const [data, topicData, labelData] = await Promise.all([
@@ -397,11 +407,12 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         day,
         topics: topicData.topics,
         labels: labelData.labels,
-        label,
+        labelPicks: labels,
+        topicPicks: topics,
         view,
         lang,
         layout,
-        source,
+        sources,
         activeTotal: data.activeTotal,
         archivedTotal: data.archivedTotal,
         missingEnglish: data.missingEnglish,
@@ -422,11 +433,12 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         day,
         topics: [],
         labels: [],
-        label,
+        labelPicks: labels,
+        topicPicks: topics,
         view,
         lang,
         layout,
-        source,
+        sources,
         activeTotal: 0,
         archivedTotal: 0,
         bilingual: settings.summaryLanguage !== 'en' && isAiConfigured(env),
