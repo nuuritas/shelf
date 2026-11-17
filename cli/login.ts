@@ -1,24 +1,28 @@
 /**
  * `shelf login` — one command, one browser tab.
  *
- * The CLI never asks a person for their account password. It starts a listener
- * on a random loopback port, opens the instance's approval page, and the page
- * redirects back with a one-time code that the CLI trades for a device token.
- * The token is what `~/.config/shelf/config.json` holds from then on.
+ * The CLI never asks a person for their account password, and it does not listen
+ * on a port either: a public page is no longer allowed to reach `127.0.0.1`, so
+ * the loopback handoff lands as a click that does nothing. This is the device
+ * grant from RFC 8628 instead, which is what GitHub and Google use for a
+ * terminal. Ask for a pair of codes, print the short one, open the page that has
+ * it filled in, and poll until the person approves it. Nothing crosses the local
+ * network, so it works over SSH and inside a container too.
  *
  * A self-hosted Worker has no accounts to sign in to: it is protected by one
  * `APP_PASSWORD`. `login` still works there, it just asks for that password
  * with the terminal echo off and checks it before writing the file.
  */
 
-import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 
 type Flags = Record<string, string | boolean>;
 
-const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
+/** The terminal gives up a little after the service's own window closes. */
+const CALLBACK_TIMEOUT_MS = 11 * 60 * 1000;
+const DEFAULT_INTERVAL_SECONDS = 5;
 
 export function configPath(): string {
   return process.env.SHELF_CONFIG || join(homedir(), '.config', 'shelf', 'config.json');
@@ -117,6 +121,10 @@ async function isHosted(base: string): Promise<boolean> {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function commandLogin(args: Flags): Promise<void> {
   const candidates = [flag(args, 'url'), process.env.SHELF_URL, 'https://shelfcloud.io'];
   let base = normalizeUrl(candidates.find(value => value && value.trim()) ?? '');
@@ -132,75 +140,61 @@ export async function commandLogin(args: Flags): Promise<void> {
   await loginWorker(base, flag(args, 'password'));
 }
 
+/**
+ * Ask for a device pair, show the code, and poll. A person who is already signed
+ * in only presses Authorize; one who is not gets the ordinary login page first
+ * and lands back on `/cli` with the code still filled in.
+ */
 async function loginHosted(base: string): Promise<void> {
-  const state = randomBytes(18).toString('base64url');
-  let settle: (value: { code: string; state: string }) => void = () => {};
-  const callback = new Promise<{ code: string; state: string }>(resolve => {
-    settle = resolve;
-  });
-
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    async fetch(request) {
-      const url = new URL(request.url);
-      if (url.pathname !== '/callback') {
-        return new Response('Not found', { status: 404 });
-      }
-      settle({
-        code: url.searchParams.get('code') ?? '',
-        state: url.searchParams.get('state') ?? '',
-      });
-      return new Response(
-        '<!doctype html><meta charset="utf-8"><title>Signed in</title>' +
-          '<body style="font:16px system-ui;padding:3rem;text-align:center">' +
-          '<h1>Signed in to Shelf</h1><p>You can close this tab and return to the terminal.</p>' +
-          '</body>',
-        { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
-      );
-    },
-  });
-
-  const port = server.port;
-  const target = `${base}/cli/login?port=${port}&state=${encodeURIComponent(state)}`;
-  console.log(`\nOpening ${base} to approve this terminal…`);
-  console.log(`If the browser did not open, visit:\n  ${target}\n`);
-  openBrowser(target);
-
-  const timer = setTimeout(() => settle({ code: '', state: '' }), CALLBACK_TIMEOUT_MS);
-  let result: { code: string; state: string };
-  try {
-    result = await callback;
-  } finally {
-    clearTimeout(timer);
-    server.stop(true);
-  }
-
-  if (!result.code) {
-    throw new Error('Login timed out. Run `shelf login` again when you are ready.');
-  }
-  if (result.state !== state) {
-    throw new Error('The approval came back with a different state. Run `shelf login` again.');
-  }
-
-  const exchanged = await fetchJson(`${base}/api/auth/cli`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: result.code, name: `shelf-cli ${hostname()}` }),
-  });
-
-  if (!exchanged.ok || !exchanged.body?.token) {
+  const started = await fetchJson(`${base}/api/auth/cli/pending`, { method: 'POST' });
+  if (!started.ok || !started.body?.device_code || !started.body?.user_code) {
     throw new Error(
-      exchanged.status === 400
-        ? 'That approval expired before the terminal could use it. Run `shelf login` again.'
-        : `The token exchange failed (HTTP ${exchanged.status}).`,
+      started.status === 404
+        ? `${base} does not offer terminal sign-in yet. Run \`shelf config\` with a token from the web settings instead.`
+        : `Could not start the sign-in (HTTP ${started.status}). Try again in a moment.`,
     );
   }
 
-  const path = writeConfig(base, exchanged.body.token);
-  const who = exchanged.body.email ? ` as ${exchanged.body.email}` : '';
-  console.log(`Signed in to ${base}${who}.`);
-  console.log(`Saved ${path}`);
+  const deviceCode: string = started.body.device_code;
+  const userCode: string = started.body.user_code;
+  const target: string =
+    started.body.verification_url || `${base}/cli?code=${encodeURIComponent(userCode)}`;
+  const interval = Math.max(
+    1,
+    Number(started.body.interval) || DEFAULT_INTERVAL_SECONDS,
+  );
+
+  console.log(`\nConfirm code ${userCode} in your browser to finish signing in.`);
+  console.log(`If it did not open, visit:\n  ${target}\n`);
+  console.log('Waiting for approval… (Ctrl-C to cancel)');
+  openBrowser(target);
+
+  const deadline = Date.now() + CALLBACK_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await sleep(interval * 1000);
+    const polled = await fetchJson(`${base}/api/auth/cli`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_code: deviceCode, name: `shelf-cli ${hostname()}` }),
+    });
+
+    if (polled.ok && polled.body?.token) {
+      const path = writeConfig(base, polled.body.token);
+      const who = polled.body.email ? ` as ${polled.body.email}` : '';
+      console.log(`\nSigned in to ${base}${who}.`);
+      console.log(`Saved ${path}`);
+      return;
+    }
+
+    const reason = polled.body?.error;
+    if (reason === 'authorization_pending') continue;
+    if (reason === 'expired_token') {
+      throw new Error('That code expired. Run `shelf login` again to get a new one.');
+    }
+    throw new Error(`The sign-in failed (HTTP ${polled.status}).`);
+  }
+
+  throw new Error('Login timed out. Run `shelf login` again when you are ready.');
 }
 
 async function loginWorker(base: string, fromFlag: string): Promise<void> {
