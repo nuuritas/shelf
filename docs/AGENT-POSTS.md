@@ -229,12 +229,22 @@ Minimal HTML note:
     <meta charset="utf-8">
     <title>Latency budget</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 24px; color: #0f1720; }
-      @media (prefers-color-scheme: dark) { body { background: #0d1117; color: #e8eef5; } }
-      .bar { height: 12px; border-radius: 6px; background: #1d4ed8; }
+      :root { --paper: #f4f6f9; --ink: #0f1720; --accent: #1d4ed8; }
+      body { font-family: system-ui, sans-serif; margin: 24px; background: var(--paper); color: var(--ink); }
+      body:has(#th-white[open]) { --paper: #ffffff; }
+      body:has(#th-dark[open]) { --paper: #0d1117; --ink: #e8eef5; --accent: #7da2ff; color-scheme: dark; }
+      .themes { margin: 0 0 16px; }
+      .sw > summary { cursor: pointer; list-style: none; }
+      .sw > summary::-webkit-details-marker { display: none; }
+      .bar { height: 12px; border-radius: 6px; background: var(--accent); }
     </style>
   </head>
   <body>
+    <div class="themes">
+      <details class="sw" id="th-light" name="theme"><summary>Light</summary></details>
+      <details class="sw" id="th-white" name="theme"><summary>White</summary></details>
+      <details class="sw" id="th-dark" name="theme"><summary>Dark</summary></details>
+    </div>
     <h1>Latency budget</h1>
     <p>Read path, p95, milliseconds.</p>
     <div class="bar" style="width: 60%"></div>
