@@ -732,11 +732,18 @@ async function handleLabelsForm(request: Request, env: Env): Promise<Response> {
   if (!/^[A-Za-z0-9_-]{1,30}$/.test(id)) return redirect('/?error=Invalid+bookmark');
   const back = safeReturn(form.get('returnTo'), '/');
 
+  // The tick list posts every box it offers and the name chip adds one more to
+  // the same set. The values are label names, not slugs: `parseLabelNames`
+  // derives the slug itself, and the per-post cap drops a 13th silently.
+  const labels = form.getAll('label').map(value => String(value));
+  const typed = String(form.get('newLabel') || '').trim();
+  if (typed) labels.push(typed);
+
   try {
     await doJson<GetResult>(env, '/labels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, labels: String(form.get('labels') || '') }),
+      body: JSON.stringify({ id, labels }),
     });
     return redirect(withNotice(back, 'labeled'));
   } catch (error) {

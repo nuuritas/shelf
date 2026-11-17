@@ -474,7 +474,7 @@ export function renderPage({
               : bookmarks.length
                 ? `<div class="cards">${bookmarks
                     .map(bookmark =>
-                      renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual, view),
+                      renderBookmark(bookmark, aiConfigured, returnTo, lang, bilingual, view, labels),
                     )
                     .join('')}</div>`
                 : currentLabelKey && !query
@@ -993,25 +993,46 @@ function renderTopicOverview(text: unknown): string {
 
 /**
  * A card's labels are both a view of the shelf and the way back to one: a chip
- * links to that label's list, and the editor rewrites the whole set because a
- * text field cannot say which of several labels to remove. The form carries
- * `returnTo` so saving never loses the search, day, archive or label view.
+ * links to that label's list, and the editor is a tick list of the labels the
+ * page already knows, because the set is chosen rather than typed. The form
+ * carries `returnTo` so saving never loses the search, day, archive or label
+ * view. A tick posts the set; `+ New label` is a chip in the same row, so the
+ * name field is only in the page while it is being used. Without a script the
+ * checklist needs a button of its own, so one sits inside <noscript>.
  */
 function renderLabels(
   bookmark: Bookmark,
   returnTo: string,
   view: 'active' | 'archived',
   lang: 'tr' | 'en',
+  pageLabels: LabelSummary[] = [],
 ): string {
-  const labels = bookmark.labels || [];
-  const names = labels.map(label => label.name);
-  const field = `labels-${bookmark.tweetId}`;
-  const chips = labels
+  const carried = bookmark.labels || [];
+  const names = carried.map(label => label.name);
+  const carriedSlugs = new Set(carried.map(label => label.slug));
+  const field = `new-label-${bookmark.tweetId}`;
+  const chips = carried
     .map(
       label =>
         `<a class="label tone-${labelTone(label.slug)}" href="${escapeHtml(
           libraryHref('/', { label: label.slug, view, lang }),
         )}">${escapeHtml(label.name)}</a>`,
+    )
+    .join('');
+
+  // A label this card carries can sit outside the page's list — a filtered view
+  // only offers what the filter shows. It is added back here, because an
+  // unticked box would submit as "remove" and saving would drop it silently.
+  const offered = new Set(pageLabels.map(entry => entry.slug));
+  const picks = [...pageLabels, ...carried.filter(label => !offered.has(label.slug))].sort(
+    (a, b) => a.name.localeCompare(b.name, lang),
+  );
+  const boxes = picks
+    .map(
+      option =>
+        `<label class="label-check"><input type="checkbox" name="label" value="${escapeHtml(
+          option.name,
+        )}"${carriedSlugs.has(option.slug) ? ' checked' : ''}><span>${escapeHtml(option.name)}</span></label>`,
     )
     .join('');
 
@@ -1024,9 +1045,19 @@ function renderLabels(
             <form class="label-form" method="post" action="/labels">
               <input type="hidden" name="id" value="${escapeHtml(bookmark.tweetId)}">
               <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-              <label class="sr-only" for="${field}">Labels, comma-separated</label>
-              <input id="${field}" name="labels" value="${escapeHtml(names.join(', '))}" placeholder="reading, design, later" autocomplete="off">
-              <button type="submit">Save labels</button>
+              <fieldset class="label-picks">
+                <legend class="sr-only">Labels</legend>
+                ${boxes}
+                <details class="label-new">
+                  <summary>+ New label</summary>
+                  <div class="label-new-row">
+                    <label class="sr-only" for="${field}">New label name</label>
+                    <input id="${field}" name="newLabel" placeholder="reading, design, later" autocomplete="off">
+                    <button type="submit">Add</button>
+                  </div>
+                </details>
+              </fieldset>
+              <noscript><button type="submit" class="label-save">Save labels</button></noscript>
             </form>
           </details></div>`;
 }
@@ -1066,8 +1097,9 @@ function renderBookmark(
   lang: 'tr' | 'en' = 'tr',
   bilingual = false,
   view: 'active' | 'archived' = 'active',
+  labels: LabelSummary[] = [],
 ): string {
-  if (bookmark.kind === 'note') return renderNoteCard(bookmark, returnTo, view, lang);
+  if (bookmark.kind === 'note') return renderNoteCard(bookmark, returnTo, view, lang, labels);
 
   const author: Partial<Author> = bookmark.author ?? {};
   const handle = author.username ? `@${author.username}` : '';
@@ -1144,7 +1176,7 @@ function renderBookmark(
 
       ${extras.length ? `<p class="peek-meta">${escapeHtml(extras.join(' · '))}</p>` : ''}
 
-      ${renderLabels(bookmark, returnTo, view, lang)}
+      ${renderLabels(bookmark, returnTo, view, lang, labels)}
     </article>
   `;
 }
@@ -1160,6 +1192,7 @@ function renderNoteCard(
   returnTo: string,
   view: 'active' | 'archived' = 'active',
   lang: 'tr' | 'en' = 'tr',
+  labels: LabelSummary[] = [],
 ): string {
   const agent = bookmark.agent;
   const agentName = agent?.name?.trim() || 'AI agent';
@@ -1230,7 +1263,7 @@ function renderNoteCard(
           : ''
       }
 
-      ${renderLabels(bookmark, returnTo, view, lang)}
+      ${renderLabels(bookmark, returnTo, view, lang, labels)}
     </article>
   `;
 }
@@ -1717,7 +1750,7 @@ function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=27">
+  <link rel="stylesheet" href="/style.css?v=28">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -1731,7 +1764,7 @@ function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=2" defer></script>
+  <script src="/app.js?v=3" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}
@@ -3364,15 +3397,71 @@ ${LABEL_TONE_CSS}
 
 .label-editor summary::-webkit-details-marker { display: none; }
 .label-editor[open] summary { border-style: solid; color: var(--ink); }
+.label-editor[open] { display: block; flex-basis: 100%; width: 100%; }
 .label-count { font-variant-numeric: tabular-nums; opacity: 0.65; }
 
 .label-form {
-  display: flex;
-  gap: 6px;
+  display: block;
   margin-top: 8px;
+  max-width: 620px;
 }
 
-.label-form input {
+/* The ticks are the save, so each one reads as a chip in the row above the
+   name: the card's chips keep their own styling, these are the choice. */
+.label-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  max-height: 170px;
+  overflow: auto;
+}
+
+.label-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.label-check:hover { border-color: var(--line-strong); }
+.label-check:has(input:checked) {
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+.label-check input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
+
+/* The new-name chip is one more item in that row: it opens into its own line
+   only while a name is being typed, so no card carries a stray text field. */
+.label-new { display: inline-flex; max-width: 100%; }
+.label-new[open] { display: block; flex-basis: 100%; width: 100%; }
+
+.label-new summary {
+  padding: 4px 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+.label-new summary::-webkit-details-marker { display: none; }
+.label-new[open] summary { border-style: solid; color: var(--ink); }
+.label-new-row { display: flex; gap: 6px; margin-top: 8px; }
+
+.label-new-row input {
   flex: 1;
   min-width: 0;
   padding: 7px 10px;
@@ -3384,7 +3473,7 @@ ${LABEL_TONE_CSS}
   outline: 0;
 }
 
-.label-form input:focus { border-color: var(--line-strong); }
+.label-new-row input:focus { border-color: var(--line-strong); }
 
 .label-form button {
   padding: 7px 11px;
@@ -3396,6 +3485,8 @@ ${LABEL_TONE_CSS}
   font-weight: 650;
   white-space: nowrap;
 }
+
+.label-save { margin-top: 8px; }
 
 /* Settings is a form, not a list, so it reads at the cloud's 920px measure.
    That is wider than the 820px reading column, so this page's own shell and
