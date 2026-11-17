@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseYouTubeUrl, readYouTubePost } from '../src/youtube.ts';
+import { parseYouTubeUrl, readDescription, readYouTubePost } from '../src/youtube.ts';
 
 const ID = 'h70ZC1li5vY';
 const CANONICAL = `https://www.youtube.com/watch?v=${ID}`;
@@ -89,6 +89,49 @@ test('still saves a video whose page and oEmbed are unavailable', async () => {
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test('a Short without a description saves its title, not YouTube’s tagline', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.includes('/oembed')) {
+      return new Response(
+        JSON.stringify({ title: 'Hardest watch ever', author_name: 'Labubao' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return new Response(
+      '<html><head><meta property="og:description" content="Enjoy the videos and music you love, ' +
+        'upload original content, and share it all with friends, family, and the world on YouTube.">' +
+        '"shortDescription":"","isCrawlable":true</head></html>',
+      { status: 200, headers: { 'Content-Type': 'text/html' } },
+    );
+  };
+
+  try {
+    const post = await readYouTubePost(`https://youtube.com/shorts/${ID}?si=aLoj2m1OQ3hsSxyN`);
+    assert.equal(post.url, CANONICAL);
+    assert.equal(post.text, 'Hardest watch ever');
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('reads the player description over the meta tag, and drops the tagline alone', () => {
+  assert.equal(
+    readDescription('"shortDescription":"Line one\\nLine two \\u0026 more","isCrawlable":true'),
+    'Line one\nLine two & more',
+  );
+  assert.equal(readDescription('"shortDescription":"","isCrawlable":true'), '');
+  assert.equal(
+    readDescription(
+      '<meta property="og:description" content="Auf YouTube findest du die angesagtesten Videos ' +
+        'und Tracks. Außerdem kannst du eigene Inhalte hochladen.">',
+    ),
+    '',
+  );
+  assert.equal(readDescription(null), '');
 });
 
 test('a non-video link is a 400, not a 502', async () => {

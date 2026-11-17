@@ -74,10 +74,7 @@ export async function readYouTubePost(
 
   const title = oembed?.title?.trim() || meta(page, 'title')?.trim() || '';
   const channel = oembed?.author_name?.trim() || null;
-  const description =
-    meta(page, 'og:description')?.trim() ||
-    meta(page, 'description')?.trim() ||
-    '';
+  const description = readDescription(page);
   const createdAt = datePublished(page);
   const thumbnail =
     oembed?.thumbnail_url?.trim() || `https://i.ytimg.com/vi/${parsed.videoId}/hqdefault.jpg`;
@@ -153,6 +150,57 @@ async function fetchPage(canonicalUrl: string): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * The description the creator wrote, from the watch page's player response.
+ * `og:description` is not a substitute: YouTube feeds its own localized tagline
+ * to every video without one, and cuts a real one off with an ellipsis. The
+ * player response carries the exact field, empty when there is nothing to say,
+ * so an empty answer here means "no description" rather than "not found".
+ */
+export function readDescription(html: string | null): string {
+  const stored = html?.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1];
+  if (stored !== undefined) return decodeJsonString(stored).trim();
+
+  // A consent wall or an older page shape may skip the player response; the
+  // tagline check below still keeps its placeholder out of the bookmark.
+  const fallback = meta(html, 'og:description')?.trim() || meta(html, 'description')?.trim() || '';
+  return isGenericDescription(fallback) ? '' : fallback;
+}
+
+/**
+ * YouTube's stand-in descriptions for a video without one, as seen in the
+ * languages the tagline has arrived in. They describe the site, not the video,
+ * and they follow the language of whoever fetched the page.
+ */
+const GENERIC_DESCRIPTIONS = [
+  /^enjoy the videos and music you love/i,
+  /^auf youtube findest du die angesagtesten/i,
+  /^sevdiğiniz videoların ve müziklerin/i,
+  /^disfruta de los vídeos y la música que te gusta/i,
+  /^profitez de vidéos et de musiques/i,
+];
+
+function isGenericDescription(value: string): boolean {
+  return GENERIC_DESCRIPTIONS.some(pattern => pattern.test(value));
+}
+
+/** The escapes a JSON string carries, without pulling in a JSON parser. */
+function decodeJsonString(value: string): string {
+  return value.replace(/\\(u[0-9a-fA-F]{4}|.)/g, (_, escape: string) => {
+    if (escape.startsWith('u')) return String.fromCharCode(parseInt(escape.slice(1), 16));
+    return JSON_ESCAPES[escape] ?? escape;
+  });
+}
+
+const JSON_ESCAPES: Record<string, string> = {
+  n: '\n',
+  r: '\r',
+  t: '\t',
+  '"': '"',
+  '\\': '\\',
+  '/': '/',
+};
 
 /** Content of a meta tag, matched by `property` or `name`. */
 function meta(html: string | null, key: string): string | null {
