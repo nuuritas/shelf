@@ -5,6 +5,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     date: "2026-11-17",
     bullets: [
+      "**Appearance**: the theme and text size save as soon as you pick one, so they no longer wait for Save settings.",
       "**Filters**: source, folder and label are three menus that show what is picked, keep several picks and close on an outside tap; a picked filter is an × you can drop on its own.",
       "**Changelog**: `/changelog` lists what each deploy carried, and Settings shows the newest three lines.",
       "**Languages**: summaries can be written in any language `Intl` knows, and Settings offers a picker for it.",

@@ -186,6 +186,10 @@ const worker: ExportedHandler<Env> = {
       if (request.method === 'POST') return secure(await handleSettingsSave(request, env));
     }
 
+    if (request.method === 'POST' && url.pathname === '/settings/appearance') {
+      return secure(await handleAppearanceSave(request, env));
+    }
+
     if (request.method === 'GET' && url.pathname.startsWith('/t/')) {
       const slug = decodeURIComponent(url.pathname.slice(3)).replace(/\/+$/, '');
       return secure(await handleTopicPage(slug, env, url, look));
@@ -624,6 +628,38 @@ async function handleSettingsPage(url: URL, env: Env, look: Appearance): Promise
   );
 }
 
+/**
+ * The appearance cookie, written in one place so its flags are stated once.
+ * Not HttpOnly: the native clients read this cookie out of their own store to
+ * paint the chrome. Not Secure either: `bun run dev` is http.
+ */
+function appearanceCookie(look: Appearance): string {
+  return `${APPEARANCE_COOKIE}=${serializeAppearance(look)}; Path=/; Max-Age=${APPEARANCE_MAX_AGE}; SameSite=Lax`;
+}
+
+/**
+ * Theme and text size post here, one row per control, because the click is the
+ * save: picking Dark repaints the next page without touching the summary
+ * prompt. The value is checked against its union, and anything missing or
+ * unknown keeps the choice the browser already had, so a stale or hand-made
+ * form cannot reset it. It stays a cookie: no settings row is written.
+ */
+async function handleAppearanceSave(request: Request, env: Env): Promise<Response> {
+  const form = await request.formData();
+  const current = parseAppearance(request.headers.get('cookie') ?? undefined);
+  const theme = form.get('theme');
+  const size = form.get('size');
+  const look: Appearance = {
+    theme: isTheme(theme) ? theme : current.theme,
+    size: isTextSize(size) ? size : current.size,
+  };
+
+  return new Response(null, {
+    status: 303,
+    headers: { Location: '/settings', 'Set-Cookie': appearanceCookie(look) },
+  });
+}
+
 async function handleSettingsSave(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const action = String(form.get('action') || 'save');
@@ -638,15 +674,10 @@ async function handleSettingsSave(request: Request, env: Env): Promise<Response>
   const rawPrompt = reset ? '' : String(form.get('summary_prompt') ?? '');
 
   // The appearance lives in a cookie, not in the settings table: it belongs to
-  // the screen in front of the reader. Anything missing or unknown keeps what
-  // the browser already had instead of snapping back to the default.
+  // the screen in front of the reader. This form no longer carries it — the
+  // appearance card posts to `/settings/appearance` on each click — so the
+  // cookie is only read here, to render the card with the look in use.
   const currentLook = parseAppearance(request.headers.get('cookie') ?? undefined);
-  const theme = String(form.get('theme') || '');
-  const size = String(form.get('size') || '');
-  const look: Appearance = {
-    theme: isTheme(theme) ? theme : currentLook.theme,
-    size: isTextSize(size) ? size : currentLook.size,
-  };
 
   const renderError = (message: string, status = 400) =>
     htmlResponse(
@@ -683,12 +714,7 @@ async function handleSettingsSave(request: Request, env: Env): Promise<Response>
     });
     return new Response(null, {
       status: 303,
-      headers: {
-        Location: `/settings?notice=${reset ? 'reset' : 'saved'}`,
-        // Not HttpOnly: the native clients read this cookie out of their own
-        // store to paint the chrome. Not Secure either: `bun run dev` is http.
-        'Set-Cookie': `${APPEARANCE_COOKIE}=${serializeAppearance(look)}; Path=/; Max-Age=${APPEARANCE_MAX_AGE}; SameSite=Lax`,
-      },
+      headers: { Location: `/settings?notice=${reset ? 'reset' : 'saved'}` },
     });
   } catch (error) {
     return renderError(errorMessage(error), 502);
