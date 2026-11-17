@@ -10,6 +10,38 @@ test('escapes tweet text and links bare URLs', () => {
   assert.match(html, /rel="noopener noreferrer nofollow"/);
 });
 
+test('a link prints its short address while the href keeps the whole one', () => {
+  const html = linkifyText(
+    'read https://example.com/2026/11/16/some-very-long-article-slug-here?utm_source=x&utm_campaign=y#frag',
+  );
+  assert.match(
+    html,
+    /href="https:\/\/example\.com\/2026\/11\/16\/some-very-long-article-slug-here\?utm_source=x&amp;utm_campaign=y#frag"/,
+  );
+  assert.match(html, />example\.com\/2026\/11\/16\/some-very-long-arti…<\/a>/);
+  assert.doesNotMatch(html, />[^<]*[?#][^<]*<\/a>/, 'the visible text carries no query or fragment');
+});
+
+test('a link drops the scheme and a www. prefix from its visible text', () => {
+  const html = linkifyText('https://www.bloomberg.com/news/articles/2026-11-16/x?access_token=abc');
+  assert.match(html, />bloomberg\.com\/news\/articles\/2026-11-16\/x<\/a>/);
+  assert.match(
+    html,
+    /href="https:\/\/www\.bloomberg\.com\/news\/articles\/2026-11-16\/x\?access_token=abc"/,
+  );
+});
+
+test('a short URL keeps its whole address as the visible text', () => {
+  assert.match(linkifyText('https://x.com/a/status/1'), />x\.com\/a\/status\/1<\/a>/);
+});
+
+test('the visible link text is escaped', () => {
+  const html = linkifyText('https://example.com/<img> and https://example.com/a&b=c');
+  assert.doesNotMatch(html, /<img>/);
+  assert.match(html, />example\.com\/&lt;img&gt;<\/a>/);
+  assert.match(html, />example\.com\/a&amp;b=c<\/a>/);
+});
+
 test('renders quote images without injecting raw tweet HTML', () => {
   const html = renderPage({
     bookmarks: [
