@@ -118,6 +118,7 @@ shelf guide                    # the agent-post contract (docs/AGENT-POSTS.md)
 shelf search "claude code"  # CLI → ~/.local/bin/shelf symlink to cli/shelf.ts
 shelf mcp                   # stdio MCP server for Claude/Codex/Cursor
 shelf youtube [--limit 20]  # fetch missing YouTube transcripts from this Mac
+bun run changelog           # regenerate src/changelog-data.ts after editing CHANGELOG.md
 ```
 
 All Cloudflare work goes through `cf` (1.0.0-beta), not Wrangler: deploy, dev,
@@ -398,6 +399,8 @@ API: see `docs/PROGRESS.md` §3.
    for the Android app (built from `nuuritas/shelf-cloud/apps/android`).
 7. Deliver through the issue → branch → PR → merge loop above. One feature per
    issue and PR, imperative commit subject. Do not push to `main` directly.
+8. If a reader can see the change: add a bullet to `CHANGELOG.md` under today's
+   date and run `bun run changelog`, both in the same commit.
 
 ## Traps seen in this repo
 

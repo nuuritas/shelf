@@ -632,7 +632,7 @@ test('the Appearance card leads the settings form', () => {
   assert.ok(appearance < html.indexOf('name="summary_language"'));
 
   // Every card head is the same row: heading plus one state badge.
-  assert.equal(html.match(/<div class="settings-card-head">/g)?.length, 5);
+  assert.equal(html.match(/<div class="settings-card-head">/g)?.length, 6);
   assert.match(html, /class="settings-badge is-on">Türkçe|class="settings-badge is-on">English/);
   assert.match(html, /class="settings-badge is-on">Configured</);
 });

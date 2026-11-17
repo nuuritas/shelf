@@ -1,0 +1,17 @@
+# Changelog
+
+Every change a deploy carries gets a bullet under the day it shipped, newest
+entry first, written for the person running this shelf. `bun run changelog`
+turns this file into `/changelog`; run it in the same commit as the edit.
+
+## 2026-11-17
+
+- **Changelog**: `/changelog` lists what each deploy carried, and Settings shows the newest three lines.
+- **Languages**: summaries can be written in any language `Intl` knows, and Settings offers a picker for it.
+- **Labels**: a card's labels are a tick list, so ticking one saves the set without leaving the page.
+- **Source filter**: the library can show only saved pages or only agent artifacts.
+- **YouTube**: a saved video keeps its own description instead of YouTube's generic tagline.
+- **Calendar**: the calendar is an icon in the top bar instead of a text link in the filter row.
+- **Links**: a long link prints as a short address, with the full URL still in the link.
+- **Search**: a search finds a note by the page it cites, not only by its own text.
+- **Notes**: a note's card shows its abstract or an excerpt, and `Open artifact ↗` opens the full document.

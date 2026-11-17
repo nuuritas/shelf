@@ -115,6 +115,13 @@ Nothing, for a personal archive:
 - **Transcript services** — `SUPADATA_API_KEY`, `TRANSCRIPT_API_URL`, or your own
   Piped instance. Details in [INSTALL.md](INSTALL.md#transcripts-optional).
 
+## Changelog
+
+`CHANGELOG.md` at the repository root lists what each deploy carried, newest
+first, and is served at `/changelog` (Settings shows the newest three lines).
+After editing it, run `bun run changelog` to regenerate the page's data and
+commit both files.
+
 ## Docs
 
 - [INSTALL.md](INSTALL.md) — the install checklist, for humans and agents.
