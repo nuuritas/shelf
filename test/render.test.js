@@ -711,10 +711,30 @@ test('the library reads by label: a filter row, a heading and a card chip', () =
   // A chip on the card opens that label's view, carrying the tone its slug
   // hashes to so the same word keeps one colour.
   assert.match(html, /<a class="label tone-\d" href="\/\?label=reading">Reading<\/a>/);
-  // The editor rewrites the whole set and remembers the filtered view.
+  // The editor is a tick list of the labels the page knows, not a text field,
+  // and it remembers the filtered view.
   assert.match(html, /<form class="label-form" method="post" action="\/labels">/);
-  assert.match(html, /name="labels" value="Design, Reading"/);
   assert.match(html, /name="returnTo" value="\/\?label=reading"/);
+  assert.match(html, /<fieldset class="label-picks">/);
+  assert.match(html, /<legend class="sr-only">Labels<\/legend>/);
+  // The checkbox value is the name, because the parser derives the slug.
+  assert.match(
+    html,
+    /<label class="label-check"><input type="checkbox" name="label" value="Design" checked><span>Design<\/span><\/label>/,
+  );
+  assert.match(
+    html,
+    /<label class="label-check"><input type="checkbox" name="label" value="Reading" checked><span>Reading<\/span><\/label>/,
+  );
+  // The new name is a chip in the same row, closed until it is used.
+  assert.match(html, /<details class="label-new">\s*<summary>\+ New label<\/summary>/);
+  assert.match(html, /name="newLabel"/);
+  // Without a script the checklist needs a button of its own.
+  assert.match(
+    html,
+    /<noscript><button type="submit" class="label-save">Save labels<\/button><\/noscript>/,
+  );
+  assert.doesNotMatch(html, /name="labels"/);
 });
 
 test('a card with no labels still offers the editor', () => {
@@ -722,11 +742,31 @@ test('a card with no labels still offers the editor', () => {
     bookmarks: [labelledPost()],
     total: 1,
     query: '',
+    labels: [{ slug: 'design', name: 'Design', count: 2 }],
     aiConfigured: true,
   });
 
   assert.match(html, /<summary>\+ Label<\/summary>/);
-  assert.match(html, /name="labels" value=""/);
+  assert.match(html, /name="label" value="Design"><span>Design<\/span>/);
+  assert.doesNotMatch(html, /value="Design" checked/);
+  assert.doesNotMatch(html, /name="labels"/);
+});
+
+test('the editor offers a label the card carries but the page list does not', () => {
+  const html = renderPage({
+    bookmarks: [labelledPost({ labels: [{ slug: 'zeta', name: 'Zeta' }] })],
+    total: 1,
+    query: '',
+    labels: [{ slug: 'design', name: 'Design', count: 2 }],
+    aiConfigured: true,
+  });
+
+  // An unticked box would submit as "remove", so a carried label outside the
+  // page's list is added back and stays ticked.
+  assert.match(html, /<input type="checkbox" name="label" value="Zeta" checked><span>Zeta<\/span>/);
+  assert.match(html, /<input type="checkbox" name="label" value="Design"><span>Design<\/span>/);
+  // One list, sorted by name whatever it came from.
+  assert.ok(html.indexOf('value="Design"') < html.indexOf('value="Zeta"'));
 });
 
 test('a label name is escaped where it is shown', () => {
@@ -856,7 +896,7 @@ test('a finished library asks for no refresh at all', () => {
 test('the page loads the poll script with a cache buster', () => {
   const html = renderPage({ bookmarks: [], total: 0, query: '' });
 
-  assert.match(html, /<script src="\/app\.js\?v=2" defer><\/script>/);
+  assert.match(html, /<script src="\/app\.js\?v=3" defer><\/script>/);
   assert.doesNotMatch(html, /<script src="\/app\.js" defer>/);
 });
 

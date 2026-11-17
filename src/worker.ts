@@ -453,12 +453,13 @@ async function handleTopicPage(
   const lang = parseLang(url.searchParams.get('lang'), settings.summaryLanguage);
 
   try {
-    const [data, topicData] = await Promise.all([
+    const [data, topicData, labelData] = await Promise.all([
       doJson<TopicPageResult>(
         env,
         `/topic?slug=${encodeURIComponent(slug)}&view=${encodeURIComponent(view)}&source=${encodeURIComponent(source)}`,
       ),
       doJson<TopicListResult>(env, '/topics').catch((): TopicListResult => ({ topics: [] })),
+      doJson<LabelListResult>(env, '/labels').catch((): LabelListResult => ({ labels: [] })),
     ]);
 
     if (!data.topic) {
@@ -472,6 +473,9 @@ async function handleTopicPage(
         query: '',
         topics: topicData.topics,
         topic: data.topic,
+        // A folder page shows the same cards, so its label editors offer the
+        // same labels; without this list a reader could only retype a name.
+        labels: labelData.labels,
         view,
         lang,
         source,
@@ -732,11 +736,18 @@ async function handleLabelsForm(request: Request, env: Env): Promise<Response> {
   if (!/^[A-Za-z0-9_-]{1,30}$/.test(id)) return redirect('/?error=Invalid+bookmark');
   const back = safeReturn(form.get('returnTo'), '/');
 
+  // The tick list posts every box it offers and the name chip adds one more to
+  // the same set. The values are label names, not slugs: `parseLabelNames`
+  // derives the slug itself, and the per-post cap drops a 13th silently.
+  const labels = form.getAll('label').map(value => String(value));
+  const typed = String(form.get('newLabel') || '').trim();
+  if (typed) labels.push(typed);
+
   try {
     await doJson<GetResult>(env, '/labels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, labels: String(form.get('labels') || '') }),
+      body: JSON.stringify({ id, labels }),
     });
     return redirect(withNotice(back, 'labeled'));
   } catch (error) {

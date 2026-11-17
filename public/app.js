@@ -74,6 +74,198 @@ document.addEventListener('click', async event => {
   }, 1200);
 });
 
+// Labels are a tick list: the box the reader clicks is the save. The route
+// answers a redirect, and `fetch` follows it, so the body is the page the
+// browser would have landed on — the card's chips are cut out of it and the
+// tick list stays where it was clicked, because refreshing it between two quick
+// ticks would drop the second one. A save that cannot be cut in — no fetch, a
+// lost connection, a page whose session has ended — posts the form the old way,
+// so a failure is the server's answer and never a tick that quietly did
+// nothing. Adding a name rebuilds the block instead, which is where the new
+// label joins the list and the typed text clears.
+(() => {
+  if (!window.fetch || !window.FormData || !window.DOMParser) return;
+
+  // Saves run one at a time, in the order they were made. Each carries the set
+  // as it stood when it was made, so a second tick waits for the first.
+  let queue = Promise.resolve();
+
+  const bookmarkId = form => {
+    const field = form.querySelector('input[name="id"]');
+    return field ? field.value : '';
+  };
+
+  const cardOf = form => (form.closest ? form.closest('.card') : null);
+
+  const ownChildren = (root, selector) =>
+    Array.from(root.children).filter(child => child.matches(selector));
+
+  /** The card the answer has for this post, or null when the filter drops it. */
+  const cardWithId = (page, id) => {
+    for (const form of page.querySelectorAll('form.label-form')) {
+      if (bookmarkId(form) === id) return cardOf(form);
+    }
+    return null;
+  };
+
+  /** Chips and their count, without rebuilding the tick list under the click. */
+  const paintChips = (card, fresh) => {
+    const current = card.querySelector('.card-labels');
+    const saved = fresh.querySelector('.card-labels');
+    if (!current || !saved) return;
+
+    const editor = current.querySelector('.label-editor');
+    ownChildren(current, 'a.label').forEach(chip => chip.remove());
+    ownChildren(saved, 'a.label').forEach(chip => {
+      current.insertBefore(chip.cloneNode(true), editor);
+    });
+
+    const count = current.querySelector('.label-editor summary');
+    const savedCount = saved.querySelector('.label-editor summary');
+    if (count && savedCount) count.innerHTML = savedCount.innerHTML;
+  };
+
+  /** The filtered view has nothing left, so show what a reload would show. */
+  const paintEmpty = page => {
+    const container = document.querySelector('.cards');
+    if (!container || container.querySelector('.card')) return;
+    const empty = page.querySelector('.empty');
+    if (empty) container.replaceWith(empty.cloneNode(true));
+    const note = document.querySelector('.library .fine-print');
+    if (note) note.remove();
+  };
+
+  /** Put the reader back where they were if a card above them changed height. */
+  const holdScroll = top => {
+    if (window.scrollY === top) return;
+    const shell = document.documentElement;
+    const previous = shell.style.scrollBehavior;
+    shell.style.scrollBehavior = 'auto';
+    window.scrollTo(window.scrollX, top);
+    shell.style.scrollBehavior = previous;
+  };
+
+  /** Swap in what the answer says, or report that it cannot be cut in. */
+  const paint = (html, form, rebuilt) => {
+    const page = new DOMParser().parseFromString(html, 'text/html');
+    // Anything but the library — a sign-in page, an error page — is not
+    // something this code can cut in.
+    if (!page.querySelector('.library')) return false;
+
+    const card = cardOf(form);
+    const fresh = cardWithId(page, bookmarkId(form));
+    // Measured before the swap, because a rebuilt or removed block moves
+    // everything under it.
+    const top = window.scrollY;
+
+    if (card && !fresh) {
+      // The change took the post out of the filtered view, exactly as a reload
+      // would.
+      card.remove();
+    } else if (card && rebuilt) {
+      const current = card.querySelector('.card-labels');
+      const next = fresh.querySelector('.card-labels');
+      if (current && next) {
+        // The parsed page carries the no-script save button as a real element;
+        // it must not follow the labels into a page with a script.
+        const labels = next.cloneNode(true);
+        labels.querySelectorAll('noscript').forEach(node => node.remove());
+        // Adding a name is one step, not the end of the session: the editor
+        // stays open where it was, while the chip that carried the name closes
+        // and its text goes with it.
+        const editor = current.querySelector('.label-editor');
+        const wasOpen = editor ? editor.open : false;
+        current.replaceWith(labels);
+        const reopened = labels.querySelector('.label-editor');
+        if (reopened && wasOpen) reopened.open = true;
+      }
+    } else if (card) {
+      paintChips(card, fresh);
+    }
+
+    paintEmpty(page);
+    holdScroll(top);
+    return true;
+  };
+
+  const send = (form, rebuilt) => {
+    const action = form.getAttribute('action') || '/labels';
+    const card = cardOf(form);
+    // A ticked box saves the set; text still being typed is not part of it. The
+    // name waits for the button, so a half-typed label never becomes one.
+    const body = new FormData(form);
+    if (!rebuilt) body.delete('newLabel');
+
+    queue = queue
+      .then(() => {
+        if (!card || !card.isConnected) return null;
+        return fetch(action, {
+          method: 'POST',
+          body,
+          credentials: 'same-origin',
+          headers: { Accept: 'text/html' },
+        });
+      })
+      .then(response => {
+        if (!response) return;
+        if (!response.ok) throw new Error('label save failed');
+        return response.text().then(html => {
+          if (!paint(html, form, rebuilt)) form.submit();
+        });
+      })
+      .catch(() => {
+        // No answer to cut in: let the browser post the form, so the server's
+        // page is the answer instead of a tick that silently did nothing.
+        form.submit();
+      });
+  };
+
+  document.addEventListener('change', event => {
+    const target = event.target;
+    if (!target || target.name !== 'label') return;
+    const picks = target.closest ? target.closest('.label-picks') : null;
+    const form = picks ? picks.closest('form.label-form') : null;
+    if (form) send(form, false);
+  });
+
+  document.addEventListener('submit', event => {
+    const form = event.target;
+    if (!form || !form.classList || !form.classList.contains('label-form')) return;
+    const action = form.getAttribute('action') || '';
+    try {
+      if (new URL(action, window.location.href).origin !== window.location.origin) return;
+    } catch {
+      return;
+    }
+    event.preventDefault();
+    // The ticked boxes save themselves; the button is only for the name being
+    // typed. An empty one closes the chip that opened it, without a post and
+    // without a reload, so no text is left behind to press a button for.
+    const typed = form.querySelector('input[name="newLabel"]');
+    if (!typed || !typed.value.trim()) {
+      const open = form.querySelector('.label-new[open]');
+      if (open) open.removeAttribute('open');
+      return;
+    }
+    send(form, true);
+  });
+
+  // The new-name chip is a details, so it opens without this script; the field
+  // is focused here only so a tap on the chip lands in it. `toggle` fires after
+  // the open state changes, which is when the field can take focus.
+  document.addEventListener(
+    'toggle',
+    event => {
+      const chip = event.target;
+      if (!chip || !chip.classList || !chip.classList.contains('label-new')) return;
+      if (!chip.open) return;
+      const field = chip.querySelector('input[name="newLabel"]');
+      if (field) field.focus();
+    },
+    true,
+  );
+})();
+
 // Settings: keep the prompt character count honest while typing. The server
 // still enforces the limit; this is only feedback.
 (() => {
