@@ -1128,20 +1128,25 @@ const TRANSPORT_LABELS: Record<string, string> = {
 };
 
 /**
- * One choice in a `.segmented` control: a visually hidden radio plus its
- * label. The note is the `title`, so the control stays one row of words.
+ * One choice in a `.segmented` control. The pill is a submit button, so the
+ * click is the save and the row needs no Save of its own. The note is the
+ * `title`, so the control stays one row of words. `aria-pressed` says which
+ * choice is on, and an `aria-label` is written only when the visible label is
+ * too short to name the choice on its own (`S`, `M`, `L`, `XL`).
  */
-function segmentedOption(
+function segmentedButton(
   name: string,
   value: string,
   label: string,
   note: string,
-  checked: boolean,
+  selected: boolean,
   accessibleName = label,
 ): string {
-  return `<label title="${escapeHtml(note)}"><input type="radio" name="${name}" value="${value}"${
-    checked ? ' checked' : ''
-  } aria-label="${escapeHtml(accessibleName)}"><span>${label}</span></label>`;
+  return `<button type="submit" name="${escapeHtml(name)}" value="${escapeHtml(value)}"${
+    selected ? ' class="is-on" aria-pressed="true"' : ' aria-pressed="false"'
+  } title="${escapeHtml(note)}"${
+    accessibleName === label ? '' : ` aria-label="${escapeHtml(accessibleName)}"`
+  }>${escapeHtml(label)}</button>`;
 }
 
 /**
@@ -1229,32 +1234,32 @@ export function renderSettings({
           ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
           ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
 
-          <form method="post" action="/settings" class="settings-form">
-            <section class="settings-card" id="appearance">
-              <div class="settings-card-head">
-                <h3>Appearance</h3>
-                <span class="settings-badge">This browser</span>
-              </div>
-              <div class="settings-row">
-                <span class="settings-label" id="theme-label">Theme</span>
-                <div class="segmented" role="radiogroup" aria-labelledby="theme-label">
-                  ${segmentedOption('theme', 'system', 'System', 'Follow the operating system.', appearance.theme === 'system')}
-                  ${segmentedOption('theme', 'light', 'Light', 'Always the light paper.', appearance.theme === 'light')}
-                  ${segmentedOption('theme', 'dark', 'Dark', 'Always the dark paper.', appearance.theme === 'dark')}
-                </div>
-              </div>
-              <div class="settings-row">
-                <span class="settings-label" id="size-label">Text size</span>
-                <div class="segmented" role="radiogroup" aria-labelledby="size-label">
-                  ${segmentedOption('size', 'compact', 'S', 'Compact: 90% of the normal size.', appearance.size === 'compact', 'Compact')}
-                  ${segmentedOption('size', 'normal', 'M', 'Normal text size.', appearance.size === 'normal', 'Normal')}
-                  ${segmentedOption('size', 'large', 'L', 'Large: 110% of the normal size.', appearance.size === 'large', 'Large')}
-                  ${segmentedOption('size', 'xlarge', 'XL', 'Extra large: 120% of the normal size.', appearance.size === 'xlarge', 'Extra large')}
-                </div>
-              </div>
-              <p class="settings-note">This is a browser setting, not an account one: it is kept in a cookie, so the phone and the desktop can differ. It saves with the rest of this page.</p>
-            </section>
+          <section class="settings-card" id="appearance">
+            <div class="settings-card-head">
+              <h3>Appearance</h3>
+              <span class="settings-badge">This browser</span>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label" id="theme-label">Theme</span>
+              <form class="segmented" method="post" action="/settings/appearance" aria-labelledby="theme-label">
+                ${segmentedButton('theme', 'system', 'System', 'Follow the operating system.', appearance.theme === 'system')}
+                ${segmentedButton('theme', 'light', 'Light', 'Always the light paper.', appearance.theme === 'light')}
+                ${segmentedButton('theme', 'dark', 'Dark', 'Always the dark paper.', appearance.theme === 'dark')}
+              </form>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label" id="size-label">Text size</span>
+              <form class="segmented" method="post" action="/settings/appearance" aria-labelledby="size-label">
+                ${segmentedButton('size', 'compact', 'S', 'Compact: 90% of the normal size.', appearance.size === 'compact', 'Compact')}
+                ${segmentedButton('size', 'normal', 'M', 'Normal text size.', appearance.size === 'normal', 'Normal')}
+                ${segmentedButton('size', 'large', 'L', 'Large: 110% of the normal size.', appearance.size === 'large', 'Large')}
+                ${segmentedButton('size', 'xlarge', 'XL', 'Extra large: 120% of the normal size.', appearance.size === 'xlarge', 'Extra large')}
+              </form>
+            </div>
+            <p class="settings-note">This is a browser setting, not an account one: it is kept in a cookie, so the phone and the desktop can differ. It saves as soon as you pick a choice.</p>
+          </section>
 
+          <form method="post" action="/settings" class="settings-form">
             <section class="settings-card">
               <div class="settings-card-head">
                 <h3>Summary prompt</h3>
@@ -2131,7 +2136,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=31">
+  <link rel="stylesheet" href="/style.css?v=32">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -4065,6 +4070,12 @@ body.settings-page .topbar {
   margin-top: 16px;
 }
 
+/* The appearance card posts on its own, so it sits outside the settings form;
+   this keeps the 16px the form would have given it. */
+.settings > #appearance {
+  margin-top: 16px;
+}
+
 .settings-card {
   padding: 16px;
   border: 1px solid var(--line);
@@ -4251,43 +4262,36 @@ body.settings-page .topbar {
   background: var(--surface-soft);
 }
 
-.segmented label {
-  position: relative;
+/* Each pill is a submit button, so the shadow sits on the button itself and
+   the selected choice is the .is-on class rather than a checked radio. */
+.segmented button {
   flex: 1 1 0;
   min-width: 0;
-}
-
-.segmented input {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.segmented span {
-  display: block;
   padding: 6px 4px;
+  border: 0;
   border-radius: 8px;
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: 0.78125rem;
   font-weight: 650;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
 
-.segmented label:hover span { color: var(--ink); }
+.segmented button:hover { color: var(--ink); }
 
-.segmented label:has(input:checked) span {
+.segmented button.is-on {
   background: var(--surface);
   color: var(--ink);
   box-shadow: 0 1px 2px rgba(15, 23, 32, 0.14);
 }
 
-.segmented label:has(input:focus-visible) span {
+.segmented button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }

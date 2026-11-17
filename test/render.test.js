@@ -556,23 +556,48 @@ test('the settings page offers theme and text size as segmented rows', () => {
 
   assert.match(html, /<section class="settings-card" id="appearance">/);
   assert.match(html, /class="settings-row"/);
-  assert.match(html, /role="radiogroup" aria-labelledby="theme-label"/);
-  assert.match(html, /role="radiogroup" aria-labelledby="size-label"/);
+
+  // One form per row, each naming its own label: a pill is a submit button, so
+  // the click saves and no Save button is needed.
+  assert.equal(html.match(/<form class="segmented" method="post" action="\/settings\/appearance"/g)?.length, 2);
+  assert.match(
+    html,
+    /<form class="segmented" method="post" action="\/settings\/appearance" aria-labelledby="theme-label">/,
+  );
+  assert.match(
+    html,
+    /<form class="segmented" method="post" action="\/settings\/appearance" aria-labelledby="size-label">/,
+  );
 
   for (const theme of ['system', 'light', 'dark']) {
-    assert.match(html, new RegExp(`name="theme" value="${theme}"`));
+    assert.match(html, new RegExp(`<button type="submit" name="theme" value="${theme}"`));
   }
   for (const size of ['compact', 'normal', 'large', 'xlarge']) {
-    assert.match(html, new RegExp(`name="size" value="${size}"`));
+    assert.match(html, new RegExp(`<button type="submit" name="size" value="${size}"`));
   }
 
-  assert.match(html, /name="theme" value="dark" checked/);
-  assert.match(html, /name="size" value="xlarge" checked/);
+  // The chosen pair is pressed, the others are not, and both are buttons.
+  assert.match(
+    html,
+    /<button type="submit" name="theme" value="dark" class="is-on" aria-pressed="true"/,
+  );
+  assert.match(
+    html,
+    /<button type="submit" name="size" value="xlarge" class="is-on" aria-pressed="true"/,
+  );
+  assert.match(html, /<button type="submit" name="theme" value="light" aria-pressed="false" title="[^"]*"/);
+  assert.match(
+    html,
+    /<button type="submit" name="size" value="compact" aria-pressed="false" title="[^"]*" aria-label="Compact"/,
+  );
   assert.match(html, /<html lang="en" data-theme="dark" data-size="xlarge">/);
   assert.match(html, /browser setting/);
-  // Appearance still saves through the one form the page already posted.
-  assert.match(html, /<form method="post" action="\/settings" class="settings-form">/);
-  assert.match(html, /name="action" value="save"/);
+
+  // Nothing is a radio any more: no group role, no checked input.
+  assert.doesNotMatch(html, /role="radiogroup"/);
+  assert.doesNotMatch(html, /type="radio"/);
+  assert.doesNotMatch(html, /name="theme" value="[a-z]+" checked/);
+  assert.doesNotMatch(html, /name="size" value="[a-z]+" checked/);
 });
 
 test('the settings page keeps one form, one Save and one Reset', () => {
@@ -583,13 +608,16 @@ test('the settings page keeps one form, one Save and one Reset', () => {
     pushSubscriptions: 1,
   });
 
-  // One POST for the page: no card grew its own endpoint, and both buttons
-  // carry the same `action` field the Worker reads.
+  // One POST for the page: the prompt and language still share a Save, and both
+  // buttons carry the same `action` field the Worker reads.
   assert.equal(html.match(/<form method="post" action="\/settings"/g)?.length, 1);
   assert.match(html, /<form method="post" action="\/settings" class="settings-form">/);
-  assert.doesNotMatch(html, /action="\/settings\//);
   assert.equal(html.match(/name="action" value="save"/g)?.length, 1);
   assert.equal(html.match(/name="action" value="reset"/g)?.length, 1);
+
+  // The only other posts are the two appearance rows, which save on the click.
+  assert.match(html, /\/settings\/appearance/);
+  assert.equal(html.match(/action="\/settings\/appearance"/g)?.length, 2);
 
   // The hooks app.js drives are still in the markup.
   assert.match(html, /data-prompt-source/);
@@ -629,8 +657,13 @@ test('the Appearance card leads the settings form', () => {
   const form = html.indexOf('<form method="post" action="/settings" class="settings-form">');
   const appearance = html.indexOf('<section class="settings-card" id="appearance">');
   assert.ok(form >= 0);
-  assert.equal(html.indexOf('<section class="settings-card"', form), appearance);
+  assert.ok(appearance >= 0);
+  // It still leads the page, but it is no longer a card inside the big form:
+  // the card opens and closes before the form does, because each row posts on
+  // its own.
+  assert.ok(appearance < form);
   assert.ok(appearance < html.indexOf('name="summary_language"'));
+  assert.ok(html.indexOf('</section>', appearance) < form);
 
   // Every card head is the same row: heading plus one state badge.
   assert.equal(html.match(/<div class="settings-card-head">/g)?.length, 6);
@@ -661,7 +694,15 @@ test('the stylesheet scales from one rem root and declares no px font size', () 
   assert.doesNotMatch(CSS, /font-size:\s*[\d.]+px/);
   assert.match(CSS, /body \{[^}]*font-size: 1rem;/);
   assert.match(CSS, /\.segmented \{/);
-  assert.match(CSS, /\.segmented label:has\(input:checked\) span \{/);
+  // The pill is a button that saves on the click, so the checked-radio rules
+  // are gone with the radio inputs.
+  assert.match(CSS, /\.segmented button \{/);
+  assert.match(CSS, /\.segmented button\.is-on \{/);
+  assert.match(CSS, /\.segmented button:focus-visible \{/);
+  assert.doesNotMatch(CSS, /\.segmented label/);
+  assert.doesNotMatch(CSS, /\.segmented input/);
+  assert.doesNotMatch(CSS, /\.segmented span/);
+  assert.doesNotMatch(CSS, /\.segmented[^{]*:has\(input:checked\)/);
   assert.match(CSS, /\.settings-row \{/);
   assert.match(CSS, /\.settings-label \{/);
 });
