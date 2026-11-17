@@ -39,16 +39,18 @@ function note(overrides = {}) {
   };
 }
 
-test('renders a note with its title, attribution and markdown body', () => {
+test('renders a note with its title, attribution and abstract', () => {
   const html = renderPage({ bookmarks: [note()], total: 1, query: '', layout: 'saves' });
   assert.match(html, /How agent memory works/);
   assert.match(html, /AI-generated/);
   assert.match(html, /Claude Code/);
   assert.match(html, /claude-sonnet-4\.5/);
-  assert.match(html, /<h2>Memory<\/h2>/);
-  assert.match(html, /<strong>Short<\/strong>/);
-  assert.match(html, /href="https:\/\/example\.com\/paper"/);
   assert.match(html, /class="note-label">Abstract</);
+  assert.match(html, /A short abstract\./);
+  // The document is the note page's job, not the card's.
+  assert.doesNotMatch(html, /<h2>Memory<\/h2>/);
+  assert.doesNotMatch(html, /<strong>Short<\/strong>/);
+  assert.doesNotMatch(html, /class="note-body"/);
   assert.doesNotMatch(html, /Summary not configured/);
 });
 
@@ -135,6 +137,41 @@ test('an HTML note without an abstract falls back to a plain-text excerpt', () =
   });
   assert.doesNotMatch(html, /<iframe/);
   assert.match(html, /class="note-excerpt">The installed base grew\.<\/p>/);
+});
+
+test('a markdown note without an abstract falls back to a 260-character excerpt', () => {
+  const text = `${'x'.repeat(259)}${'y'.repeat(50)}`;
+  const html = renderPage({
+    bookmarks: [note({ text, summary: null, summaryStatus: 'disabled' })],
+    total: 1,
+    query: '',
+    layout: 'saves',
+  });
+  assert.ok(html.includes(`<p class="note-excerpt">${'x'.repeat(259)}…</p>`));
+  assert.ok(!html.includes('yyyy'));
+  assert.doesNotMatch(html, /class="note-body"/);
+  assert.doesNotMatch(html, /<h2>Memory<\/h2>/);
+});
+
+test('a note card links to the artifact itself, not only through its title', () => {
+  const html = renderPage({ bookmarks: [note()], total: 1, query: '', layout: 'saves' });
+  assert.match(html, /<a class="x-link" href="\/p\/n0te1">Open artifact ↗<\/a>/);
+  // With no source the kind chip stays beside it.
+  assert.match(html, /class="x-link note-kind" title="Note">Note</);
+});
+
+test('a note with a source keeps its outbound link beside the artifact link', () => {
+  const html = renderPage({
+    bookmarks: [note({ sourceUrl: 'https://example.com/paper' })],
+    total: 1,
+    query: '',
+    layout: 'saves',
+  });
+  assert.match(html, /<a class="x-link" href="\/p\/n0te1">Open artifact ↗<\/a>/);
+  assert.match(
+    html,
+    /<a class="x-link" href="https:\/\/example\.com\/paper" target="_blank" rel="noopener noreferrer">Source ↗<\/a>/,
+  );
 });
 
 test('the full note page renders markdown and the HTML frame', () => {
