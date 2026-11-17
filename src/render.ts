@@ -313,7 +313,7 @@ export function renderPage({
               ? 'Archive · Shelf'
               : 'Shelf',
     bodyClass: 'home',
-    head: pending ? '<meta http-equiv="refresh" content="4">' : '',
+    head: pending ? '<noscript><meta http-equiv="refresh" content="4"></noscript>' : '',
     look: appearance,
     body: `
       <header class="topbar">
@@ -1082,7 +1082,7 @@ function renderBookmark(
   if (linkCount) extras.push(`${linkCount} ${linkCount === 1 ? 'link' : 'links'}`);
 
   return `
-    <article class="card is-collapsed${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}">
+    <article class="card is-collapsed${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}" data-ref="${escapeHtml(bookmark.ref || bookmark.tweetId)}" data-summary-status="${escapeHtml(bookmark.summaryStatus || '')}">
       <header class="card-head">
         <div class="author">
           ${
@@ -1172,7 +1172,7 @@ function renderNoteCard(
       : '';
 
   return `
-    <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}">
+    <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}" data-ref="${escapeHtml(bookmark.ref || bookmark.tweetId)}" data-summary-status="${escapeHtml(bookmark.summaryStatus || '')}">
       <header class="card-head">
         <div class="author">
           <span class="avatar avatar-fallback note-avatar" aria-hidden="true">AI</span>
@@ -1696,7 +1696,7 @@ function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js" defer></script>
+  <script src="/app.js?v=1" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}
