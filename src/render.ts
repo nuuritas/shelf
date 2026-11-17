@@ -199,6 +199,8 @@ export function renderPage({
       ['x', 'X'],
       ['linkedin', 'LinkedIn'],
       ['youtube', 'YouTube'],
+      ['web', 'Web'],
+      ['note', 'Artifact'],
     ] as const
   )
     .map(

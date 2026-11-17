@@ -65,7 +65,9 @@ export function canonicalRedirectUrl(
 /** `source` query value → a filter; anything unknown falls back to `all`. */
 export function parseSource(value: unknown): SourceFilter {
   const raw = String(value ?? '').trim().toLowerCase();
-  return raw === 'x' || raw === 'linkedin' || raw === 'youtube' ? raw : 'all';
+  return raw === 'x' || raw === 'linkedin' || raw === 'youtube' || raw === 'web' || raw === 'note'
+    ? raw
+    : 'all';
 }
 
 /**
@@ -154,16 +156,40 @@ export function searchQuerySql(
   };
 }
 
-/** SQL predicate over a `url` column for one source, matching `sourceOfUrl`. */
+/** X hosts, in SQL, over the `host` expression passed in. */
+function xHostSql(host: string): string {
+  return `(${host} = 'x.com' OR ${host} LIKE '%.x.com' OR ${host} = 'twitter.com' OR ${host} LIKE '%.twitter.com')`;
+}
+
+/** LinkedIn hosts, in SQL, over the `host` expression passed in. */
+function linkedinHostSql(host: string): string {
+  return `(${host} = 'linkedin.com' OR ${host} LIKE '%.linkedin.com')`;
+}
+
+/** YouTube hosts, in SQL, over the `host` expression passed in. */
+function youtubeHostSql(host: string): string {
+  return `(${host} = 'youtu.be' OR ${host} = 'youtube.com' OR ${host} LIKE '%.youtube.com')`;
+}
+
+/**
+ * SQL predicate over a `url` column for one source, matching `sourceOfUrl` for
+ * the three platforms. `note` and `web` are shapes, not hosts: a note is an
+ * agent artifact, and a saved page is any other row whose URL host is none of
+ * the three platforms (so a note that cites a page is never `web`).
+ */
 export function sourceFilterSql(source: Exclude<SourceFilter, 'all'>): string {
   const host = URL_HOST_SQL;
   switch (source) {
     case 'x':
-      return `(${host} = 'x.com' OR ${host} LIKE '%.x.com' OR ${host} = 'twitter.com' OR ${host} LIKE '%.twitter.com')`;
+      return xHostSql(host);
     case 'linkedin':
-      return `(${host} = 'linkedin.com' OR ${host} LIKE '%.linkedin.com')`;
+      return linkedinHostSql(host);
     case 'youtube':
-      return `(${host} = 'youtu.be' OR ${host} = 'youtube.com' OR ${host} LIKE '%.youtube.com')`;
+      return youtubeHostSql(host);
+    case 'note':
+      return `(kind = 'note')`;
+    case 'web':
+      return `(COALESCE(kind, 'post') != 'note' AND url IS NOT NULL AND url != '' AND NOT (${xHostSql(host)} OR ${linkedinHostSql(host)} OR ${youtubeHostSql(host)}))`;
   }
 }
 

@@ -406,8 +406,12 @@ export type BookmarkRow = {
 /** Canonical platform of a saved bookmark, resolved from its URL. */
 export type BookmarkSource = 'x' | 'linkedin' | 'youtube' | 'other';
 
-/** The library/API source filter; `all` includes every platform. */
-export type SourceFilter = 'all' | Exclude<BookmarkSource, 'other'>;
+/**
+ * The library/API source filter; `all` includes every row. The three platform
+ * values are URL hosts, while `web` and `note` are filters over a row's shape
+ * (a saved page, an agent artifact), not platforms `sourceOfUrl` can return.
+ */
+export type SourceFilter = 'all' | 'x' | 'linkedin' | 'youtube' | 'web' | 'note';
 
 export interface ListResult {
   bookmarks: Bookmark[];
