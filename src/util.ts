@@ -224,6 +224,28 @@ export function safeHttpUrl(value: unknown): string | null {
   }
 }
 
+/**
+ * How much of a URL a card prints. One saved link can carry a whole query
+ * string — a Bloomberg article's access token is longer than the article's
+ * title — and the address is the card copy, not the point of it. The rest
+ * stays in the href.
+ */
+const LINK_LABEL_MAX = 42;
+
+/**
+ * The compact text a link shows: no scheme, no `www.`, no query, cut short.
+ * The caller keeps the whole URL in the `href`, so a tracking-token address
+ * never prints longer than the post it belongs to.
+ */
+export function linkLabel(url: string): string {
+  const bare = url.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  const address = bare.split(/[?#]/)[0]!.replace(/\/+$/, '');
+  const text = address || bare;
+  if (text.length <= LINK_LABEL_MAX) return text;
+  const cut = text.slice(0, LINK_LABEL_MAX).replace(/[.,;:!?\-_/]+$/, '');
+  return `${cut}…`;
+}
+
 export function linkifyText(text: unknown): string {
   const input = String(text ?? '');
   const urlPattern = /https?:\/\/[^\s]+/g;
@@ -238,7 +260,7 @@ export function linkifyText(text: unknown): string {
     const safeHref = safeHttpUrl(href);
 
     if (safeHref) {
-      output += `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(href)}</a>`;
+      output += `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(linkLabel(href))}</a>`;
     } else {
       output += escapeHtml(href);
     }
