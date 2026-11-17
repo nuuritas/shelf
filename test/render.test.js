@@ -405,7 +405,7 @@ test('the settings page shows a custom prompt, escapes it, and marks it custom',
   assert.match(html, /class="settings-badge is-custom"/);
   assert.match(html, /&lt;\/textarea&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<\/textarea><script>/);
-  assert.match(html, /value="en" checked/);
+  assert.match(html, /value="en" selected/);
   assert.match(html, /OpenAI-compatible HTTP/);
   assert.match(html, /model-x/);
   assert.match(html, /Reset prompt to default/);
@@ -421,7 +421,7 @@ test('the settings page shows the built-in prompt until the owner saves a custom
   assert.match(html, /Built-in/);
   assert.doesNotMatch(html, /Reset prompt to default/);
   assert.match(html, /Write in \{\{language\}\}/);
-  assert.match(html, /value="tr" checked/);
+  assert.match(html, /value="tr" selected/);
   assert.match(html, /Workers AI binding/);
   assert.match(html, /Notifications/);
   assert.match(html, /data-push/);

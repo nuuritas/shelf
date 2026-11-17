@@ -26,8 +26,8 @@ import {
 import { LANGUAGE_UNKNOWN_MESSAGE, languageOf, resolveLanguage } from './languages.ts';
 import {
   defaultSummaryLanguage,
-  normalizeSummaryLanguage,
   normalizeSummaryPrompt,
+  resolveSettingsLanguage,
   validateSummaryPrompt,
   workspaceNameError,
   workspaceNameMessage,
@@ -581,6 +581,9 @@ async function handleSettingsPage(url: URL, env: Env, look: Appearance): Promise
       notice: url.searchParams.get('notice'),
       error: url.searchParams.get('error'),
       appearance: look,
+      // The language list is sorted by each language's own name, so the
+      // interface language decides the collation.
+      lang: parseUiLang(url.searchParams.get('lang'), settings.summaryLanguage),
     }),
   );
 }
@@ -590,9 +593,11 @@ async function handleSettingsSave(request: Request, env: Env): Promise<Response>
   const action = String(form.get('action') || 'save');
   const reset = action === 'reset';
   const current = await readSettings(env);
-  const language = normalizeSummaryLanguage(
-    String(form.get('summary_language') || ''),
-    current.summaryLanguage,
+  // A typed name or tag wins over the list. `null` is a refusal, not a reason
+  // to keep the old language: a typo must not look like a successful save.
+  const language = resolveSettingsLanguage(
+    form.get('summary_language'),
+    form.get('summary_language_typed'),
   );
   const rawPrompt = reset ? '' : String(form.get('summary_prompt') ?? '');
 
@@ -613,15 +618,18 @@ async function handleSettingsSave(request: Request, env: Env): Promise<Response>
         settings: {
           ...current,
           summaryPrompt: reset ? current.summaryPrompt : rawPrompt,
-          summaryLanguage: language,
+          summaryLanguage: language ?? current.summaryLanguage,
         },
         ai: aiConfig(env),
         aiConfigured: isAiConfigured(env),
         error: message,
         appearance: currentLook,
+        lang: parseUiLang(null, current.summaryLanguage),
       }),
       status,
     );
+
+  if (!language) return renderError(LANGUAGE_UNKNOWN_MESSAGE);
 
   let prompt: string;
   try {

@@ -19,6 +19,17 @@ export function normalizeSummaryLanguage(
 }
 
 /**
+ * The Settings form's language: a name or tag typed into the free-text field
+ * wins over the option chosen in the list. `null` means the typed value names
+ * nothing, so the form refuses it rather than saving the old language.
+ */
+export function resolveSettingsLanguage(selected: unknown, typed: unknown): string | null {
+  const value = String(typed ?? '').trim();
+  if (value) return resolveLanguage(value);
+  return resolveLanguage(String(selected ?? ''));
+}
+
+/**
  * Normalize the textarea value. Empty, and the built-in prompt itself, both
  * mean "use the default": that way saving the untouched form does not pin the
  * prompt in the database.
