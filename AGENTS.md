@@ -377,7 +377,9 @@ API: see `docs/PROGRESS.md` §3.
 - Never commit `.dev.vars`, `.cloudflare/`, or `out/`.
 - The CLI stores the vault password in `~/.config/shelf/config.json` (mode 0600,
   outside the repo). Rotating `APP_PASSWORD` on the Worker requires
-  `shelf config --password <new>`; the CLI reports a stale password as a 401 hint.
+  `shelf config --password <new>` — the scripted form, where the flag is the
+  point; `shelf login` is the interactive one. The CLI reports a stale password
+  as a 401 hint.
 - All outbound fetches must keep the SSRF guard in `links.ts`; do not fetch
   private hosts.
 
