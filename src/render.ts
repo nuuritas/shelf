@@ -1579,7 +1579,6 @@ function renderNoteCard(
 ): string {
   const agent = bookmark.agent;
   const agentName = agent?.name?.trim() || 'AI agent';
-  const model = agent?.model?.trim() || '';
   const archived = Boolean(bookmark.archivedAt);
   const sourceUrl = safeHttpUrl(bookmark.sourceUrl || '');
   const title = bookmark.title || 'Untitled note';
@@ -1604,10 +1603,8 @@ function renderNoteCard(
           <div class="author-text">
             <div class="author-line">
               <strong class="note-agent-name">${escapeHtml(agentName)}</strong>
-              <span class="ai-badge" title="Written by an AI agent">AI-generated</span>
             </div>
             <div class="meta">
-              ${model ? `<span class="note-model">${escapeHtml(model)}</span><span class="dot">·</span>` : ''}
               ${escapeHtml(formatDate(bookmark.savedAt))}
               ${
                 bookmark.ref
@@ -2143,7 +2140,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=33">
+  <link rel="stylesheet" href="/style.css?v=34">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2169,7 +2166,6 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .ai-badge { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .note-kind { color: var(--muted); font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
 .note-agent-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.note-model { color: var(--faint); }
 .note-card { position: relative; }
 .note-card .card-head { margin-bottom: 12px; }
 .note-card .card-head .author { align-items: flex-start; }

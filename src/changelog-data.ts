@@ -5,6 +5,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     date: "2026-11-18",
     bullets: [
+      "**Notes**: a note's card credits its writer by name alone, then the date and its `#ref`; the model is named on the artifact itself.",
       "**Instagram**: a saved reel, photo or carousel reads the post's caption and account instead of the login page.",
     ],
   },

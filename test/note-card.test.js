@@ -42,9 +42,9 @@ function note(overrides = {}) {
 test('renders a note with its title, attribution and abstract', () => {
   const html = renderPage({ bookmarks: [note()], total: 1, query: '', layout: 'saves' });
   assert.match(html, /How agent memory works/);
-  assert.match(html, /AI-generated/);
+  assert.doesNotMatch(html, /AI-generated/);
   assert.match(html, /Claude Code/);
-  assert.match(html, /claude-sonnet-4\.5/);
+  assert.doesNotMatch(html, /claude-sonnet-4\.5/);
   assert.match(html, /class="note-label">Abstract</);
   assert.match(html, /A short abstract\./);
   // The document is the note page's job, not the card's.
