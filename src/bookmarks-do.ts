@@ -29,6 +29,7 @@ import {
   normalizeWorkspaceName,
 } from './settings.ts';
 import { parseYouTubeUrl, readYouTubePost } from './youtube.ts';
+import type { ParsedYouTubeUrl } from './youtube.ts';
 import { readTranscripts } from './transcript.ts';
 import {
   clampInteger,
@@ -81,6 +82,7 @@ import type {
   TranslateAllResult,
   VideoTranscript,
   XArticle,
+  XPost,
 } from './types.ts';
 
 const STALE_SUMMARY_MS = 10 * 60 * 1000;
@@ -250,6 +252,7 @@ export class Bookmarks extends DurableObject<Env> {
         created_at TEXT,
         saved_at TEXT NOT NULL,
         provider TEXT,
+        shorts INTEGER NOT NULL DEFAULT 0,
         media_json TEXT NOT NULL DEFAULT '[]',
         quote_json TEXT NOT NULL DEFAULT 'null',
         article_json TEXT NOT NULL DEFAULT 'null',
@@ -354,6 +357,7 @@ export class Bookmarks extends DurableObject<Env> {
       'ALTER TABLE bookmarks ADD COLUMN version_error TEXT',
       'ALTER TABLE bookmarks ADD COLUMN poster_url TEXT',
       'ALTER TABLE bookmarks ADD COLUMN poster_alt TEXT',
+      'ALTER TABLE bookmarks ADD COLUMN shorts INTEGER NOT NULL DEFAULT 0',
     ]) {
       try {
         this.sql.exec(statement);
@@ -655,7 +659,9 @@ export class Bookmarks extends DurableObject<Env> {
 
     try {
       if (request.method === 'POST' && url.pathname === '/save') {
-        const body = (await request.json()) as { url: string | ParsedXUrl };
+        const body = (await request.json()) as {
+          url: string | ParsedXUrl | ParsedYouTubeUrl;
+        };
         return jsonResponse(await this.save(body.url));
       }
 
@@ -882,17 +888,8 @@ export class Bookmarks extends DurableObject<Env> {
     return { created: !existing, bookmark: this.get(tweetId) };
   }
 
-  async save(input: string | ParsedXUrl): Promise<SaveResult> {
-    const post =
-      typeof input === 'string' && parseLinkedInUrl(input)
-        ? await readLinkedInPost(input)
-        : typeof input === 'string' && parseInstagramUrl(input)
-          ? await readInstagramPost(input)
-          : typeof input === 'string' && parseYouTubeUrl(input)
-          ? await readYouTubePost(input, this.env)
-          : typeof input === 'string' && parseWebUrl(input)
-            ? await readWebPost(input, this.env)
-            : await readPost(input, this.env);
+  async save(input: string | ParsedXUrl | ParsedYouTubeUrl): Promise<SaveResult> {
+    const post = await readSaveInput(input, this.env);
     const existing: ExistingBookmarkRow | undefined = this.sql
       .exec<ExistingBookmarkRow>(
         `SELECT tweet_id, summary, summary_status, text, article_json
@@ -931,6 +928,7 @@ export class Bookmarks extends DurableObject<Env> {
       post.createdAt ?? null,
       now,
       post.provider ?? null,
+      post.shorts ? 1 : 0,
       JSON.stringify(post.media ?? []),
       JSON.stringify(post.quote ?? null),
       articleJson,
@@ -951,7 +949,7 @@ export class Bookmarks extends DurableObject<Env> {
         `UPDATE bookmarks SET
           url = ?, author_name = ?, author_username = ?, author_avatar_url = ?,
           author_verified = ?, text = ?, created_at = ?, saved_at = ?, provider = ?,
-          media_json = ?, quote_json = ?, article_json = ?, metrics_json = ?,
+          shorts = ?, media_json = ?, quote_json = ?, article_json = ?, metrics_json = ?,
           summary_status = ?, summary_error = NULL, summary_attempts = 0,
           summary_retry_at = NULL, archived_at = NULL,
           poster_url = ?, poster_alt = ?${englishReset}
@@ -965,10 +963,10 @@ export class Bookmarks extends DurableObject<Env> {
       this.sql.exec(
         `INSERT INTO bookmarks (
           tweet_id, ref, url, author_name, author_username, author_avatar_url, author_verified,
-          text, created_at, saved_at, provider, media_json, quote_json, article_json,
+          text, created_at, saved_at, provider, shorts, media_json, quote_json, article_json,
           metrics_json, summary_status, poster_url, poster_alt, summary_en_status,
           summary_started_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         values[0],
         this.uniqueRef(),
         ...values.slice(1),
@@ -2330,6 +2328,25 @@ export class Bookmarks extends DurableObject<Env> {
   }
 }
 
+/**
+ * Read whatever a caller saved. A worker that already resolved the link sends
+ * the parsed YouTube object, because its canonical `watch?v=` URL no longer
+ * says whether the video is a Short.
+ */
+async function readSaveInput(
+  input: string | ParsedXUrl | ParsedYouTubeUrl,
+  env: Env,
+): Promise<XPost> {
+  if (typeof input !== 'string') {
+    return 'videoId' in input ? readYouTubePost(input, env) : readPost(input, env);
+  }
+  if (parseLinkedInUrl(input)) return readLinkedInPost(input);
+  if (parseInstagramUrl(input)) return readInstagramPost(input);
+  if (parseYouTubeUrl(input)) return readYouTubePost(input, env);
+  if (parseWebUrl(input)) return readWebPost(input, env);
+  return readPost(input, env);
+}
+
 function sanitizeTranscripts(input: VideoTranscript[]): VideoTranscript[] {
   if (!Array.isArray(input)) return [];
 
@@ -2414,6 +2431,7 @@ function rowToBookmark(row: BookmarkRow): Bookmark {
     summaryEnError: row.summary_en_error ?? null,
     summaryEnAt: row.summary_en_at ?? null,
     archivedAt: row.archived_at ?? null,
+    shorts: Boolean(row.shorts),
     versionStatus: row.version_status,
     versionError: row.version_error,
   };

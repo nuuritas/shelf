@@ -81,7 +81,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy':
-    "default-src 'self'; img-src 'self' https: data:; media-src 'self' https://video.twimg.com; style-src 'self'; script-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "default-src 'self'; img-src 'self' https: data:; media-src 'self' https://video.twimg.com; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self'; script-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
 
 const worker: ExportedHandler<Env> = {
@@ -762,7 +762,7 @@ async function handleShare(request: Request, env: Env, pathname: string): Promis
     const result = await doJson<SaveResult>(env, '/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: parsed.canonicalUrl }),
+      body: JSON.stringify({ url: 'videoId' in parsed ? parsed : parsed.canonicalUrl }),
     });
     return redirect(`/?notice=${result.created ? 'added' : 'exists'}`);
   } catch (error) {
@@ -913,7 +913,7 @@ async function handleApiSave(request: Request, env: Env): Promise<Response> {
     const result = await doJson<SaveResult>(env, '/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: parsed.canonicalUrl }),
+      body: JSON.stringify({ url: 'videoId' in parsed ? parsed : parsed.canonicalUrl }),
     });
     return jsonResponse(result, result.created ? 201 : 200);
   } catch (error) {

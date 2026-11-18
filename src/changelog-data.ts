@@ -5,6 +5,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     date: "2026-11-18",
     bullets: [
+      "**YouTube**: a saved video plays in its card through the official player — portrait for a Short, widescreen for anything else — and nothing loads from YouTube until you tap play.",
       "**Notes**: a note's card credits its writer by name alone, then the date and its `#ref`; the model is named on the artifact itself.",
       "**Instagram**: a saved reel, photo or carousel reads the post's caption and account instead of the login page.",
     ],

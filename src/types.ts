@@ -179,6 +179,8 @@ export interface XPost extends Quote {
   /** The page's own `og:image`, when a reader found one. */
   posterUrl?: string | null;
   posterAlt?: string | null;
+  /** A vertical YouTube Short, which the player draws 9:16 instead of 16:9. */
+  shorts?: boolean;
 }
 
 export interface ParsedXUrl {
@@ -365,6 +367,8 @@ export interface Bookmark {
   summaryEnAt: string | null;
   /** Set when the bookmark is archived; archived items leave the default views. */
   archivedAt: string | null;
+  /** A YouTube Short; its card draws the player 9:16 rather than 16:9. */
+  shorts: boolean;
   topics?: TopicRef[];
   /** The reader's tags, alphabetically; empty when the post carries none. */
   labels: LabelName[];
@@ -420,6 +424,8 @@ export type BookmarkRow = {
   /** Absent until the poster migration ran, so old rows stay valid. */
   poster_url?: string | null;
   poster_alt?: string | null;
+  /** 1 for a YouTube Short; absent on rows saved before the column existed. */
+  shorts?: number | null;
 };
 
 /* ------------------------------------------------------------------ *
