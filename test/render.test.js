@@ -1015,7 +1015,7 @@ test('a finished library asks for no refresh at all', () => {
 test('the page loads the poll script with a cache buster', () => {
   const html = renderPage({ bookmarks: [], total: 0, query: '' });
 
-  assert.match(html, /<script src="\/app\.js\?v=5" defer><\/script>/);
+  assert.match(html, /<script src="\/app\.js\?v=6" defer><\/script>/);
   assert.doesNotMatch(html, /<script src="\/app\.js" defer>/);
 });
 
