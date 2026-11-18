@@ -131,6 +131,7 @@ const SOURCE_LABELS: Record<string, string> = {
   x: 'X',
   linkedin: 'LinkedIn',
   youtube: 'YouTube',
+  instagram: 'Instagram',
   other: 'Post',
 };
 
@@ -143,6 +144,7 @@ const SOURCE_FILTER_ITEMS: readonly { value: Exclude<SourceFilter, 'all'>; label
   { value: 'x', label: 'X' },
   { value: 'linkedin', label: 'LinkedIn' },
   { value: 'youtube', label: 'YouTube' },
+  { value: 'instagram', label: 'Instagram' },
   { value: 'web', label: 'Web' },
   { value: 'note', label: 'Artifact' },
 ];

@@ -433,14 +433,14 @@ export type BookmarkRow = {
  * ------------------------------------------------------------------ */
 
 /** Canonical platform of a saved bookmark, resolved from its URL. */
-export type BookmarkSource = 'x' | 'linkedin' | 'youtube' | 'other';
+export type BookmarkSource = 'x' | 'linkedin' | 'youtube' | 'instagram' | 'other';
 
 /**
- * The library/API source filter; `all` includes every row. The three platform
+ * The library/API source filter; `all` includes every row. The four platform
  * values are URL hosts, while `web` and `note` are filters over a row's shape
  * (a saved page, an agent artifact), not platforms `sourceOfUrl` can return.
  */
-export type SourceFilter = 'all' | 'x' | 'linkedin' | 'youtube' | 'web' | 'note';
+export type SourceFilter = 'all' | 'x' | 'linkedin' | 'youtube' | 'instagram' | 'web' | 'note';
 
 export interface ListResult {
   bookmarks: Bookmark[];

@@ -20,8 +20,11 @@ const urls = [
   'https://youtube.com/watch?v=abc',
   'https://m.youtube.com/watch?v=def',
   'https://youtu.be/ghi',
+  'https://www.instagram.com/reel/abc/',
+  'https://instagram.com/p/def/',
   'https://example.com/blog/post',
   'https://notyoutube.com/watch?v=jkl',
+  'https://notinstagram.com/p/ghi/',
   'not a url',
   '',
 ];
@@ -33,8 +36,11 @@ test('maps a bookmark URL to its platform', () => {
   assert.equal(sourceOfUrl('https://www.linkedin.com/posts/a'), 'linkedin');
   assert.equal(sourceOfUrl('https://youtu.be/abc'), 'youtube');
   assert.equal(sourceOfUrl('https://m.youtube.com/watch?v=abc'), 'youtube');
+  assert.equal(sourceOfUrl('https://www.instagram.com/reel/abc/'), 'instagram');
+  assert.equal(sourceOfUrl('https://instagram.com/p/def/'), 'instagram');
   assert.equal(sourceOfUrl('https://example.com/post'), 'other');
   assert.equal(sourceOfUrl('https://notyoutube.com/watch?v=abc'), 'other');
+  assert.equal(sourceOfUrl('https://notinstagram.com/p/abc/'), 'other');
   assert.equal(sourceOfUrl(''), 'other');
   assert.equal(sourceOfUrl(null), 'other');
 });
@@ -43,6 +49,8 @@ test('unknown source values fall back to all', () => {
   assert.equal(parseSource('x'), 'x');
   assert.equal(parseSource('LinkedIn'), 'linkedin');
   assert.equal(parseSource(' youtube '), 'youtube');
+  assert.equal(parseSource('instagram'), 'instagram');
+  assert.equal(parseSource('Instagram'), 'instagram');
   assert.equal(parseSource('note'), 'note');
   assert.equal(parseSource('web'), 'web');
   assert.equal(parseSource('Web'), 'web');
@@ -58,7 +66,7 @@ test('the SQL filter agrees with sourceOfUrl', () => {
   const insert = db.prepare('INSERT INTO bookmarks (url, kind) VALUES (?, NULL)');
   for (const url of urls) insert.run(url);
 
-  for (const source of ['x', 'linkedin', 'youtube']) {
+  for (const source of ['x', 'linkedin', 'youtube', 'instagram']) {
     const rows = db
       .prepare(`SELECT url FROM bookmarks WHERE ${sourceFilterSql(source)} ORDER BY url`)
       .all()
@@ -82,6 +90,7 @@ test('web and note filter a row by its shape, not by its host', () => {
     ['page-post', 'https://example.com/blog/other', 'post'],
     ['x-post', 'https://x.com/a/status/1', 'post'],
     ['yt-video', 'https://youtu.be/abc', 'post'],
+    ['ig-post', 'https://www.instagram.com/reel/abc/', 'post'],
   ];
   for (const row of rows) insert.run(...row);
 
@@ -93,6 +102,8 @@ test('web and note filter a row by its shape, not by its host', () => {
 
   // A note that cites a page is an artifact, never a saved page.
   assert.deepEqual(ids(sourceFilterSql('note')), ['note-cites', 'note-plain']);
+  assert.deepEqual(ids(sourceFilterSql('instagram')), ['ig-post']);
+  // A saved Instagram post is its own platform, never an uncategorized page.
   assert.deepEqual(ids(sourceFilterSql('web')), ['page-null-kind', 'page-post']);
   assert.deepEqual(ids(sourceFiltersSql(['web', 'note'])), [
     'note-cites',
