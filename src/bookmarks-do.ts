@@ -10,6 +10,7 @@ import {
 import { parseWebUrl, readExternalLinks, readWebPost } from './links.ts';
 import { LABEL_LIMITS, parseLabelNames } from './labels.ts';
 import { resolveLanguage } from './languages.ts';
+import { parseInstagramUrl, readInstagramPost } from './instagram.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
 import { NoteInputError, noteIdFor, notePlainText } from './notes.ts';
 import {
@@ -885,7 +886,9 @@ export class Bookmarks extends DurableObject<Env> {
     const post =
       typeof input === 'string' && parseLinkedInUrl(input)
         ? await readLinkedInPost(input)
-        : typeof input === 'string' && parseYouTubeUrl(input)
+        : typeof input === 'string' && parseInstagramUrl(input)
+          ? await readInstagramPost(input)
+          : typeof input === 'string' && parseYouTubeUrl(input)
           ? await readYouTubePost(input, this.env)
           : typeof input === 'string' && parseWebUrl(input)
             ? await readWebPost(input, this.env)
