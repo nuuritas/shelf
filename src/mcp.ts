@@ -134,7 +134,9 @@ const TOOLS = [
     description:
       "Save an AI-written research note to the user's private Shelf archive. Use only when the user " +
       "asks to save, publish or keep a research result (not for saving someone else's URL). Prefer " +
-      'markdown; HTML only for visuals. Read get_authoring_guide first for the HTML contract and limits. ' +
+      'markdown; HTML only for visuals. An HTML note must offer light, white and dark themes inside ' +
+      'the document, with no script and no prefers-color-scheme. Read get_authoring_guide first for ' +
+      'the HTML contract and limits. ' +
       'Re-posting with the same clientId updates that one note; `ref` updates a note in place.',
     inputSchema: {
       type: 'object',
@@ -172,8 +174,9 @@ const TOOLS = [
   {
     name: 'get_authoring_guide',
     description:
-      'Return the Shelf agent-post guide: when to write a note, markdown vs HTML, metadata, limits, ' +
-      'the HTML security contract, and examples. Call this before create_post.',
+      'Return the Shelf agent-post guide: when to write a note, markdown vs HTML, the three HTML ' +
+      'themes (light, white, dark), metadata, limits, the HTML security contract, and examples. ' +
+      'Call this before create_post.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
 ];
@@ -185,8 +188,8 @@ const INSTRUCTIONS =
   'verbatim. Summaries have a primary language and often an English translation; archived items are ' +
   'still part of the archive and are included in search. ' +
   'To keep a research result, call get_authoring_guide and then create_post; only do that when the ' +
-  'user asks to save, publish or keep it. Prefer markdown; HTML must be self-contained, script-free ' +
-  'and is rendered sandboxed.';
+  'user asks to save, publish or keep it. Prefer markdown; HTML must be self-contained, script-free, ' +
+  'must carry light, white and dark themes itself, and is rendered sandboxed.';
 
 /** The compact guide `get_authoring_guide` serves. `docs/AGENT-POSTS.md` is
  * the source of truth and what `shelf guide` prints; this copy drops the CLI

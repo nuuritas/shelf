@@ -454,7 +454,10 @@ function authoringGuide(): string {
       'Shelf agent posts',
       '',
       'Use markdown for text research; HTML only for visuals and only as a',
-      'self-contained, script-free document. POST /api/posts with',
+      'self-contained, script-free document. An HTML note carries its own colour',
+      'themes — light (default), white and dark — switched with <details',
+      'name="theme">; prefers-color-scheme is wrong here, the frame cannot see',
+      'the app. POST /api/posts with',
       '{ format, content, title?, summary?, sourceUrl?, clientId?, ref?, agent? }.',
       'Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.',
       'HTML is rendered in a sandboxed iframe; scripts never run.',
@@ -487,7 +490,10 @@ Flags:
 Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.
 
 HTML rules: a complete document with inline CSS/SVG, no scripts, forms or
-external assets. HTML is stored untrusted and rendered sandboxed.
+external assets. HTML is stored untrusted and rendered sandboxed. Ship three
+colour options — light (the default), white and dark — chosen inside the
+document with a \`<details name="theme">\` switch and the app's palette. Never
+key colour off prefers-color-scheme: the frame cannot see the app's theme.
 
 Guide: docs/AGENT-POSTS.md — run \`shelf guide\` for the full authoring contract.
 
@@ -1156,7 +1162,9 @@ const MCP_TOOLS = [
     description:
       'Save an AI-written research note to the user\'s private Shelf archive. Use only when the user ' +
       'asks to save, publish or keep a research result (not for saving someone else\'s URL). Prefer ' +
-      'markdown; HTML only for visuals. Read get_authoring_guide first for the HTML contract and limits. ' +
+      'markdown; HTML only for visuals. An HTML note must offer light, white and dark themes inside ' +
+      'the document, with no script and no prefers-color-scheme. Read get_authoring_guide first for ' +
+      'the HTML contract and limits. ' +
       'Re-posting with the same clientId updates that one note; `ref` updates a note in place.',
     inputSchema: {
       type: 'object',
@@ -1194,8 +1202,9 @@ const MCP_TOOLS = [
   {
     name: 'get_authoring_guide',
     description:
-      'Return the Shelf agent-post guide: when to write a note, markdown vs HTML, metadata, limits, ' +
-      'the HTML security contract, and examples. Call this before create_post.',
+      'Return the Shelf agent-post guide: when to write a note, markdown vs HTML, the three HTML ' +
+      'themes (light, white, dark), metadata, limits, the HTML security contract, and examples. ' +
+      'Call this before create_post.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
 ];
@@ -1207,8 +1216,8 @@ const MCP_INSTRUCTIONS =
   'verbatim. Summaries have a Turkish primary (`summary`) and often an English translation (`summaryEn`); ' +
   'archived items are still part of the archive and are included in search. ' +
   'To keep a research result, call get_authoring_guide and then create_post; only do that when the ' +
-  'user asks to save, publish or keep it. Prefer markdown; HTML must be self-contained, script-free ' +
-  'and is rendered sandboxed.';
+  'user asks to save, publish or keep it. Prefer markdown; HTML must be self-contained, script-free, ' +
+  'must carry light, white and dark themes itself, and is rendered sandboxed.';
 
 async function callTool(name: string, input: Record<string, unknown>): Promise<string> {
   switch (name) {
