@@ -29,6 +29,39 @@ document.addEventListener('click', event => {
   setExpanded(card, card.classList.contains('is-collapsed'));
 });
 
+// A YouTube card is a poster until the reader taps it, then the frame replaces
+// the link in place. Nothing is fetched from YouTube on a page load, the embed
+// host keeps its cookies out until playback, and a tap with a modifier key or a
+// page without this script still opens YouTube as the link always did.
+(() => {
+  const VIDEO_ID = /^[A-Za-z0-9_-]{6,}$/;
+
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[data-youtube]');
+    if (!link) return;
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+
+    const id = link.getAttribute('data-youtube') || '';
+    if (!VIDEO_ID.test(id)) return;
+
+    event.preventDefault();
+    const frame = document.createElement('iframe');
+    frame.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1&rel=0`;
+    frame.title = link.getAttribute('data-title') || 'YouTube video';
+    frame.allow = 'accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen';
+    frame.allowFullscreen = true;
+    frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    link.replaceWith(frame);
+
+    // A summary landing later would otherwise swap the card out and stop the
+    // video, so a card with a player in it is left alone by the poll.
+    const card = frame.closest('.card');
+    if (card) card.setAttribute('data-playing', '1');
+  });
+})();
+
 document.addEventListener('click', event => {
   const fold = event.target.closest('[data-fold]');
   if (!fold) return;
@@ -492,11 +525,14 @@ document.addEventListener('click', async event => {
   };
 
   /**
-   * A reader who is typing a label, or who opened a card, is in the middle of
-   * something: the card is skipped this pass and tried again on the next.
+   * A reader who is typing a label, who opened a card, or who is watching a
+   * video is in the middle of something: the card is skipped this pass and
+   * tried again on the next.
    */
   const busy = card =>
-    card.contains(document.activeElement) || Boolean(card.querySelector('details[open]'));
+    card.hasAttribute('data-playing') ||
+    card.contains(document.activeElement) ||
+    Boolean(card.querySelector('details[open]'));
 
   /** Put the reader back where they were if a card above them changed height. */
   const holdScroll = top => {

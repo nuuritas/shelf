@@ -1015,8 +1015,63 @@ test('a finished library asks for no refresh at all', () => {
 test('the page loads the poll script with a cache buster', () => {
   const html = renderPage({ bookmarks: [], total: 0, query: '' });
 
-  assert.match(html, /<script src="\/app\.js\?v=4" defer><\/script>/);
+  assert.match(html, /<script src="\/app\.js\?v=5" defer><\/script>/);
   assert.doesNotMatch(html, /<script src="\/app\.js" defer>/);
+});
+
+const youtubeBookmark = extra =>
+  sampleBookmark({
+    tweetId: 'ytdQw4w9WgXcQ',
+    url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    provider: 'youtube',
+    text: 'A song that never gives you up',
+    media: [
+      {
+        type: 'photo',
+        url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+        posterUrl: null,
+        width: null,
+        height: null,
+        altText: null,
+        durationMs: null,
+        variants: [],
+      },
+    ],
+    ...extra,
+  });
+
+test('a YouTube card is a poster link until the script swaps in the player', () => {
+  const html = renderPage({ bookmarks: [youtubeBookmark()], total: 1, query: '' });
+
+  assert.match(html, /class="media-cell yt-cell"/);
+  assert.match(html, /class="yt-card"/);
+  assert.match(html, /data-youtube="dQw4w9WgXcQ"/);
+  assert.match(html, /href="https:\/\/www\.youtube\.com\/watch\?v=dQw4w9WgXcQ"/);
+  assert.match(html, /aria-label="Play video: A song that never gives you up"/);
+  // Nothing is fetched from YouTube before the tap.
+  assert.doesNotMatch(html, /<iframe/);
+  assert.doesNotMatch(html, /youtube-nocookie/);
+});
+
+test('a Short draws the player in a portrait box', () => {
+  const html = renderPage({
+    bookmarks: [youtubeBookmark({ shorts: true })],
+    total: 1,
+    query: '',
+  });
+
+  assert.match(html, /class="media-cell yt-cell is-portrait"/);
+});
+
+test('a non-YouTube card keeps its plain picture grid', () => {
+  const html = renderPage({
+    bookmarks: [sampleBookmark({ media: [youtubeBookmark().media[0]] })],
+    total: 1,
+    query: '',
+  });
+
+  assert.doesNotMatch(html, /class="yt-card"/);
+  assert.match(html, /class="media-grid main media-count-1"/);
 });
 
 test('a filter link keeps every label pick, and one pick reads as it always did', () => {

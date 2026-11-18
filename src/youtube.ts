@@ -4,6 +4,11 @@ import { youtubeVideoId } from './transcript.ts';
 export interface ParsedYouTubeUrl {
   videoId: string;
   canonicalUrl: string;
+  /**
+   * The link came from `/shorts/`, so the video is vertical. A Short shared as
+   * `youtu.be/<id>` cannot be told apart from a normal video, and plays 16:9.
+   */
+  shorts: boolean;
 }
 
 const CANONICAL = 'https://www.youtube.com/watch?v=';
@@ -43,7 +48,11 @@ export function parseYouTubeUrl(input: unknown): ParsedYouTubeUrl | null {
   const videoId = youtubeVideoId(value);
   if (!videoId) return null;
 
-  return { videoId, canonicalUrl: `${CANONICAL}${videoId}` };
+  return {
+    videoId,
+    canonicalUrl: `${CANONICAL}${videoId}`,
+    shorts: /\/shorts\//i.test(value),
+  };
 }
 
 interface OEmbed {
@@ -106,6 +115,7 @@ export async function readYouTubePost(
     lang: null,
     isNoteTweet: false,
     provider: 'youtube',
+    shorts: parsed.shorts,
     author,
     media,
     metrics: {

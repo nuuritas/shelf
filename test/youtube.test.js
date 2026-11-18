@@ -19,8 +19,18 @@ test('parses every shape of video link, including share tracking parameters', ()
   ];
 
   for (const shape of shapes) {
-    assert.deepEqual(parseYouTubeUrl(shape), { videoId: ID, canonicalUrl: CANONICAL }, shape);
+    const parsed = parseYouTubeUrl(shape);
+    assert.equal(parsed.videoId, ID, shape);
+    assert.equal(parsed.canonicalUrl, CANONICAL, shape);
+    assert.equal(parsed.shorts, /\/shorts\//.test(shape), shape);
   }
+});
+
+test('a shorts link is marked vertical, and a plain one is not', () => {
+  assert.equal(parseYouTubeUrl(`https://www.youtube.com/shorts/${ID}?si=abc`).shorts, true);
+  assert.equal(parseYouTubeUrl(`https://m.youtube.com/shorts/${ID}`).shorts, true);
+  assert.equal(parseYouTubeUrl(`https://youtu.be/${ID}`).shorts, false);
+  assert.equal(parseYouTubeUrl(CANONICAL).shorts, false);
 });
 
 test('rejects links that are not a single video', () => {
@@ -113,6 +123,7 @@ test('a Short without a description saves its title, not YouTube’s tagline', a
     const post = await readYouTubePost(`https://youtube.com/shorts/${ID}?si=aLoj2m1OQ3hsSxyN`);
     assert.equal(post.url, CANONICAL);
     assert.equal(post.text, 'Hardest watch ever');
+    assert.equal(post.shorts, true);
   } finally {
     globalThis.fetch = original;
   }

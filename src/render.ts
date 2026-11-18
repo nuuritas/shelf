@@ -17,6 +17,7 @@ import { LABEL_TONE_COUNT, labelTone } from './labels.ts';
 import { LANGUAGE_TAG_MAX, languageOf, languageOptions } from './languages.ts';
 import { renderMarkdown } from './markdown.ts';
 import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
+import { youtubeVideoId } from './transcript.ts';
 import type {
   Author,
   Bookmark,
@@ -1499,7 +1500,9 @@ function renderBookmark(
   const extras = [];
   if (bookmark.article) extras.push(bookmark.provider === 'web' ? 'Saved page' : 'X Article');
   const mediaCount = (bookmark.media ?? []).filter(item => safeHttpUrl(item.url)).length;
-  if (mediaCount) extras.push(`${mediaCount} ${mediaCount === 1 ? 'image' : 'images'}`);
+  const youtubeId = bookmark.provider === 'youtube' ? youtubeVideoId(bookmark.url) : null;
+  if (mediaCount && !youtubeId) extras.push(`${mediaCount} ${mediaCount === 1 ? 'image' : 'images'}`);
+  if (youtubeId) extras.push(bookmark.shorts ? 'Short' : 'video');
   if (bookmark.quote) extras.push('quoted post');
   const linkCount = (bookmark.links ?? []).length;
   if (linkCount) extras.push(`${linkCount} ${linkCount === 1 ? 'link' : 'links'}`);
@@ -1552,7 +1555,7 @@ function renderBookmark(
       }
 
       ${bookmark.article ? renderArticle(bookmark.article, bookmark.provider === 'web') : ''}
-      ${renderMedia(bookmark.media, 'main')}
+      ${youtubeId ? renderYouTubeEmbed(bookmark, youtubeId) : renderMedia(bookmark.media, 'main')}
       ${bookmark.quote ? renderQuote(bookmark.quote) : ''}
       ${bookmark.links?.length ? renderLinks(bookmark.links) : ''}
       ${renderSummary(bookmark, aiConfigured, returnTo, lang, bilingual, primaryTag)}
@@ -1719,6 +1722,28 @@ function renderLinks(links: LinkRead[]): string {
 
   if (!cards) return '';
   return `<div class="link-stack">${cards}</div>`;
+}
+
+/**
+ * A YouTube player that waits for a tap. Its poster is a real link, so a page
+ * without JavaScript — or a tap with a modifier key — still opens the video on
+ * YouTube, while `app.js` swaps the link for the embed. Nothing is fetched from
+ * YouTube until the reader asks for it.
+ */
+function renderYouTubeEmbed(bookmark: Bookmark, videoId: string): string {
+  const poster = safeHttpUrl((bookmark.media ?? []).find(item => item.type === 'photo')?.url);
+  const title = truncate(bookmark.text || 'YouTube video', 90);
+  const label = `Play video: ${title}`;
+
+  return `
+    <div class="media-grid main media-count-1">
+      <figure class="media-cell yt-cell${bookmark.shorts ? ' is-portrait' : ''}">
+        <a class="yt-card" href="https://www.youtube.com/watch?v=${escapeHtml(videoId)}" data-youtube="${escapeHtml(videoId)}" data-title="${escapeHtml(title)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(label)}">
+          ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
+          <span class="yt-play" aria-hidden="true"></span>
+        </a>
+      </figure>
+    </div>`;
 }
 
 function renderMedia(media: MediaItem[] | null | undefined, context: string): string {
@@ -2140,7 +2165,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=34">
+  <link rel="stylesheet" href="/style.css?v=35">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2154,7 +2179,7 @@ export function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=4" defer></script>
+  <script src="/app.js?v=5" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}
@@ -3175,6 +3200,61 @@ h1, h2, h3 {
 
 .media-count-1 img,
 .media-count-1 video { max-height: 640px; object-fit: contain; }
+
+/* A YouTube card is a poster until the reader taps it; app.js replaces that
+   link with the player, and both fill the same box, so the ratio holds. */
+.yt-cell {
+  position: relative;
+  background: var(--deep);
+  aspect-ratio: 16 / 9;
+}
+
+.yt-cell.is-portrait { aspect-ratio: 9 / 16; max-width: 360px; margin-inline: auto; }
+
+.yt-cell .yt-card,
+.yt-cell iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.yt-cell .yt-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+  opacity: 0.92;
+}
+
+.yt-cell .yt-card:hover img { opacity: 1; }
+
+.yt-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 62px;
+  height: 62px;
+  margin: -31px 0 0 -31px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.yt-play::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  margin: -11px 0 0 -7px;
+  border-style: solid;
+  border-width: 11px 0 11px 18px;
+  border-color: transparent transparent transparent var(--accent);
+}
 
 .media-cell a { display: block; }
 
