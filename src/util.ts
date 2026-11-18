@@ -37,6 +37,7 @@ export function sourceOfUrl(value: unknown): BookmarkSource {
   if (host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com')) {
     return 'youtube';
   }
+  if (host === 'instagram.com' || host.endsWith('.instagram.com')) return 'instagram';
   return 'other';
 }
 
@@ -65,7 +66,14 @@ export function canonicalRedirectUrl(
 /** `source` query value → a filter; anything unknown falls back to `all`. */
 export function parseSource(value: unknown): SourceFilter {
   const raw = String(value ?? '').trim().toLowerCase();
-  return raw === 'x' || raw === 'linkedin' || raw === 'youtube' || raw === 'web' || raw === 'note'
+  return (
+    raw === 'x' ||
+    raw === 'linkedin' ||
+    raw === 'youtube' ||
+    raw === 'instagram' ||
+    raw === 'web' ||
+    raw === 'note'
+  )
     ? raw
     : 'all';
 }
@@ -171,11 +179,16 @@ function youtubeHostSql(host: string): string {
   return `(${host} = 'youtu.be' OR ${host} = 'youtube.com' OR ${host} LIKE '%.youtube.com')`;
 }
 
+/** Instagram hosts, in SQL, over the `host` expression passed in. */
+function instagramHostSql(host: string): string {
+  return `(${host} = 'instagram.com' OR ${host} LIKE '%.instagram.com')`;
+}
+
 /**
  * SQL predicate over a `url` column for one source, matching `sourceOfUrl` for
- * the three platforms. `note` and `web` are shapes, not hosts: a note is an
+ * the four platforms. `note` and `web` are shapes, not hosts: a note is an
  * agent artifact, and a saved page is any other row whose URL host is none of
- * the three platforms (so a note that cites a page is never `web`).
+ * the four platforms (so a note that cites a page is never `web`).
  */
 export function sourceFilterSql(source: Exclude<SourceFilter, 'all'>): string {
   const host = URL_HOST_SQL;
@@ -186,10 +199,12 @@ export function sourceFilterSql(source: Exclude<SourceFilter, 'all'>): string {
       return linkedinHostSql(host);
     case 'youtube':
       return youtubeHostSql(host);
+    case 'instagram':
+      return instagramHostSql(host);
     case 'note':
       return `(kind = 'note')`;
     case 'web':
-      return `(COALESCE(kind, 'post') != 'note' AND url IS NOT NULL AND url != '' AND NOT (${xHostSql(host)} OR ${linkedinHostSql(host)} OR ${youtubeHostSql(host)}))`;
+      return `(COALESCE(kind, 'post') != 'note' AND url IS NOT NULL AND url != '' AND NOT (${xHostSql(host)} OR ${linkedinHostSql(host)} OR ${youtubeHostSql(host)} OR ${instagramHostSql(host)}))`;
   }
 }
 
