@@ -14,32 +14,15 @@
  * with the terminal echo off and checks it before writing the file.
  */
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, hostname } from 'node:os';
-import { dirname, join } from 'node:path';
+import { hostname } from 'node:os';
+
+import { configPath, forgetAccount, normalizeUrl, saveAccount } from './config.ts';
 
 type Flags = Record<string, string | boolean>;
 
 /** The terminal gives up a little after the service's own window closes. */
 const CALLBACK_TIMEOUT_MS = 11 * 60 * 1000;
 const DEFAULT_INTERVAL_SECONDS = 5;
-
-export function configPath(): string {
-  return process.env.SHELF_CONFIG || join(homedir(), '.config', 'shelf', 'config.json');
-}
-
-function writeConfig(url: string, password: string): string {
-  const path = configPath();
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, `${JSON.stringify({ url, password }, null, 2)}\n`, { mode: 0o600 });
-  return path;
-}
-
-function normalizeUrl(value: string): string {
-  const trimmed = value.trim().replace(/\/+$/, '');
-  if (!trimmed) return '';
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
 
 function flag(args: Flags, name: string): string {
   const value = args[name];
@@ -76,6 +59,8 @@ async function ask(question: string, secret = false): Promise<string> {
 }
 
 function openBrowser(target: string): void {
+  // A test or a headless shell can keep the printed URL and skip the tab.
+  if (process.env.SHELF_NO_BROWSER) return;
   const command =
     process.platform === 'darwin'
       ? ['open', target]
@@ -179,10 +164,12 @@ async function loginHosted(base: string): Promise<void> {
     });
 
     if (polled.ok && polled.body?.token) {
-      const path = writeConfig(base, polled.body.token);
+      const saved = saveAccount(base, polled.body.token, {
+        email: polled.body.email || undefined,
+      });
       const who = polled.body.email ? ` as ${polled.body.email}` : '';
-      console.log(`\nSigned in to ${base}${who}.`);
-      console.log(`Saved ${path}`);
+      console.log(`\nSigned in to ${saved.url}${who}.`);
+      console.log(`Saved ${saved.path}`);
       return;
     }
 
@@ -207,19 +194,31 @@ async function loginWorker(base: string, fromFlag: string): Promise<void> {
   if (check.status === 401) throw new Error('That password was not accepted.');
   if (!check.ok) throw new Error(`Could not verify the password (HTTP ${check.status}).`);
 
-  const path = writeConfig(base, password);
-  console.log(`Signed in to ${base}.`);
-  console.log(`Saved ${path}`);
+  const saved = saveAccount(base, password);
+  console.log(`Signed in to ${saved.url}.`);
+  console.log(`Saved ${saved.path}`);
 }
 
-export function commandLogout(): void {
-  const path = configPath();
-  if (!existsSync(path)) {
-    console.log(`Already signed out (no ${path}).`);
+export function commandLogout(args: Flags = {}): void {
+  const all = args.all === true || args.all === 'true';
+  const { removed, next } = forgetAccount(all);
+
+  if (!removed && !all) {
+    console.log('Already signed out.');
     return;
   }
-  rmSync(path, { force: true });
-  console.log(`Signed out. Removed ${path}.`);
+  if (all) {
+    console.log('Signed out of every saved account.');
+  } else if (removed) {
+    console.log(`Signed out of ${removed}.`);
+  }
+
+  if (next) {
+    console.log(`Now using ${next.url}. \`shelf logout --all\` forgets that one too.`);
+  } else {
+    console.log(`Removed ${configPath()}.`);
+  }
+
   if (process.env.SHELF_PASSWORD) {
     console.log('Note: SHELF_PASSWORD is set in this shell and still wins over the file.');
   }

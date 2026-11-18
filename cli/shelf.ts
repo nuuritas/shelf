@@ -22,7 +22,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +30,14 @@ import { promisify } from 'node:util';
 import { collectYoutubeIds, parseTranscriptBody, youtubeVideoId } from '../src/transcript.ts';
 import { labelSlug } from '../src/labels.ts';
 import { commandLogin, commandLogout } from './login.ts';
+import {
+  activateAccount,
+  configPath,
+  legacyConfigPath,
+  readConfigFile,
+  saveAccount,
+  type ReadConfig,
+} from './config.ts';
 import type {
   Bookmark,
   GetResult,
@@ -86,36 +94,6 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return { positional, flags };
-}
-
-function configPath(): string {
-  return process.env.SHELF_CONFIG || join(homedir(), '.config', 'shelf', 'config.json');
-}
-
-/**
- * Location used before the app was renamed. Read once so an existing password
- * keeps working; the next `shelf config` write lands on the new path.
- */
-function legacyConfigPath(): string {
-  return join(homedir(), '.config', 'xbv', 'config.json');
-}
-
-function readConfigFile(): Partial<Config> | null {
-  const paths = process.env.SHELF_CONFIG
-    ? [configPath()]
-    : [configPath(), legacyConfigPath()];
-
-  for (const path of paths) {
-    if (!existsSync(path)) continue;
-    try {
-      const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<Config>;
-      return { url: parsed.url, password: parsed.password, source: path };
-    } catch {
-      throw new Error(`Invalid JSON in ${path}`);
-    }
-  }
-
-  return null;
 }
 
 function parseDevVars(path: string): string | null {
@@ -1027,28 +1005,51 @@ async function commandExport(args: ParsedArgs): Promise<void> {
   console.error('  INDEX.md, bookmarks.jsonl, and one .md per bookmark');
 }
 
+function printAccounts(config: ReadConfig): void {
+  for (const entry of config.accounts) {
+    const mark = entry.url === config.url ? '*' : ' ';
+    const who = entry.account.email ? `  (${entry.account.email})` : '';
+    console.log(`  ${mark} ${entry.url}${who}`);
+  }
+}
+
+function commandUse(args: ParsedArgs): void {
+  const target = args.positional[0] || '';
+  if (!target) {
+    const existing = readConfigFile();
+    if (!existing) {
+      throw new Error(`No saved accounts in ${configPath()}. Run \`shelf login\` first.`);
+    }
+    console.log(`Saved accounts in ${existing.source}:`);
+    printAccounts(existing);
+    console.log('Switch with `shelf use <url|email>`.');
+    return;
+  }
+
+  const entry = activateAccount(target);
+  const who = entry.account.email ? ` as ${entry.account.email}` : '';
+  console.log(`Now using ${entry.url}${who}.`);
+}
+
 function commandConfig(args: ParsedArgs): void {
   const path = configPath();
 
   if (typeof args.flags.password === 'string') {
     const existing = readConfigFile();
     const flagUrl = typeof args.flags.url === 'string' ? args.flags.url : '';
-    const url = (flagUrl || existing?.url || '').replace(/\/+$/, '');
+    const url = flagUrl || existing?.url || '';
     if (!url) {
       throw new Error('Pass --url <https://your-worker.workers.dev> the first time you save a password.');
     }
     const password = args.flags.password;
     if (!password.trim()) throw new Error('--password must not be empty');
-    mkdirSync(dirname(path), { recursive: true });
-    // The file holds the vault password: create it private and fix the mode on
-    // an existing file, which `writeFileSync` otherwise leaves at 0644.
-    writeFileSync(path, `${JSON.stringify({ url, password }, null, 2)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
-    chmodSync(path, 0o600);
-    console.log(`Wrote ${path}`);
+    const saved = saveAccount(url, password);
+    console.log(`Wrote ${saved.path} for ${saved.url}`);
     return;
+  }
+
+  if (typeof args.flags.use === 'string' && args.flags.use.trim()) {
+    return commandUse({ positional: [args.flags.use], flags: {} });
   }
 
   try {
@@ -1060,6 +1061,17 @@ function commandConfig(args: ParsedArgs): void {
     console.log(`password: ${masked}`);
     console.log(`source:   ${config.source}`);
     console.log(`config:   ${path}`);
+
+    const saved = readConfigFile();
+    if (saved && saved.accounts.length) {
+      if (saved.accounts.length > 1) {
+        console.log('accounts:');
+        printAccounts(saved);
+        console.log('  * active — switch with `shelf use <url|email>`');
+      } else {
+        console.log('accounts: 1 — `shelf login --url <other>` keeps both');
+      }
+    }
   } catch (error) {
     console.log(`config: ${path} (not written yet)`);
     console.log((error as Error).message);
@@ -1416,14 +1428,19 @@ Usage:
   shelf stats [--json]                         archive counts
   shelf youtube [--limit 20] [--gap 5] [--dry-run]  fetch missing YouTube transcripts locally
   shelf config [--password <pw>] [--url <u>]   show or write credentials
+  shelf use [<url|email>]                      list saved accounts, or switch the active one
   shelf login [--url <u>]                      sign in through the browser
-  shelf logout                                 forget the saved credential
+  shelf logout [--all]                         forget the active account (--all: every account)
   shelf mcp                                    stdio MCP server for AI clients
 
 Configuration:
   SHELF_URL + SHELF_PASSWORD  environment (wins)
-  ~/.config/shelf/config.json { "url": "...", "password": "..." }
+  ~/.config/shelf/config.json { "url": "...", "password": "...", "accounts": { ... } }
   .dev.vars                   fallback when run inside the repo
+
+  One signed-in instance is active; \`shelf login\` to another keeps both and
+  makes the new one active. \`shelf use\` switches back without signing in
+  again. SHELF_CONFIG points the CLI at a different credential file.
 
   XBV_URL / XBV_PASSWORD and ~/.config/xbv/config.json still work as the
   pre-rename fallbacks.
@@ -1479,10 +1496,13 @@ async function main(): Promise<void> {
       return commandExport(args);
     case 'config':
       return commandConfig(args);
+    case 'use':
+    case 'switch':
+      return commandUse(args);
     case 'login':
       return commandLogin(args.flags);
     case 'logout':
-      return commandLogout();
+      return commandLogout(args.flags);
     case 'mcp':
       return runMcp();
     default:
