@@ -3,6 +3,12 @@ import type { ChangelogEntry } from './changelog.ts';
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: "2026-11-18",
+    bullets: [
+      "**Instagram**: a saved reel, photo or carousel reads the post's caption and account instead of the login page.",
+    ],
+  },
+  {
     date: "2026-11-17",
     bullets: [
       "**Pictures**: a saved page now shows the picture it came with.",
