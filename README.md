@@ -109,7 +109,9 @@ Nothing, for a personal archive:
   for reuse; an early v1 client remains in this repository's history. The web app
   still works as a PWA on both platforms.
 - **CLI and MCP** — `shelf search`, `shelf export`, `shelf mcp`, and the hosted
-  `/mcp` endpoint for clients that cannot run a local process.
+  `/mcp` endpoint for clients that cannot run a local process. `shelf login`
+  keeps every instance it signs in to, and `shelf use` switches between them
+  without signing in again.
 - **Custom domain** — a workers.dev URL works; a domain is one key in
   `cloudflare.personal.json`.
 - **Transcript services** — `SUPADATA_API_KEY`, `TRANSCRIPT_API_URL`, or your own
