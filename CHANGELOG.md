@@ -6,6 +6,7 @@ turns this file into `/changelog`; run it in the same commit as the edit.
 
 ## 2026-11-18
 
+- **Notes**: a note's card credits its writer by name alone, then the date and its `#ref`; the model is named on the artifact itself.
 - **Instagram**: a saved reel, photo or carousel reads the post's caption and account instead of the login page.
 
 ## 2026-11-17
