@@ -2179,7 +2179,7 @@ export function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=5" defer></script>
+  <script src="/app.js?v=6" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}

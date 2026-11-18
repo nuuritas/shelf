@@ -186,6 +186,32 @@ document.addEventListener('click', async event => {
     if (count && savedCount) count.innerHTML = savedCount.innerHTML;
   };
 
+  // A ticked label used to leave the card open at the list's full height until
+  // the reader tapped somewhere else. The editor folds itself away five seconds
+  // after the last save, and any click, key or edit in the checklist restarts
+  // that wait, so a second tick never lands on a closed card. A name still being
+  // typed keeps it open: the text is the reader still working.
+  const FOLD_MS = 5000;
+  let foldTimer = 0;
+
+  const fold = editor => {
+    if (!editor || !editor.isConnected || !editor.open) return;
+    const typed = editor.querySelector('input[name="newLabel"]');
+    if (typed && typed.value.trim()) return;
+    // The new-name chip closes before the editor it sits in, so no nested open
+    // state outlives the block it belongs to.
+    const chip = editor.querySelector('.label-new[open]');
+    if (chip) chip.removeAttribute('open');
+    editor.open = false;
+  };
+
+  /** Clear the one wait and start it again from this moment. */
+  const armFold = editor => {
+    if (!editor) return;
+    window.clearTimeout(foldTimer);
+    foldTimer = window.setTimeout(() => fold(editor), FOLD_MS);
+  };
+
   /** The filtered view has nothing left, so show what a reload would show. */
   const paintEmpty = page => {
     const container = document.querySelector('.cards');
@@ -239,9 +265,11 @@ document.addEventListener('click', async event => {
         current.replaceWith(labels);
         const reopened = labels.querySelector('.label-editor');
         if (reopened && wasOpen) reopened.open = true;
+        armFold(reopened);
       }
     } else if (card) {
       paintChips(card, fresh);
+      armFold(card.querySelector('.label-editor'));
     }
 
     paintEmpty(page);
@@ -288,6 +316,19 @@ document.addEventListener('click', async event => {
     const form = picks ? picks.closest('form.label-form') : null;
     if (form) send(form, false);
   });
+
+  // A tap, a key or an edit anywhere in the checklist restarts the wait from
+  // that moment, so the editor never folds under a reader still at work.
+  const restartFold = event => {
+    const target = event.target;
+    if (!target || !target.closest) return;
+    const form = target.closest('form.label-form');
+    const editor = form ? form.closest('.label-editor') : null;
+    if (editor) armFold(editor);
+  };
+  for (const type of ['click', 'keydown', 'input']) {
+    document.addEventListener(type, restartFold);
+  }
 
   document.addEventListener('submit', event => {
     const form = event.target;
