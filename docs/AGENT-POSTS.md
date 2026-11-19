@@ -221,8 +221,9 @@ e.g. `OpenCode`) and `agent.model` (e.g. `DeepSeek v4.1 Flash`); `agent.name`
 is required. Only call it when the user explicitly asks to save, publish, or
 keep a research result. Prefer markdown; use HTML only for visuals. Say what
 you saved and include its short ref. Shelf MCP only moves the note, so it must
-not be the name on it; the server falls back to `SHELF_AGENT` and
-`SHELF_AGENT_MODEL` when the call omits them.
+not be the name on it. The stdio server (`shelf mcp`) falls back to
+`SHELF_AGENT` and `SHELF_AGENT_MODEL` when the call omits them; the hosted
+`/mcp` endpoint refuses a call without `agent.name`.
 
 `get_authoring_guide` serves a compact copy of this document for clients that
 cannot fetch URLs; this file remains the source of truth for `shelf guide`.

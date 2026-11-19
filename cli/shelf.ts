@@ -264,7 +264,7 @@ function isoDay(value: string | null | undefined): string {
 function authorLabel(bookmark: Bookmark): string {
   // A note was written by an agent, so that is its author; it has no post
   // handle to show, and "unknown author" would hide who actually wrote it.
-  if (bookmark.kind === 'note') return bookmark.agent?.name || 'AI agent';
+  if (bookmark.kind === 'note') return noteAgentName(bookmark.agent?.name) || 'AI agent';
   const username = bookmark.author?.username;
   if (username) return `@${username}`;
   return bookmark.author?.name || 'unknown author';
@@ -390,8 +390,9 @@ function renderBookmark(bookmark: Bookmark): string {
 
 function renderNote(bookmark: Bookmark): string {
   const agent = bookmark.agent;
-  const attribution =
-    [noteAgentName(agent?.name), agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const attribution = [noteAgentName(agent?.name) || 'AI agent', agent?.model]
+    .filter(Boolean)
+    .join(' · ');
   const lines = [
     `# ${bookmark.title || 'Untitled note'}`,
     '',

@@ -470,8 +470,9 @@ function renderCard(bookmark: Bookmark, index: number): string {
 
 function renderNote(bookmark: Bookmark): string {
   const agent = bookmark.agent;
-  const attribution =
-    [noteAgentName(agent?.name), agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const attribution = [noteAgentName(agent?.name) || 'AI agent', agent?.model]
+    .filter(Boolean)
+    .join(' · ');
   const lines = [`# ${bookmark.title || 'Untitled note'}`, '', `_Written by ${attribution} · AI-generated_`];
   if (bookmark.sourceUrl) lines.push('', `Source: ${bookmark.sourceUrl}`);
   const meta = [`Saved ${isoDay(bookmark.savedAt)}`];
