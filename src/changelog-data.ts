@@ -3,6 +3,12 @@ import type { ChangelogEntry } from './changelog.ts';
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: "2026-11-20",
+    bullets: [
+      "**Library**: a chosen filter drops from its own menu with an ×, one Clear all at the end of the bar resets source, folder, label and the archived view, and the menus and search field sit on the left.",
+    ],
+  },
+  {
     date: "2026-11-19",
     bullets: [
       "**Library**: Active and archived are one View menu instead of two pills, so a phone's filter bar stays one row; the trigger names the current cut and its count, and the panel lists both.",
