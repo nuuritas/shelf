@@ -28,7 +28,7 @@
  * not already apply. A future stateful transport has to revisit this.
  */
 import { labelSlug } from './labels.ts';
-import { normalizeNoteInput } from './notes.ts';
+import { noteAgentName, normalizeNoteInput } from './notes.ts';
 import type {
   Bookmark,
   Env,
@@ -135,6 +135,7 @@ const TOOLS = [
       "Save an AI-written research note to the user's private Shelf archive. Use only when the user " +
       "asks to save, publish or keep a research result (not for saving someone else's URL). Prefer " +
       'markdown; HTML only for visuals. Read get_authoring_guide first for the HTML contract and limits. ' +
+      'Name your own harness and model in `agent`; Shelf MCP only moves the note. ' +
       'Re-posting with the same clientId updates that one note; `ref` updates a note in place.',
     inputSchema: {
       type: 'object',
@@ -156,16 +157,28 @@ const TOOLS = [
         ref: { type: 'string', description: 'Short ref of an existing note to update in place.' },
         agent: {
           type: 'object',
-          description: 'Who wrote the note; shown on the card.',
+          description:
+            'Who wrote the note: your harness and model. Shelf MCP is the transport, not the writer, so name yourself.',
           properties: {
-            name: { type: 'string', description: 'Agent name, e.g. Claude Code.' },
-            model: { type: 'string', description: 'Model that wrote the note.' },
-            tool: { type: 'string', description: 'Client or tool id, e.g. claude-code.' },
+            name: {
+              type: 'string',
+              description:
+                'The harness that wrote the note, e.g. "OpenCode", "Claude Code", "Codex". Required.',
+            },
+            model: {
+              type: 'string',
+              description: 'The model that wrote the note, e.g. "DeepSeek v4.1 Flash".',
+            },
+            tool: {
+              type: 'string',
+              description: 'Program that filed it; defaults to shelf-mcp.',
+            },
           },
+          required: ['name'],
           additionalProperties: false,
         },
       },
-      required: ['format', 'content'],
+      required: ['format', 'content', 'agent'],
       additionalProperties: false,
     },
   },
@@ -211,10 +224,14 @@ someone else's page, save it as a normal link; Shelf fetches and reads it.
 - sourceUrl: optional primary source; must be http(s).
 - clientId: stable id; re-posting updates that one note and keeps its ref.
 - ref: short ref of an existing note to update in place (wins over clientId).
-- agent: { name, model, tool }; shown on the card as "Written by ...".
+- agent: { name, model, tool }; shown on the card as "Written by ...". name is
+  the harness that wrote the note (OpenCode, Claude Code, Codex), model is the
+  model that wrote the words, tool is the program that filed it (shelf-mcp).
 - labels: array or comma-separated line, up to 12, each 40 characters.
 
-Never present a note as a human's writing. Do not invent a label taxonomy.
+Never present a note as a human's writing. Shelf is the archive; Shelf MCP is
+the transport, not the writer, so always name your harness and model. Do not
+invent a label taxonomy.
 
 ## Limits
 
@@ -246,7 +263,7 @@ Link real sources; never invent citations.
 POST /api/posts with
 { "format": "markdown", "content": "## Findings\\n\\n- ...",
   "title": "How agent memory works", "summary": "Short abstract.",
-  "agent": { "name": "Claude Code", "model": "claude-sonnet-4.5", "tool": "claude-code" } }
+  "agent": { "name": "OpenCode", "model": "DeepSeek v4.1 Flash", "tool": "shelf-mcp" } }
 
 Returns { created, bookmark }; 201 for a new note, 200 when clientId or ref
 updated one. Only call create_post when the user asks to keep the result.`;
@@ -415,7 +432,7 @@ function isoDay(value: string | null | undefined): string {
 }
 
 function authorLabel(bookmark: Bookmark): string {
-  if (bookmark.kind === 'note') return bookmark.agent?.name || 'AI agent';
+  if (bookmark.kind === 'note') return noteAgentName(bookmark.agent?.name) || 'AI agent';
   const username = bookmark.author?.username;
   if (username) return `@${username}`;
   return bookmark.author?.name || 'unknown author';
@@ -453,7 +470,8 @@ function renderCard(bookmark: Bookmark, index: number): string {
 
 function renderNote(bookmark: Bookmark): string {
   const agent = bookmark.agent;
-  const attribution = [agent?.name, agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const attribution =
+    [noteAgentName(agent?.name), agent?.model].filter(Boolean).join(' · ') || 'AI agent';
   const lines = [`# ${bookmark.title || 'Untitled note'}`, '', `_Written by ${attribution} · AI-generated_`];
   if (bookmark.sourceUrl) lines.push('', `Source: ${bookmark.sourceUrl}`);
   const meta = [`Saved ${isoDay(bookmark.savedAt)}`];
@@ -632,6 +650,14 @@ export function mcpBackend(env: Env, origin = ''): McpBackend {
         input.agent && typeof input.agent === 'object' && !Array.isArray(input.agent)
           ? (input.agent as Record<string, unknown>)
           : {};
+      const agentName = typeof agentInput.name === 'string' ? agentInput.name.trim() : '';
+      if (!agentName) {
+        throw new Error(
+          '`agent.name` is required: pass the harness that wrote the note (e.g. "OpenCode") ' +
+            'and `agent.model` (e.g. "DeepSeek v4.1 Flash"). Shelf MCP is the transport, ' +
+            'not the writer.',
+        );
+      }
       const note = normalizeNoteInput({
         format: String(input.format || 'markdown'),
         content,
@@ -642,9 +668,9 @@ export function mcpBackend(env: Env, origin = ''): McpBackend {
         clientId: input.clientId,
         ref: input.ref,
         agent: {
-          name: String(agentInput.name || 'Shelf MCP'),
-          model: String(agentInput.model || ''),
-          tool: String(agentInput.tool || 'shelf-mcp'),
+          name: agentName,
+          model: typeof agentInput.model === 'string' ? agentInput.model : '',
+          tool: typeof agentInput.tool === 'string' && agentInput.tool.trim() ? agentInput.tool : 'shelf-mcp',
         },
       });
       const result = await storage<SaveResult>(env, '/notes', {

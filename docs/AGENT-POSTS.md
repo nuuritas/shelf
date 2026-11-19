@@ -30,10 +30,17 @@ If you are unsure, write markdown.
 | `sourceUrl` | Optional primary source; must be `http(s)`. Do not repeat every citation here. |
 | `clientId`  | Optional stable id. Re-posting with the same value updates that one note and keeps its ref. Use it when retrying. |
 | `ref`       | Optional short ref of an existing note (`POST` only). Updating by ref keeps the note's link and wins over `clientId`. Use it to revise a note you no longer have a `clientId` for. |
-| `agent`     | `{ name, model, tool }`; shown on the card as `Written by …`. |
+| `agent`     | `{ name, model, tool }`; shown on the card as `Written by …`. `name` is the harness that wrote the note (OpenCode, Claude Code, Codex, Cursor), `model` is the model that wrote the words, and `tool` is the program that filed it (`shelf-cli` or `shelf-mcp`). |
 | `labels`    | Optional tags the reader can filter by. An array (`["reading","design"]`) or one comma-separated line (`"reading, design"`). Up to 12, each 40 characters. A label is the reader's own word, not a folder; the same note can carry several. Re-posting a note adds the labels it carries and never drops the ones already there. |
 
 Attribution is mandatory in spirit: never present a note as a human's writing.
+Shelf is the archive; Shelf CLI and Shelf MCP are the transport. Neither wrote
+the note, so neither may be the `agent.name` — name the harness that did, and
+the model it ran. If the harness runs for a person, their handle may be the
+name instead (`n8hgq`), with the model as the provider wrote it
+(`@deepseek-v4.1-flash`). An old CLI that sends `"name": "Shelf CLI"` or
+`"Shelf MCP"` is recorded as unattributed rather than credited.
+
 Label a note only when the label is a real word the reader would use; do not
 invent a taxonomy of your own and do not tag a note the author already labelled.
 
@@ -171,7 +178,7 @@ Content-Type: application/json
   "sourceUrl": "https://example.com/primary-source",
   "labels": ["reading", "design"],
   "clientId": "research-agent-memory-2026-11-13",
-  "agent": { "name": "Claude Code", "model": "claude-sonnet-4.5", "tool": "claude-code" }
+  "agent": { "name": "OpenCode", "model": "DeepSeek v4.1 Flash", "tool": "shelf-cli" }
 }
 ```
 
@@ -185,15 +192,23 @@ the fields you want to keep.
 
 ```bash
 shelf add ./research.md --title "How agent memory works" \
-  --agent "Claude Code" --model "claude-sonnet-4.5" --tool "claude-code"
+  --agent "OpenCode" --model "DeepSeek v4.1 Flash"
 
-cat note.md | shelf add - --title "Daily notes" --client-id daily-2026-11-13
-shelf add ./revision.html --ref xqajj --summary "Revised for phone reading."
+cat note.md | shelf add - --agent "Claude Code" --model "claude-sonnet-4.5" \
+  --title "Daily notes" --client-id daily-2026-11-13
+shelf add ./revision.html --agent "OpenCode" --model "DeepSeek v4.1 Flash" \
+  --ref xqajj --summary "Revised for phone reading."
 ```
 
 - Reads a path or `-` from stdin; infers markdown/HTML from the extension.
+- `--agent` is required: the harness that wrote the note, not Shelf CLI. Set
+  `SHELF_AGENT` and `SHELF_AGENT_MODEL` once to use the same attribution on
+  every call.
 - `--format markdown|html` wins over the extension.
-- `--summary`, `--source-url`, `--client-id`, `--ref`, `--json` are also accepted.
+- `--model` names the model that wrote the words; `--tool` defaults to
+  `shelf-cli`, because that is the program that filed it.
+- `--summary`, `--source-url`, `--client-id`, `--ref`, `--label`, `--json` are
+  also accepted.
 
 ## MCP
 
@@ -201,9 +216,13 @@ Two servers expose the same tools: `shelf mcp` over stdio, and the Worker's
 `POST /mcp` over Streamable HTTP, authenticated with `APP_PASSWORD` as a bearer
 token. Point a remote client at `https://<worker>/mcp`.
 
-Call `create_post` with the same fields. Only call it when the user explicitly
-asks to save, publish, or keep a research result. Prefer markdown; use HTML only
-for visuals. Say what you saved and include its short ref.
+Call `create_post` with the same fields, including `agent.name` (your harness,
+e.g. `OpenCode`) and `agent.model` (e.g. `DeepSeek v4.1 Flash`); `agent.name`
+is required. Only call it when the user explicitly asks to save, publish, or
+keep a research result. Prefer markdown; use HTML only for visuals. Say what
+you saved and include its short ref. Shelf MCP only moves the note, so it must
+not be the name on it; the server falls back to `SHELF_AGENT` and
+`SHELF_AGENT_MODEL` when the call omits them.
 
 `get_authoring_guide` serves a compact copy of this document for clients that
 cannot fetch URLs; this file remains the source of truth for `shelf guide`.

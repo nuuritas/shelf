@@ -56,7 +56,15 @@ test('tools/list exposes the CLI tool set', async () => {
     'get_authoring_guide',
   ]);
   const create = payload.result.tools.find((tool) => tool.name === 'create_post');
-  assert.deepEqual(create.inputSchema.required, ['format', 'content']);
+  assert.deepEqual(create.inputSchema.required, ['format', 'content', 'agent']);
+  assert.deepEqual(create.inputSchema.properties.agent.required, ['name']);
+});
+
+test('create_post refuses to credit Shelf MCP as the writer', async () => {
+  await assert.rejects(
+    () => mcpBackend({}).createPost({ format: 'markdown', content: 'Body.' }),
+    /agent\.name` is required/,
+  );
 });
 
 test('tools/call searches with the label slug and the clamped limit', async () => {

@@ -74,14 +74,28 @@ function optionalString(value: unknown, max: number, label: string): string | nu
   return text || null;
 }
 
+/**
+ * The program that moved the note is not the thing that wrote it. Older
+ * clients defaulted `agent.name` to "Shelf CLI" or "Shelf MCP"; storing that
+ * credits the transport, so it is dropped and the note reads as unattributed
+ * instead.
+ */
+const TRANSPORT_NAMES = new Set(['shelf cli', 'shelf-cli', 'shelf mcp', 'shelf-mcp']);
+
+/** The name a note may credit; a transport's own name is not an author. */
+export function noteAgentName(name: string | null | undefined): string {
+  const text = String(name ?? '').trim();
+  return TRANSPORT_NAMES.has(text.toLowerCase()) ? '' : text;
+}
+
 function parseAgent(value: unknown): NoteAgent | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const name = optionalString(record.name, NOTE_LIMITS.agentField, 'agent.name');
+  const name = noteAgentName(optionalString(record.name, NOTE_LIMITS.agentField, 'agent.name'));
   const model = optionalString(record.model, NOTE_LIMITS.agentField, 'agent.model');
   const tool = optionalString(record.tool, NOTE_LIMITS.agentField, 'agent.tool');
   if (!name && !model && !tool) return null;
-  return { name: name || '', model: model || '', tool: tool || '' };
+  return { name, model: model || '', tool: tool || '' };
 }
 
 /** Validation for `POST /api/posts` and `shelf add`; throws `NoteInputError`. */
