@@ -501,7 +501,7 @@ function authoringGuide(): string {
       'move the note; they never wrote it.',
       'Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.',
       'HTML is rendered in a sandboxed iframe; scripts never run.',
-      'Give the document light, white and dark picked inside it, using the app',
+      'Give the document white and dark picked inside it, using the app',
       'palette rather than invented colours.',
     ].join('\n');
   }
@@ -540,8 +540,8 @@ Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.
 HTML rules: a complete document with inline CSS/SVG, no scripts, forms or
 external assets. HTML is stored untrusted and rendered sandboxed.
 
-Colour: give the note light, white and dark picked inside the document; take
-its colours from the app palette, not invented ones. Mechanism: \`shelf guide\`.
+Colour: give the note white and dark picked inside the document; take its
+colours from the app palette, not invented ones. Mechanism: \`shelf guide\`.
 
 Guide: docs/AGENT-POSTS.md — run \`shelf guide\` for the full authoring contract.
 

@@ -6,6 +6,7 @@ turns this file into `/changelog`; run it in the same commit as the edit.
 
 ## 2026-11-19
 
+- **Agent notes**: an artifact ships two colourways, white and dark, and the guide now asks for those two — a third "light" beside white was the same pale sheet twice, so a note's picker offers the pair the app actually uses.
 - **Agent notes**: `shelf add` and the MCP tools now ask the agent to name its harness and model (`--agent "OpenCode" --model "DeepSeek v4.1 Flash"`), so an artifact credits the agent that wrote it instead of Shelf CLI; notes saved before this read as `AI agent`.
 - **Library**: a shelf longer than one page no longer stops at fifty — Load more at the end doubles what is on screen in place, keeps every filter in force, and the address carries the page size so a reload returns the same list.
 - **Instagram**: a saved reel, photo or carousel plays inside its card through Instagram's own player, folded until you tap the card.
