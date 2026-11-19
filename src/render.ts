@@ -403,6 +403,25 @@ export function renderPage({
                       .join('\n                    ')}
                   </div>
                 </details>`;
+  // View is one cut of the shelf rather than a filter with an unset state, so
+  // the trigger always names Active or Archived and the panel lists both with
+  // their counts. No `menu` key: choosing a cut lands on the plain URL.
+  const viewMenu = `<details class="filter-menu view-menu">
+                  <summary><span class="filter-name">View</span><span class="filter-value">${
+                    view === 'archived' ? 'Archived' : 'Active'
+                  }<span class="filter-count">${
+                    view === 'archived' ? archivedCount : activeCount
+                  }</span></span><span class="caret" aria-hidden="true">▾</span></summary>
+                  <div class="filter-panel">
+                    <p class="filter-panel-head">View</p>
+                    <a href="${escapeHtml(
+                      libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'active', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
+                    )}"${view === 'active' ? ' aria-current="page"' : ''}><span class="filter-label">Active</span><span class="filter-count">${activeCount}</span></a>
+                    <a href="${escapeHtml(
+                      libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'archived', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
+                    )}"${view === 'archived' ? ' aria-current="page"' : ''}><span class="filter-label">Archived</span><span class="filter-count">${archivedCount}</span></a>
+                  </div>
+                </details>`;
   const sourceMenu = filterMenu({
     key: 'source',
     name: 'Source',
@@ -637,6 +656,10 @@ export function renderPage({
               </form>
               <div class="library-bar">
                 <div class="library-switches">
+                  ${viewMenu}
+                  ${sourceMenu}
+                  ${folderMenu}
+                  ${labelMenuMarkup}
                   ${
                     !topic && topics.length
                       ? `<nav class="view-switch layout-switch" role="group" aria-label="Library layout">
@@ -649,17 +672,6 @@ export function renderPage({
                         </nav>`
                       : ''
                   }
-                  <nav class="view-switch" role="group" aria-label="Archive filter">
-                    <a class="${view === 'active' ? 'active' : ''}" href="${escapeHtml(
-                      libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'active', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
-                    )}">Active<span>${activeCount}</span></a>
-                    <a class="${view === 'archived' ? 'active' : ''}" href="${escapeHtml(
-                      libraryHref(path, { query: currentQuery, day: currentDay, labels: currentLabelPicks, view: 'archived', lang, layout: layoutParam, sources: sourcePicks, topics: currentTopicPicks }),
-                    )}">Archived<span>${archivedCount}</span></a>
-                  </nav>
-                  ${sourceMenu}
-                  ${folderMenu}
-                  ${labelMenuMarkup}
                   ${
                     bilingual
                       ? `<nav class="lang-switch" role="group" aria-label="Summary language">
@@ -2217,7 +2229,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=37">
+  <link rel="stylesheet" href="/style.css?v=38">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2662,6 +2674,14 @@ h1, h2, h3 {
 }
 
 .filter-menu.is-set .filter-value { color: var(--ink); }
+
+/* View always states its cut, so it takes ink even though it is never "set". */
+.view-menu .filter-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--ink);
+}
 
 .filter-menu .caret {
   color: var(--faint);
@@ -4641,7 +4661,14 @@ body.settings-page .topbar {
   .library-head { align-items: flex-start; flex-direction: column; }
   .library-tools { width: 100%; align-items: stretch; }
   .library-bar { align-items: stretch; position: relative; }
-  .library-switches { justify-content: flex-start; }
+  .library-switches { justify-content: flex-start; gap: 6px; }
+  /* One phrase per trigger — a cut's name when unset, its value when set, and
+     Active/Archived for View — so the four menus fit one row on a phone. */
+  .filter-menu > summary { padding: 6px 9px; gap: 4px; font-size: 0.7188rem; }
+  .filter-menu .filter-value { max-width: 7rem; }
+  .filter-menu .caret { font-size: 0.5625rem; }
+  .filter-menu:not(.is-set):not(.view-menu) .filter-value { display: none; }
+  .filter-menu.view-menu .filter-name { display: none; }
   /* A phone cannot hang a 240px panel off a trigger near the edge, so an open
      menu becomes a sheet under the whole bar and the controls stay in place. */
   .filter-menu { position: static; }
