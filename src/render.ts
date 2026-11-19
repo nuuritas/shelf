@@ -13,6 +13,7 @@ import {
   renderChangelogBullet,
   type ChangelogEntry,
 } from './changelog.ts';
+import { parseInstagramUrl } from './instagram.ts';
 import { LABEL_TONE_COUNT, labelTone } from './labels.ts';
 import { LANGUAGE_TAG_MAX, languageOf, languageOptions } from './languages.ts';
 import { renderMarkdown } from './markdown.ts';
@@ -1493,6 +1494,7 @@ function renderBookmark(
   const poster = posterUrl?.startsWith('https://')
     ? `<figure class="card-poster"><a href="${escapeHtml(outboundUrl || '#')}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(posterUrl)}" alt="${escapeHtml(bookmark.posterAlt || '')}" loading="lazy" referrerpolicy="no-referrer"></a></figure>`
     : '';
+  const instagramEmbed = bookmark.provider === 'instagram' ? renderInstagramEmbed(bookmark.url) : '';
   // A saved page is labelled by its site; a platform post by its platform.
   const source =
     bookmark.provider === 'web' && author.name
@@ -1544,6 +1546,7 @@ function renderBookmark(
       </header>
       <div class="tweet-text">${linkifyText(bookmark.text)}</div>
       ${poster}
+      ${instagramEmbed}
 
       ${
         bookmark.topics?.length
@@ -1745,6 +1748,29 @@ function renderYouTubeEmbed(bookmark: Bookmark, videoId: string): string {
           <span class="yt-play" aria-hidden="true"></span>
         </a>
       </figure>
+    </div>`;
+}
+
+/**
+ * Instagram's own player for a saved post, reel or carousel.
+ *
+ * `parseInstagramUrl` canonicalises every post shape to
+ * `https://www.instagram.com/p/<code>/`, so the embed reads the shortcode from
+ * that URL. Its `id` carries an `ig` prefix for other readers; feeding that to
+ * the embed endpoint would request `/p/ig<code>/embed/` and 404. The frame is
+ * lazy and sandboxed, and it is folded with the card's other media until a tap
+ * unfolds the card.
+ */
+function renderInstagramEmbed(url: string): string {
+  const parsed = parseInstagramUrl(url);
+  if (!parsed) return '';
+  const code = parsed.canonicalUrl.split('/').filter(Boolean).pop() ?? '';
+  if (!/^[A-Za-z0-9_-]+$/.test(code)) return '';
+  const src = `https://www.instagram.com/p/${encodeURIComponent(code)}/embed/`;
+
+  return `
+    <div class="card-embed">
+      <iframe src="${escapeHtml(src)}" title="Instagram post" loading="lazy" sandbox="allow-scripts allow-same-origin allow-popups" referrerpolicy="no-referrer"></iframe>
     </div>`;
 }
 
@@ -2167,7 +2193,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=35">
+  <link rel="stylesheet" href="/style.css?v=36">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -3183,6 +3209,21 @@ h1, h2, h3 {
   object-fit: cover;
 }
 
+.card-embed {
+  margin: 0 0 12px;
+  max-width: 420px;
+}
+
+.card-embed iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  max-height: 560px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
 .media-cell {
   margin: 0;
   min-width: 0;
@@ -3965,6 +4006,7 @@ h1, h2, h3 {
 
 .card.is-collapsed .media-grid,
 .card.is-collapsed .card-poster,
+.card.is-collapsed .card-embed,
 .card.is-collapsed .quote,
 .card.is-collapsed .link-stack,
 .card.is-collapsed .linked-article,

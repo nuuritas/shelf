@@ -3,6 +3,12 @@ import type { ChangelogEntry } from './changelog.ts';
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: "2026-11-19",
+    bullets: [
+      "**Instagram**: a saved reel, photo or carousel plays inside its card through Instagram's own player, folded until you tap the card.",
+    ],
+  },
+  {
     date: "2026-11-18",
     bullets: [
       "**Instagram**: a saved reel, photo or carousel is labelled Instagram and gets its own Source cut between YouTube and Web.",
