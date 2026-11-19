@@ -188,8 +188,10 @@ Content-Type: application/json
 Returns `{ created, bookmark }` with 201 (new) or 200 (updated by `clientId` or
 `ref`). A `ref` that names no note is 404, a malformed one 400, and an absent one
 is simply no ref — the request creates a note. An update replaces the body, title,
-source and agent credit, adds the labels it carries, and keeps the summary
-already on the note unless the update sends one.
+source and agent credit, and adds the labels it carries. A summary is the one
+field the two hosts treat differently: Shelf Cloud keeps the one already on the
+note when the update sends none, while a self-hosted Worker clears it, with its
+translation, so send a summary with every revision that should keep one.
 `<token>` is the credential your client already holds: `APP_PASSWORD` on a
 self-hosted Worker, the token `shelf login` saved on Shelf Cloud.
 `SHARE_TOKEN` is not accepted here; it is add-only for URL saves.
