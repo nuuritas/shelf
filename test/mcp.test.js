@@ -56,7 +56,15 @@ test('tools/list exposes the CLI tool set', async () => {
     'get_authoring_guide',
   ]);
   const create = payload.result.tools.find((tool) => tool.name === 'create_post');
-  assert.deepEqual(create.inputSchema.required, ['format', 'content']);
+  assert.deepEqual(create.inputSchema.required, ['format', 'content', 'agent']);
+  assert.deepEqual(create.inputSchema.properties.agent.required, ['name']);
+});
+
+test('create_post refuses to credit Shelf MCP as the writer', async () => {
+  await assert.rejects(
+    () => mcpBackend({}).createPost({ format: 'markdown', content: 'Body.' }),
+    /agent\.name` is required/,
+  );
 });
 
 test('tools/call searches with the label slug and the clamped limit', async () => {
@@ -254,4 +262,48 @@ test('the backend writes a note through the Durable Object', async () => {
   assert.equal(seen[0].body.agent.tool, 'claude-code');
   assert.match(text, /^Saved note #k7f3 \(markdown\)/);
   assert.match(text, /Read it at https:\/\/shelf\.example\/p\/k7f3/);
+});
+
+test('a legacy note reads as AI agent in a card and in show, never Shelf CLI', async () => {
+  const bookmark = {
+    ref: 'n0te1',
+    tweetId: 'note-0011223344556677',
+    url: null,
+    kind: 'note',
+    format: 'markdown',
+    title: 'How agent memory works',
+    content: '## Memory\n\nBody.',
+    text: 'Memory\n\nBody.',
+    agent: { name: 'Shelf CLI', model: 'deepseek-v4.1-flash', tool: 'shelf-cli' },
+    sourceUrl: null,
+    createdAt: '2026-11-19T09:00:00.000Z',
+    savedAt: '2026-11-19T09:12:00.000Z',
+    topics: [],
+    labels: [],
+    summary: null,
+    archivedAt: null,
+  };
+  const env = {
+    BOOKMARKS: {
+      idFromName: () => 'library',
+      get: () => ({
+        fetch: async (url) => {
+          const path = new URL(String(url)).pathname;
+          const body = path === '/list' ? { bookmarks: [bookmark], total: 1 } : { bookmark };
+          return new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        },
+      }),
+    },
+  };
+
+  const card = await mcpBackend(env).search('memory', '', 10);
+  assert.match(card, /AI agent/);
+  assert.doesNotMatch(card, /Shelf CLI/);
+
+  const shown = await mcpBackend(env).get('n0te1');
+  assert.match(shown, /Written by AI agent · deepseek-v4\.1-flash/);
+  assert.doesNotMatch(shown, /Shelf CLI/);
 });

@@ -66,6 +66,16 @@ test('the author line stays short and the note title is the card lede', () => {
   assert.match(html, new RegExp(`<h3 class="note-card-title"><a href="/p/n0te1">${longTitle}</a></h3>`));
 });
 
+test('a legacy note never credits the CLI that moved it', () => {
+  const legacy = note({ agent: { name: 'Shelf CLI', model: 'deepseek-v4.1-flash', tool: 'shelf-cli' } });
+  const html = renderPage({ bookmarks: [legacy], total: 1, query: '', layout: 'saves' });
+  assert.doesNotMatch(html, /Shelf CLI/);
+  assert.match(html, /<strong class="note-agent-name">AI agent<\/strong>/);
+  const page = renderNotePage({ bookmark: legacy });
+  assert.doesNotMatch(page, /Shelf CLI/);
+  assert.match(page, /AI agent · deepseek-v4\.1-flash/);
+});
+
 test('a note without a source has no dead outbound link', () => {
   const html = renderPage({ bookmarks: [note()], total: 1, query: '', layout: 'saves' });
   assert.doesNotMatch(html, /href="#"/);

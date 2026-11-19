@@ -24,6 +24,19 @@ test('accepts a markdown note and fills the title from the first heading', () =>
   assert.equal(note.sourceUrl, null);
 });
 
+test('the transport is never stored as the author', () => {
+  for (const name of ['Shelf CLI', 'shelf-cli', 'Shelf MCP', 'shelf-mcp']) {
+    const note = normalizeNoteInput({
+      format: 'markdown',
+      content: 'Body.',
+      agent: { name, model: 'deepseek-v4.1-flash', tool: 'shelf-cli' },
+    });
+    assert.equal(note.agent?.name, '');
+    assert.equal(note.agent?.model, 'deepseek-v4.1-flash');
+    assert.equal(note.agent?.tool, 'shelf-cli');
+  }
+});
+
 test('rejects a missing format, empty content, oversize content and a bad URL', () => {
   assert.throws(() => normalizeNoteInput({ content: 'x' }), NoteInputError);
   assert.throws(() => normalizeNoteInput({ format: 'markdown', content: '   ' }), /required/);

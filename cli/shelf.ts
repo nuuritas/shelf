@@ -27,6 +27,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { noteAgentName } from '../src/notes.ts';
 import { collectYoutubeIds, parseTranscriptBody, youtubeVideoId } from '../src/transcript.ts';
 import { labelSlug } from '../src/labels.ts';
 import { commandLogin, commandLogout } from './login.ts';
@@ -43,6 +44,7 @@ import type {
   GetResult,
   LabelListResult,
   ListResult,
+  NoteAgent,
   SaveResult,
   StoreTranscriptsResult,
   SummaryVersion,
@@ -262,7 +264,7 @@ function isoDay(value: string | null | undefined): string {
 function authorLabel(bookmark: Bookmark): string {
   // A note was written by an agent, so that is its author; it has no post
   // handle to show, and "unknown author" would hide who actually wrote it.
-  if (bookmark.kind === 'note') return bookmark.agent?.name || 'AI agent';
+  if (bookmark.kind === 'note') return noteAgentName(bookmark.agent?.name) || 'AI agent';
   const username = bookmark.author?.username;
   if (username) return `@${username}`;
   return bookmark.author?.name || 'unknown author';
@@ -388,7 +390,9 @@ function renderBookmark(bookmark: Bookmark): string {
 
 function renderNote(bookmark: Bookmark): string {
   const agent = bookmark.agent;
-  const attribution = [agent?.name, agent?.model].filter(Boolean).join(' · ') || 'AI agent';
+  const attribution = [noteAgentName(agent?.name) || 'AI agent', agent?.model]
+    .filter(Boolean)
+    .join(' · ');
   const lines = [
     `# ${bookmark.title || 'Untitled note'}`,
     '',
@@ -445,6 +449,42 @@ function clampLimit(value: string | boolean | undefined, fallback: number, max: 
   return Math.min(Math.floor(number), max);
 }
 
+/**
+ * Who wrote the note. The CLI moves the file and knows neither the harness nor
+ * the model, so the caller names them; falling back to "Shelf CLI" made the
+ * transport look like the author on every artifact saved through it.
+ */
+function resolveNoteAgent(
+  name: string,
+  model: string,
+  tool: string,
+  via: 'shelf add' | 'Shelf MCP' = 'shelf add',
+): NoteAgent {
+  const author = name.trim() || (process.env.SHELF_AGENT || '').trim();
+  const wrote = model.trim() || (process.env.SHELF_AGENT_MODEL || '').trim();
+  if (!author) {
+    throw new Error(
+      via === 'Shelf MCP'
+        ? '`agent.name` is required: pass the harness that wrote the note (e.g. "OpenCode") ' +
+          'and `agent.model` (e.g. "DeepSeek v4.1 Flash"). Shelf MCP is the transport, not the writer.'
+        : 'shelf add needs the harness that wrote the note: pass --agent "OpenCode" --model ' +
+          '"DeepSeek v4.1 Flash" (or set SHELF_AGENT and SHELF_AGENT_MODEL). ' +
+          'Shelf CLI is the transport, not the writer.',
+    );
+  }
+  if (!wrote) {
+    console.error(
+      'shelf: no model named — pass --model (e.g. "DeepSeek v4.1 Flash") or set ' +
+        'SHELF_AGENT_MODEL so the artifact credits it.',
+    );
+  }
+  return {
+    name: author,
+    model: wrote,
+    tool: tool.trim() || (via === 'Shelf MCP' ? 'shelf-mcp' : 'shelf-cli'),
+  };
+}
+
 function authoringGuide(): string {
   try {
     const path = fileURLToPath(new URL('../docs/AGENT-POSTS.md', import.meta.url));
@@ -455,7 +495,10 @@ function authoringGuide(): string {
       '',
       'Use markdown for text research; HTML only for visuals and only as a',
       'self-contained, script-free document. POST /api/posts with',
-      '{ format, content, title?, summary?, sourceUrl?, clientId?, ref?, agent? }.',
+      '{ format, content, title?, summary?, sourceUrl?, clientId?, ref?, agent }.',
+      'agent is { name, model, tool }: name the harness that wrote the note',
+      '(OpenCode, Claude Code, Codex) and its model. Shelf CLI and Shelf MCP',
+      'move the note; they never wrote it.',
       'Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.',
       'HTML is rendered in a sandboxed iframe; scripts never run.',
       'Give the document light, white and dark picked inside it, using the app',
@@ -476,15 +519,21 @@ Input:
 Flags:
   --format <f>        markdown | html (default: from the extension, else markdown)
   --title <text>      title shown on the card (default: first heading, else first line)
-  --agent <name>      who wrote it (default: "Shelf CLI")
-  --model <name>      model that wrote it (optional)
-  --tool <name>       tool that wrote it (default: "shelf-cli")
+  --agent <name>      the harness that wrote it, required (e.g. "OpenCode")
+  --model <name>      the model that wrote it (e.g. "DeepSeek v4.1 Flash")
+  --tool <name>       program that filed it (default: "shelf-cli")
   --summary <text>    optional 1-3 sentence abstract, stored as agent-written
   --source-url <url>  optional primary source, http(s) only
   --label <names>     comma-separated tags, e.g. "reading, design" (max 12)
   --client-id <id>    stable id: re-posting the same value updates one note
   --ref <ref>         update the note with this ref in place (keeps its link)
   --json              print the full API result
+
+Attribution: Shelf CLI is the transport, not the writer. Name the harness
+(OpenCode, Claude Code, Codex) with --agent, and the model that wrote the
+words with --model. Set SHELF_AGENT and SHELF_AGENT_MODEL once instead of
+repeating the flags; if the harness runs for a person, their handle can be
+the name (e.g. n8hgq).
 
 Limits: markdown 256 KB, HTML 1 MB, title 200 chars, summary 4,000 chars.
 
@@ -497,9 +546,12 @@ its colours from the app palette, not invented ones. Mechanism: \`shelf guide\`.
 Guide: docs/AGENT-POSTS.md — run \`shelf guide\` for the full authoring contract.
 
 Examples:
-  shelf add ./research.md --title "How agent memory works" --agent "Claude Code"
-  shelf add ./notes.md --label "reading, design" --summary "One line."
-  cat note.md | shelf add - --title "Notes" --client-id daily-2026-11-13
+  shelf add ./research.md --title "How agent memory works" \\
+    --agent "OpenCode" --model "DeepSeek v4.1 Flash"
+  shelf add ./notes.md --agent "Claude Code" --model "claude-sonnet-4" \\
+    --label "reading, design" --summary "One line."
+  cat note.md | shelf add - --agent "Codex" --model "gpt-5" \\
+    --title "Notes" --client-id daily-2026-11-13
 `;
 
 function inferNoteFormat(path: string): 'markdown' | 'html' | null {
@@ -543,11 +595,11 @@ async function commandAdd(args: ParsedArgs): Promise<void> {
     labels: typeof args.flags.label === 'string' ? args.flags.label : undefined,
     clientId: typeof args.flags['client-id'] === 'string' ? args.flags['client-id'] : undefined,
     ref: typeof args.flags.ref === 'string' ? args.flags.ref : undefined,
-    agent: {
-      name: typeof args.flags.agent === 'string' ? args.flags.agent : 'Shelf CLI',
-      model: typeof args.flags.model === 'string' ? args.flags.model : '',
-      tool: typeof args.flags.tool === 'string' ? args.flags.tool : 'shelf-cli',
-    },
+    agent: resolveNoteAgent(
+      typeof args.flags.agent === 'string' ? args.flags.agent : '',
+      typeof args.flags.model === 'string' ? args.flags.model : '',
+      typeof args.flags.tool === 'string' ? args.flags.tool : '',
+    ),
   };
 
   const result = await apiPost<SaveResult>('api/posts', payload);
@@ -1162,6 +1214,7 @@ const MCP_TOOLS = [
       'Save an AI-written research note to the user\'s private Shelf archive. Use only when the user ' +
       'asks to save, publish or keep a research result (not for saving someone else\'s URL). Prefer ' +
       'markdown; HTML only for visuals. Read get_authoring_guide first for the HTML contract and limits. ' +
+      'Name your own harness and model in `agent`; Shelf MCP only moves the note. ' +
       'Re-posting with the same clientId updates that one note; `ref` updates a note in place.',
     inputSchema: {
       type: 'object',
@@ -1183,16 +1236,28 @@ const MCP_TOOLS = [
         ref: { type: 'string', description: 'Short ref of an existing note to update in place.' },
         agent: {
           type: 'object',
-          description: 'Who wrote the note; shown on the card.',
+          description:
+            'Who wrote the note: your harness and model. Shelf MCP is the transport, not the writer, so name yourself.',
           properties: {
-            name: { type: 'string', description: 'Agent name, e.g. Claude Code.' },
-            model: { type: 'string', description: 'Model that wrote the note.' },
-            tool: { type: 'string', description: 'Client or tool id, e.g. claude-code.' },
+            name: {
+              type: 'string',
+              description:
+                'The harness that wrote the note, e.g. "OpenCode", "Claude Code", "Codex". Required.',
+            },
+            model: {
+              type: 'string',
+              description: 'The model that wrote the note, e.g. "DeepSeek v4.1 Flash".',
+            },
+            tool: {
+              type: 'string',
+              description: 'Program that filed it; defaults to shelf-mcp.',
+            },
           },
+          required: ['name'],
           additionalProperties: false,
         },
       },
-      required: ['format', 'content'],
+      required: ['format', 'content', 'agent'],
       additionalProperties: false,
     },
   },
@@ -1213,19 +1278,21 @@ const MCP_INSTRUCTIONS =
   'archived items are still part of the archive and are included in search. ' +
   'To keep a research result, call get_authoring_guide and then create_post; only do that when the ' +
   'user asks to save, publish or keep it. Prefer markdown; HTML must be self-contained, script-free ' +
-  'and is rendered sandboxed.';
+  'and is rendered sandboxed. Always pass agent.name (your harness, e.g. "OpenCode") and ' +
+  'agent.model (e.g. "DeepSeek v4.1 Flash"): Shelf MCP is the transport, not the writer.';
 
 async function callTool(name: string, input: Record<string, unknown>): Promise<string> {
   switch (name) {
     case 'create_post': {
       const content = String(input.content || '');
       if (!content.trim()) throw new Error('`content` is required.');
-      // The MCP caller can name itself, matching the guide's metadata table;
-      // the tool's own identity is only the fallback.
+      // The MCP caller names itself, matching the guide's metadata table; the
+      // server is the transport, so it never falls back to "Shelf MCP".
       const agentInput =
         input.agent && typeof input.agent === 'object' && !Array.isArray(input.agent)
           ? (input.agent as Record<string, unknown>)
           : {};
+      const text = (value: unknown): string => (typeof value === 'string' ? value : '');
       const result = await apiPost<SaveResult>('api/posts', {
         format: String(input.format || 'markdown'),
         content,
@@ -1235,11 +1302,12 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<s
         labels: input.labels,
         clientId: input.clientId,
         ref: input.ref,
-        agent: {
-          name: String(agentInput.name || 'Shelf MCP'),
-          model: String(agentInput.model || ''),
-          tool: String(agentInput.tool || 'shelf-mcp'),
-        },
+        agent: resolveNoteAgent(
+          text(agentInput.name),
+          text(agentInput.model),
+          text(agentInput.tool),
+          'Shelf MCP',
+        ),
       });
       const bookmark = result.bookmark;
       return [
@@ -1435,6 +1503,9 @@ Usage:
 
 Configuration:
   SHELF_URL + SHELF_PASSWORD  environment (wins)
+  SHELF_AGENT + SHELF_AGENT_MODEL  the harness and model that wrote a note;
+                             \`shelf add\` and \`shelf mcp\` use them when the
+                             flags (or \`agent\`) are not given
   ~/.config/shelf/config.json { "url": "...", "password": "...", "accounts": { ... } }
   .dev.vars                   fallback when run inside the repo
 

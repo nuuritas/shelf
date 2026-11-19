@@ -78,10 +78,11 @@ commands.
   token), plus a Bun CLI and a stdio MCP server, so Claude Code, Codex, or
   Cursor can search the vault themselves (by label too). `shelf add` and the
   MCP `create_post` tool let an agent save a finished research note (markdown,
-  or sandboxed HTML) next to your links, tagged with a label. The authoring
-  contract is in [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), printed by
-  `shelf guide` and served in compact form by the MCP `get_authoring_guide`
-  tool.
+  or sandboxed HTML) next to your links, tagged with a label. The agent names
+  its harness and model on the note, so the card credits OpenCode or Claude
+  Code — never Shelf CLI, which only moves the file. The authoring contract is
+  in [docs/AGENT-POSTS.md](docs/AGENT-POSTS.md), printed by `shelf guide` and
+  served in compact form by the MCP `get_authoring_guide` tool.
 
 ## What it costs
 

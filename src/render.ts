@@ -17,6 +17,7 @@ import { parseInstagramUrl } from './instagram.ts';
 import { LABEL_TONE_COUNT, labelTone } from './labels.ts';
 import { LANGUAGE_TAG_MAX, languageOf, languageOptions } from './languages.ts';
 import { renderMarkdown } from './markdown.ts';
+import { noteAgentName } from './notes.ts';
 import { MAX_SUMMARY_PROMPT_LENGTH } from './settings.ts';
 import { youtubeVideoId } from './transcript.ts';
 import type {
@@ -1059,7 +1060,7 @@ export function renderNotePage({
 }): string {
   const title = bookmark.title || 'Untitled note';
   const agent = bookmark.agent;
-  const agentName = agent?.name?.trim() || 'AI agent';
+  const agentName = noteAgentName(agent?.name) || 'AI agent';
   const model = agent?.model?.trim() || '';
   const byline = [agentName, model, formatDate(bookmark.savedAt)]
     .filter(Boolean)
@@ -1609,7 +1610,7 @@ function renderNoteCard(
   labels: LabelSummary[] = [],
 ): string {
   const agent = bookmark.agent;
-  const agentName = agent?.name?.trim() || 'AI agent';
+  const agentName = noteAgentName(agent?.name) || 'AI agent';
   const archived = Boolean(bookmark.archivedAt);
   const sourceUrl = safeHttpUrl(bookmark.sourceUrl || '');
   const title = bookmark.title || 'Untitled note';
