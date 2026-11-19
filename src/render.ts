@@ -221,8 +221,9 @@ function quotedNames(names: readonly string[]): string {
  * Build a library/topic URL without empty or default parameters. A filter that
  * accepts several picks emits one parameter per pick (`label=a&label=b`), and
  * the order is fixed — `q`, `day`, `label…`, `view`, `lang`, `layout`,
- * `source…`, `topic…`, `menu` — so a single pick produces the same URL it
- * always did, and the menu key a pick came from stays last.
+ * `source…`, `topic…`, `menu`, `limit` — so a single pick produces the same URL
+ * it always did, the menu key a pick came from keeps its place, and `limit` is
+ * appended last only when a page asks for more than the first screen.
  */
 function libraryHref(
   path: string,
@@ -236,6 +237,7 @@ function libraryHref(
     sources = [],
     topics = [],
     menu = null,
+    limit = null,
   }: {
     query?: string;
     day?: string | null;
@@ -246,6 +248,7 @@ function libraryHref(
     sources?: readonly SourceFilter[];
     topics?: readonly string[];
     menu?: string | null;
+    limit?: number | null;
   } = {},
 ): string {
   const params = new URLSearchParams();
@@ -260,6 +263,7 @@ function libraryHref(
   }
   for (const topic of new Set(topics)) if (topic) params.append('topic', topic);
   if (menu) params.set('menu', menu);
+  if (limit !== null && limit > 0) params.set('limit', String(limit));
   const search = params.toString();
   return search ? `${path}?${search}` : path;
 }
@@ -761,7 +765,26 @@ export function renderPage({
 
           ${
             !showFolders && total > bookmarks.length
-              ? `<p class="paging-note">Showing ${bookmarks.length} of ${total}. Narrow the search to find older saves.</p>`
+              ? topic
+                ? `<p class="paging-note">Showing ${bookmarks.length} of ${total}. Narrow the search to find older saves.</p>`
+                : bookmarks.length > 0 && showingList
+                  ? `<div class="pager">
+              <p class="fine-print">Showing ${bookmarks.length} of ${total}</p>
+              <a class="load-more" href="${escapeHtml(
+                libraryHref(path, {
+                  query: currentQuery,
+                  day: currentDay,
+                  labels: currentLabelPicks,
+                  view,
+                  lang,
+                  layout: layoutParam,
+                  sources: sourcePicks,
+                  topics: currentTopicPicks,
+                  limit: Math.min(bookmarks.length * 2, total),
+                }),
+              )}" rel="next">Load more</a>
+            </div>`
+                  : ''
               : ''
           }
         </section>
@@ -2193,7 +2216,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=36">
+  <link rel="stylesheet" href="/style.css?v=37">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2207,7 +2230,7 @@ export function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=6" defer></script>
+  <script src="/app.js?v=7" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}
@@ -3609,6 +3632,36 @@ h1, h2, h3 {
   font-size: 0.75rem;
   text-align: center;
 }
+
+/* The end of the shelf: the count and the one control that grows it. The link
+   is a real link, so a page without a script still reaches older saves. */
+.pager {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.pager .fine-print { margin: 0; }
+
+.load-more {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 17px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-decoration: none;
+  background: var(--surface);
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.load-more:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+.load-more[aria-busy="true"] { opacity: 0.55; pointer-events: none; }
 
 .footer {
   display: flex;

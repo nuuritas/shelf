@@ -13,6 +13,7 @@ import { CHANGELOG } from './changelog-data.ts';
 import { handleMcpRequest, mcpBackend } from './mcp.ts';
 import { parseWebUrl } from './links.ts';
 import { normalizeNoteInput } from './notes.ts';
+import { pageSize } from './paging.ts';
 import { parseLinkedInUrl } from './linkedin.ts';
 import { parseYouTubeUrl } from './youtube.ts';
 import {
@@ -399,7 +400,7 @@ async function handleHome(url: URL, env: Env, look: Appearance): Promise<Respons
         .filter(Boolean),
     ),
   ];
-  const limit = clampInteger(url.searchParams.get('limit'), 50, 1, 100);
+  const limit = pageSize(url.searchParams.get('limit'));
   const params = new URLSearchParams({ limit: String(limit), view });
   if (query) params.set('q', query);
   if (day) params.set('day', day);
@@ -887,7 +888,7 @@ async function handleApiList(url: URL, env: Env): Promise<Response> {
   for (const source of parseSourceList(url.searchParams.getAll('source'))) {
     params.append('source', source);
   }
-  params.set('limit', String(clampInteger(url.searchParams.get('limit'), 50, 1, 100)));
+  params.set('limit', String(pageSize(url.searchParams.get('limit'))));
   params.set('offset', String(clampInteger(url.searchParams.get('offset'), 0, 0, 10_000)));
   return jsonResponse(await doJson<ListResult>(env, `/list?${params.toString()}`));
 }
