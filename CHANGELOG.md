@@ -4,6 +4,10 @@ Every change a deploy carries gets a bullet under the day it shipped, newest
 entry first, written for the person running this shelf. `bun run changelog`
 turns this file into `/changelog`; run it in the same commit as the edit.
 
+## 2026-11-19
+
+- **Instagram**: a saved reel, photo or carousel plays inside its card through Instagram's own player, folded until you tap the card.
+
 ## 2026-11-18
 
 - **Instagram**: a saved reel, photo or carousel is labelled Instagram and gets its own Source cut between YouTube and Web.

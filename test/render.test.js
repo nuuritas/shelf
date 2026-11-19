@@ -1074,6 +1074,36 @@ test('a non-YouTube card keeps its plain picture grid', () => {
   assert.match(html, /class="media-grid main media-count-1"/);
 });
 
+const instagramBookmark = extra =>
+  sampleBookmark({
+    tweetId: 'igC8xYzAbC123',
+    url: 'https://www.instagram.com/p/C8xYzAbC123/',
+    provider: 'instagram',
+    text: 'A saved reel',
+    author: { name: 'Jane Doe', username: 'jane', avatarUrl: null, verified: false },
+    media: [],
+    ...extra,
+  });
+
+test('an Instagram card frames the post player with the bare shortcode', () => {
+  const html = renderPage({ bookmarks: [instagramBookmark()], total: 1, query: '' });
+
+  assert.match(html, /class="card-embed"/);
+  assert.match(
+    html,
+    /<iframe src="https:\/\/www\.instagram\.com\/p\/C8xYzAbC123\/embed\/" title="Instagram post" loading="lazy" sandbox="allow-scripts allow-same-origin allow-popups" referrerpolicy="no-referrer">/,
+  );
+  // The reader's id is `ig<code>`; the embed endpoint needs the code alone.
+  assert.doesNotMatch(html, /\/p\/igC8xYzAbC123\/embed\//);
+});
+
+test('an X card never frames Instagram', () => {
+  const html = renderPage({ bookmarks: [sampleBookmark()], total: 1, query: '' });
+
+  assert.doesNotMatch(html, /<iframe/);
+  assert.doesNotMatch(html, /instagram\.com\/p\//);
+});
+
 test('a filter link keeps every label pick, and one pick reads as it always did', () => {
   const withPicks = (picks, extra = {}) =>
     renderPage({
