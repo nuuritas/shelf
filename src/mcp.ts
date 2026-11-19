@@ -244,17 +244,17 @@ external CSS, JS, fonts or images (https: or data: images only). No script, no
 event attributes, no javascript: URLs, no forms, inputs, buttons, iframe,
 object or embed.
 
-Give it three colour options - light, white and dark - picked inside the
-document. Scripts never run and form controls are stripped, so drive it from
+Give it two colour options - white and dark - picked inside the document.
+Scripts never run and form controls are stripped, so drive it from
 <details name="theme"> plus :has(), declaring the tokens on body rather than
 :root. Do not use prefers-color-scheme: on the web it is the OS scheme (Shelf
 Cloud stays light until the reader chooses dark, and the frame cannot see the
 parent theme), but in the phone apps it is the app's own theme, and a document
-cannot tell which surface it is on. Light is the default.
+cannot tell which surface it is on. White is the default.
 
-Use the app's palette, not one of your own: paper #f4f6f9 / #0d1117, card
-#ffffff / #151b23, ink #0f1720 / #e8eef5, ink-soft #33404f / #c3cdd8, soft
-#5a6775 / #97a3b1, rule #dce2ea / #232b35, accent #1d4ed8 / #7da2ff.
+Use the app's palette, not one of your own: paper #ffffff / #0d1117, card
+#fbfcfd / #151b23, ink #0f1720 / #e8eef5, ink-soft #33404f / #c3cdd8, soft
+#5a6775 / #97a3b1, rule #e6ebf1 / #232b35, accent #1d4ed8 / #7da2ff.
 
 Link real sources; never invent citations.
 

@@ -6,8 +6,9 @@ else's page, use a normal link save (`POST /api/bookmarks`); Shelf fetches and
 reads that page itself.
 
 One source of truth: this file. `shelf guide` prints it, `shelf add --help`
-points at it, and the MCP server serves a compact copy of it as
-`get_authoring_guide`.
+points at it, `get_authoring_guide` returns it over MCP, and Shelf Cloud serves it
+at `https://shelfcloud.io/agent-posts.md` — one document through four doors, so a
+client with no CLI and no MCP client still reads the contract.
 
 ## Markdown or HTML?
 
@@ -65,7 +66,7 @@ Write a complete, self-contained document:
 - No forms, inputs, buttons, `<iframe>`, `<object>`, `<embed>`, or
   `<meta http-equiv="refresh">`.
 - Responsive and accessible: semantic headings, alt text, sufficient contrast.
-- Three colour options — light, white and dark — chosen inside the document,
+- Two colour options — white and dark — chosen inside the document,
   with the app's own palette. See **Colour and themes** below.
 - No invented citations. Link real sources and list them at the end.
 
@@ -81,37 +82,41 @@ in. So the note carries its own choice — and it borrows the app's colours inst
 of inventing a palette. A document in its own colours looks pasted in; a document
 in ours disappears into the page, which is the point.
 
-### Ship three options
+### Ship two options
 
-Light, white and dark, switched by a small control at the top of the document.
+White and dark, switched by a small control at the top of the document.
 
-- **Light** is the default. It is the app's own light theme.
-- **White** is the same ink on a pure sheet, for printing or a plain screen.
+- **White** is the default: the app's white sheet, the light ink on `#ffffff`.
 - **Dark** is the app's dark theme, token for token — not a near-black chosen by
   eye. A warm or grey "dark" beside the app's blue-black one reads as a different
   product.
 
+Two, not three. A third "light" beside white is the same intent painted twice,
+and the reader has to compare two pale sheets to find the one they want.
+
 ### The palette
 
-Both services share one brand block — `src/brand.ts` here and in `shelf-cloud`,
-mirrored in the Android and iOS clients — so these values are the same
-everywhere. Read that file rather than sampling a screenshot.
+Both services share one brand block — `src/brand.ts` in `nuuritas/shelf` and in
+`shelf-cloud`, mirrored in the Android and iOS clients — so these values are the
+same everywhere. Read that file rather than sampling a screenshot.
 
-| Token | Light | Dark | Paints |
+| Token | White | Dark | Paints |
 | --- | --- | --- | --- |
-| `--paper` | `#f4f6f9` | `#0d1117` | page background |
-| `--card` | `#ffffff` | `#151b23` | cards, panels, stat cells |
+| `--paper` | `#ffffff` | `#0d1117` | page background |
+| `--card` | `#fbfcfd` | `#151b23` | cards, panels, stat cells |
 | `--ink` | `#0f1720` | `#e8eef5` | body text |
 | `--ink-soft` | `#33404f` | `#c3cdd8` | secondary text |
 | `--soft` | `#5a6775` | `#97a3b1` | captions, meta, labels |
-| `--rule` | `#dce2ea` | `#232b35` | hairlines and borders |
+| `--rule` | `#e6ebf1` | `#232b35` | hairlines and borders |
 | `--rule-strong` | `#c3ccd8` | `#323c48` | emphasised borders |
 | `--accent` | `#1d4ed8` | `#7da2ff` | links, numbers, markers |
 
-White is `#ffffff` paper, `#fbfcfd` cards, `#e6ebf1` rules and the light ink.
+White is a pure sheet carrying the light ink, so a printed note and a note on a
+plain screen look the same. Its card sits a shade off the paper — `#fbfcfd` on
+`#ffffff` — because a white card on white paper loses its edge.
 
 For a rule that should be softer than `--rule`, pick a value one step toward the
-paper (`#e8edf3` in light, `#1c242c` in dark) rather than blending with
+paper (`#f2f5f8` in white, `#1c242c` in dark) rather than blending with
 `color-mix`: the frame is opaque, so a blend computed against the wrong
 background is the seam you were trying to remove.
 
@@ -127,7 +132,7 @@ phone apps it is the app's: the iOS client sets the page's
 note's `WebView` in a night-mode context. A document cannot tell which one it is
 in.
 
-Light as the default, plus a visible choice, is the only version that lands
+White as the default, plus a visible choice, is the only version that lands
 correctly on both.
 
 ### The control
@@ -139,17 +144,15 @@ attribute makes the group exclusive. That is the whole mechanism:
 
 ```html
 <div class="themes">
-  <details class="sw" id="th-light" name="theme"><summary>Light</summary></details>
   <details class="sw" id="th-white" name="theme"><summary>White</summary></details>
   <details class="sw" id="th-dark" name="theme"><summary>Dark</summary></details>
 </div>
 ```
 
 ```css
-:root { /* light tokens: the default */ }
+body { /* white tokens: the default */ }
 
-body:has(#th-white[open]) { /* white tokens */ }
-body:has(#th-dark[open])  { /* dark tokens  */ color-scheme: dark; }
+body:has(#th-dark[open]) { /* dark tokens */ color-scheme: dark; }
 
 .sw > summary { cursor: pointer; list-style: none; }
 .sw > summary::-webkit-details-marker { display: none; }
@@ -157,7 +160,7 @@ body:has(#th-dark[open])  { /* dark tokens  */ color-scheme: dark; }
 
 Declare the theme on `body`, not on `:root`: the chosen block has to beat the
 `:root` default for every descendant, and a `body` rule does that without
-`!important`. Light needs no block — it is the default, so closing the group
+`!important`. White needs no block — it is the default, so closing the group
 returns to it.
 
 Do not use `:target` for this. A fragment link resets the target, so the theme
@@ -167,7 +170,7 @@ falls off the moment the reader clicks a footnote or a source marker.
 
 ```http
 POST /api/posts
-Authorization: Bearer <APP_PASSWORD>
+Authorization: Bearer <token>
 Content-Type: application/json
 
 {
@@ -186,6 +189,8 @@ Returns `{ created, bookmark }` with 201 (new) or 200 (updated by `clientId` or
 `ref`). A `ref` that is not a note returns 404; a missing or malformed one returns
 400. Updating with `ref` replaces the body, title, summary and source, so send
 the fields you want to keep.
+`<token>` is the credential your client already holds: `APP_PASSWORD` on a
+self-hosted Worker, the token `shelf login` saved on Shelf Cloud.
 `SHARE_TOKEN` is not accepted here; it is add-only for URL saves.
 
 ## CLI
@@ -212,9 +217,9 @@ shelf add ./revision.html --agent "OpenCode" --model "DeepSeek v4.1 Flash" \
 
 ## MCP
 
-Two servers expose the same tools: `shelf mcp` over stdio, and the Worker's
-`POST /mcp` over Streamable HTTP, authenticated with `APP_PASSWORD` as a bearer
-token. Point a remote client at `https://<worker>/mcp`.
+Two servers expose the same tools: `shelf mcp` over stdio, and each service's
+`POST /mcp` over Streamable HTTP, authenticated with the same bearer token the
+rest of the API takes. Point a remote client at `https://<host>/mcp`.
 
 Call `create_post` with the same fields, including `agent.name` (your harness,
 e.g. `OpenCode`) and `agent.model` (e.g. `DeepSeek v4.1 Flash`); `agent.name`
@@ -225,8 +230,9 @@ not be the name on it. The stdio server (`shelf mcp`) falls back to
 `SHELF_AGENT` and `SHELF_AGENT_MODEL` when the call omits them; the hosted
 `/mcp` endpoint refuses a call without `agent.name`.
 
-`get_authoring_guide` serves a compact copy of this document for clients that
-cannot fetch URLs; this file remains the source of truth for `shelf guide`.
+`get_authoring_guide` returns this document, so a client that cannot fetch a URL
+reads the same words. Shelf Cloud also serves it at
+`https://shelfcloud.io/agent-posts.md`.
 
 ## Examples
 
@@ -253,10 +259,19 @@ Minimal HTML note:
     <meta charset="utf-8">
     <title>Latency budget</title>
     <style>
-      :root { --paper: #f4f6f9; --ink: #0f1720; --accent: #1d4ed8; }
-      body { font-family: system-ui, sans-serif; margin: 24px; background: var(--paper); color: var(--ink); }
-      body:has(#th-white[open]) { --paper: #ffffff; }
-      body:has(#th-dark[open]) { --paper: #0d1117; --ink: #e8eef5; --accent: #7da2ff; color-scheme: dark; }
+      body {
+        --paper: #ffffff; --card: #fbfcfd; --ink: #0f1720;
+        --ink-soft: #33404f; --soft: #5a6775; --rule: #e6ebf1;
+        --rule-strong: #c3ccd8; --accent: #1d4ed8;
+        font-family: system-ui, sans-serif; margin: 24px;
+        background: var(--paper); color: var(--ink);
+      }
+      body:has(#th-dark[open]) {
+        --paper: #0d1117; --card: #151b23; --ink: #e8eef5;
+        --ink-soft: #c3cdd8; --soft: #97a3b1; --rule: #232b35;
+        --rule-strong: #323c48; --accent: #7da2ff;
+        color-scheme: dark;
+      }
       .themes { margin: 0 0 16px; }
       .sw > summary { cursor: pointer; list-style: none; }
       .sw > summary::-webkit-details-marker { display: none; }
@@ -265,7 +280,6 @@ Minimal HTML note:
   </head>
   <body>
     <div class="themes">
-      <details class="sw" id="th-light" name="theme"><summary>Light</summary></details>
       <details class="sw" id="th-white" name="theme"><summary>White</summary></details>
       <details class="sw" id="th-dark" name="theme"><summary>Dark</summary></details>
     </div>
@@ -278,7 +292,7 @@ Minimal HTML note:
 
 ## Security
 
-Notes use the same password as the rest of Shelf. HTML is treated as untrusted:
+Notes use the same credential as the rest of the shelf. HTML is treated as untrusted:
 it is stored sanitized, served with `default-src 'none'` plus inline styles and
 `https:`/`data:` images only, and rendered in an iframe with
 `sandbox` (no scripts, no same-origin, no forms, no popups). Never put secrets in
