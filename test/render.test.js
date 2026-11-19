@@ -117,7 +117,7 @@ function sampleBookmark(overrides = {}) {
   };
 }
 
-test('renders the active/archived switch and unarchive action', () => {
+test('renders the view menu and unarchive action', () => {
   const html = renderPage({
     bookmarks: [sampleBookmark({ archivedAt: '2026-11-09T00:00:00.000Z' })],
     total: 1,
@@ -130,9 +130,21 @@ test('renders the active/archived switch and unarchive action', () => {
     notice: 'archived',
   });
 
-  assert.match(html, /class="view-switch"/);
-  assert.match(html, /Active<span>4<\/span>/);
-  assert.match(html, /Archived<span>1<\/span>/);
+  // The current cut is the trigger's only phrase, and the panel lists both.
+  assert.match(html, /<details class="filter-menu view-menu">/);
+  assert.match(
+    html,
+    /<span class="filter-name">View<\/span><span class="filter-value">Archived<span class="filter-count">1<\/span><\/span>/,
+  );
+  assert.match(
+    html,
+    /<a href="\/"><span class="filter-label">Active<\/span><span class="filter-count">4<\/span><\/a>/,
+  );
+  assert.match(
+    html,
+    /<a href="\/\?view=archived" aria-current="page"><span class="filter-label">Archived<\/span><span class="filter-count">1<\/span><\/a>/,
+  );
+  assert.doesNotMatch(html, /aria-label="Archive filter"/);
   assert.match(html, /class="archive-chip">Archived<\/span>/);
   assert.match(html, />Unarchive<\/button>/);
   assert.match(html, /Bookmark archived\./);
@@ -1161,7 +1173,7 @@ const FILTER_TOPICS = [
   },
 ];
 
-test('the filter bar is three named menus, not stacked chip rows', () => {
+test('the filter bar is four named menus, not stacked chip rows', () => {
   const html = renderPage({
     bookmarks: [],
     total: 0,
@@ -1170,7 +1182,9 @@ test('the filter bar is three named menus, not stacked chip rows', () => {
     labels: [{ slug: 'design', name: 'Design', count: 2 }],
   });
 
-  assert.equal((html.match(/<details class="filter-menu/g) || []).length, 3);
+  assert.equal((html.match(/<details class="filter-menu/g) || []).length, 4);
+  assert.match(html, /<div class="library-switches">\s*<details class="filter-menu view-menu">/);
+  assert.match(html, /<span class="filter-name">View<\/span>/);
   assert.match(html, /<span class="filter-name">Source<\/span>/);
   assert.match(html, /<span class="filter-name">Folder<\/span>/);
   assert.match(html, /<span class="filter-name">Labels<\/span>/);
