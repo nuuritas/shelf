@@ -6,6 +6,7 @@ turns this file into `/changelog`; run it in the same commit as the edit.
 
 ## 2026-11-19
 
+- **Library**: a shelf longer than one page no longer stops at fifty — Load more at the end doubles what is on screen in place, keeps every filter in force, and the address carries the page size so a reload returns the same list.
 - **Instagram**: a saved reel, photo or carousel plays inside its card through Instagram's own player, folded until you tap the card.
 
 ## 2026-11-18

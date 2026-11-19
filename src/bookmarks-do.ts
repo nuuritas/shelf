@@ -13,6 +13,7 @@ import { resolveLanguage } from './languages.ts';
 import { parseInstagramUrl, readInstagramPost } from './instagram.ts';
 import { parseLinkedInUrl, readLinkedInPost } from './linkedin.ts';
 import { NoteInputError, noteIdFor, notePlainText } from './notes.ts';
+import { pageSize } from './paging.ts';
 import {
   createVapidKeys,
   parsePushSubscription,
@@ -1003,7 +1004,7 @@ export class Bookmarks extends DurableObject<Env> {
     const day = normalizeDay(searchParams.get('day'));
     const view = parseView(searchParams.get('view'));
     const sources = parseSourceList(searchParams.getAll('source'));
-    const limit = clampInteger(searchParams.get('limit'), 50, 1, 100);
+    const limit = pageSize(searchParams.get('limit'));
     const offset = clampInteger(searchParams.get('offset'), 0, 0, 10_000);
 
     const filters: string[] = [];

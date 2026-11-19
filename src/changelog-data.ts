@@ -5,6 +5,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     date: "2026-11-19",
     bullets: [
+      "**Library**: a shelf longer than one page no longer stops at fifty — Load more at the end doubles what is on screen in place, keeps every filter in force, and the address carries the page size so a reload returns the same list.",
       "**Instagram**: a saved reel, photo or carousel plays inside its card through Instagram's own player, folded until you tap the card.",
     ],
   },

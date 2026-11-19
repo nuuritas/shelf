@@ -220,6 +220,8 @@ document.addEventListener('click', async event => {
     if (empty) container.replaceWith(empty.cloneNode(true));
     const note = document.querySelector('.library .fine-print');
     if (note) note.remove();
+    const pager = document.querySelector('.library .pager');
+    if (pager) pager.remove();
   };
 
   /** Put the reader back where they were if a card above them changed height. */
