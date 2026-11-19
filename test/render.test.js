@@ -835,7 +835,7 @@ test('the library reads by label: a filter row, a heading and a card chip', () =
   );
   assert.match(
     html,
-    /<a href="\/\?menu=labels" aria-current="page"><span class="filter-label">Reading<\/span><span class="filter-count">1<\/span><\/a>/,
+    /<a href="\/\?menu=labels" aria-current="page"><span class="filter-label">Reading<\/span><span class="filter-count">1<\/span><span class="filter-remove" aria-hidden="true">×<\/span><\/a>/,
   );
   // The selected label is the page's heading.
   assert.match(html, /<h2>Reading<\/h2>/);
@@ -1199,14 +1199,15 @@ test('the source menu reads both picks and toggles only its own value', () => {
     html,
     /<details class="filter-menu is-set">\s*<summary><span class="filter-name">Source<\/span><span class="filter-value">X, YouTube<\/span>/,
   );
-  // Each row is the cut without its own value, followed by the panel's key.
+  // Each row is the cut without its own value, followed by the panel's key; a
+  // chosen row carries the × that drops it.
   assert.match(
     html,
-    /<a href="\/\?source=youtube&amp;menu=source" aria-current="page"><span class="filter-label">X<\/span><\/a>/,
+    /<a href="\/\?source=youtube&amp;menu=source" aria-current="page"><span class="filter-label">X<\/span><span class="filter-remove" aria-hidden="true">×<\/span><\/a>/,
   );
   assert.match(
     html,
-    /<a href="\/\?source=x&amp;menu=source" aria-current="page"><span class="filter-label">YouTube<\/span><\/a>/,
+    /<a href="\/\?source=x&amp;menu=source" aria-current="page"><span class="filter-label">YouTube<\/span><span class="filter-remove" aria-hidden="true">×<\/span><\/a>/,
   );
   // A value that was not picked joins the two, and nothing else changes.
   assert.match(
@@ -1242,7 +1243,7 @@ test('a menu pick keeps every other pick, and the menu key comes last', () => {
   );
 });
 
-test('an active filter is a token that drops only its own pick', () => {
+test('a chosen row drops from inside its menu, and one Clear all leaves every cut', () => {
   const html = renderPage({
     bookmarks: [],
     total: 0,
@@ -1254,29 +1255,53 @@ test('an active filter is a token that drops only its own pick', () => {
     sources: ['x', 'youtube'],
   });
 
-  assert.equal((html.match(/<a class="filter-token"/g) || []).length, 4);
+  // No second row of chips: a pick is announced where it was made.
+  assert.doesNotMatch(html, /filter-token/);
+  assert.equal((html.match(/class="filter-remove"/g) || []).length, 4);
+  // The row's href is the toggle-off link, and the menu key keeps it open.
   assert.match(
     html,
-    /<a class="filter-token" href="\/\?label=design&amp;source=youtube&amp;topic=ai" aria-label="Remove the X filter">X<i aria-hidden="true">×<\/i><\/a>/,
+    /<a href="\/\?label=design&amp;source=youtube&amp;topic=ai&amp;menu=source" aria-current="page"><span class="filter-label">X<\/span><span class="filter-remove" aria-hidden="true">×<\/span><\/a>/,
   );
   assert.match(
     html,
-    /<a class="filter-token" href="\/\?label=design&amp;source=x&amp;topic=ai" aria-label="Remove the YouTube filter">/,
+    /<a href="\/\?source=x&amp;source=youtube&amp;topic=ai&amp;menu=labels" aria-current="page"><span class="filter-label">Design<\/span><span class="filter-count">2<\/span><span class="filter-remove" aria-hidden="true">×<\/span><\/a>/,
   );
-  assert.match(
-    html,
-    /<a class="filter-token" href="\/\?label=design&amp;source=x&amp;source=youtube" aria-label="Remove the AI filter">/,
-  );
-  assert.match(
-    html,
-    /<a class="filter-token" href="\/\?source=x&amp;source=youtube&amp;topic=ai" aria-label="Remove the Design filter">/,
-  );
-  // More than one token offers the way out of all three groups at once.
-  assert.match(html, /<a class="clear-filters" href="\/">Clear filters<\/a>/);
+  // One Clear all sits at the end of the menu row.
+  assert.match(html, /<a class="clear-filters" href="\/">Clear all<\/a>\s*<\/div>/);
 
-  const single = renderPage({ bookmarks: [], total: 0, query: '', sources: ['x'] });
-  assert.equal((single.match(/<a class="filter-token"/g) || []).length, 1);
-  assert.doesNotMatch(single, /class="clear-filters"/);
+  // Clear all returns the shelf to Active and keeps a search and a day.
+  const clear = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: 'claude',
+    day: '2026-11-06',
+    labels: [{ slug: 'design', name: 'Design', count: 2 }],
+    labelPicks: ['design'],
+    sources: ['x'],
+    view: 'archived',
+  });
+  assert.match(
+    clear,
+    /<a class="clear-filters" href="\/\?q=claude&amp;day=2026-11-06">Clear all<\/a>/,
+  );
+
+  // With nothing filtered it is absent, and the archived view alone is enough.
+  const none = renderPage({ bookmarks: [], total: 0, query: '', view: 'active' });
+  assert.doesNotMatch(none, /class="clear-filters"/);
+  const viewOnly = renderPage({ bookmarks: [], total: 0, query: '', view: 'archived' });
+  assert.match(viewOnly, /<a class="clear-filters" href="\/">Clear all<\/a>/);
+});
+
+test('a chosen row shows a ×, the view a tick, and the bar sits left', () => {
+  // Only View is one cut, so only it keeps the CSS tick.
+  assert.match(CSS, /\.view-menu \.filter-panel a\[aria-current\]::after \{[^}]*content: '✓'/);
+  assert.match(CSS, /\.filter-remove \{[^}]*color: var\(--faint\)/);
+  assert.match(CSS, /\.library-switches \{[^}]*justify-content: flex-start/);
+  assert.match(CSS, /\.filter-panel \{[^}]*left: 0;[^}]*right: auto/);
+  // The dead chip row is gone from the stylesheet too.
+  assert.doesNotMatch(CSS, /filter-tokens/);
+  assert.doesNotMatch(CSS, /\.filter-token[ ,{]/);
 });
 
 test('the menu a pick came from reopens, and no other does', () => {

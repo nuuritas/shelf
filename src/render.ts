@@ -365,6 +365,7 @@ export function renderPage({
       labels?: readonly string[];
       sources?: readonly SourceFilter[];
       topics?: readonly string[];
+      view?: 'active' | 'archived';
     } = {},
     menu: string | null = null,
   ): string =>
@@ -372,7 +373,7 @@ export function renderPage({
       query: currentQuery,
       day: currentDay,
       labels: changes.labels ?? currentLabelPicks,
-      view,
+      view: changes.view ?? view,
       lang,
       layout: layoutParam,
       sources: changes.sources ?? sourcePicks,
@@ -398,6 +399,8 @@ export function renderPage({
                             item.current ? ' aria-current="page"' : ''
                           }><span class="filter-label">${escapeHtml(item.label)}</span>${
                             item.count === undefined ? '' : `<span class="filter-count">${item.count}</span>`
+                          }${
+                            item.current ? '<span class="filter-remove" aria-hidden="true">×</span>' : ''
                           }</a>`,
                       )
                       .join('\n                    ')}
@@ -469,49 +472,15 @@ export function renderPage({
         })),
       })
     : '';
-  // An active filter is a token with an ×: the bar stays one line, and the
-  // reader can drop one pick without hunting for the menu that made it.
-  const filterToken = (name: string, removeHref: string): string =>
-    `<a class="filter-token" href="${escapeHtml(removeHref)}" aria-label="Remove the ${escapeHtml(
-      name,
-    )} filter">${escapeHtml(name)}<i aria-hidden="true">×</i></a>`;
-  const filterTokens: string[] = [];
-  for (const value of sourcePicks) {
-    filterTokens.push(
-      filterToken(
-        sourceFilterName(value),
-        filterHref({ sources: sourcePicks.filter(entry => entry !== value) }),
-      ),
-    );
-  }
-  for (const slug of currentTopicPicks) {
-    filterTokens.push(
-      filterToken(
-        topics.find(entry => entry.slug === slug)?.name || slug,
-        filterHref({ topics: currentTopicPicks.filter(entry => entry !== slug) }),
-      ),
-    );
-  }
-  for (const slug of currentLabelPicks) {
-    filterTokens.push(
-      filterToken(
-        labels.find(entry => entry.slug === slug)?.name || slug,
-        filterHref({ labels: currentLabelPicks.filter(entry => entry !== slug) }),
-      ),
-    );
-  }
-  const tokenRow = filterTokens.length
-    ? `<div class="filter-tokens">
-                  ${filterTokens.join('\n                  ')}
-                  ${
-                    filterTokens.length > 1
-                      ? `<a class="clear-filters" href="${escapeHtml(
-                          filterHref({ labels: [], sources: [], topics: [] }),
-                        )}">Clear filters</a>`
-                      : ''
-                  }
-                </div>`
-    : '';
+  // A pick lives inside the menu that made it, so one link at the row's end is
+  // the only way out of every cut at once; an archived view counts as a cut.
+  // Search and day are not filters and survive it.
+  const showClearAll =
+    sourcePicks.length > 0 ||
+    currentTopicPicks.length > 0 ||
+    currentLabelPicks.length > 0 ||
+    view === 'archived';
+  const clearAllHref = filterHref({ labels: [], sources: [], topics: [], view: 'active' });
   const noticeText = notice ? NOTICES[notice] : '';
   const addValue = escapeHtml(query || '');
   const showTranslateBanner =
@@ -684,8 +653,12 @@ export function renderPage({
                         </nav>`
                       : ''
                   }
+                  ${
+                    showClearAll
+                      ? `<a class="clear-filters" href="${escapeHtml(clearAllHref)}">Clear all</a>`
+                      : ''
+                  }
                 </div>
-                ${tokenRow}
               </div>
             </div>
           </div>
@@ -2229,7 +2202,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=38">
+  <link rel="stylesheet" href="/style.css?v=39">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2577,7 +2550,7 @@ h1, h2, h3 {
 .library-tools {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -2585,7 +2558,7 @@ h1, h2, h3 {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
 }
 
@@ -2595,7 +2568,7 @@ h1, h2, h3 {
 .library-bar {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -2696,7 +2669,8 @@ h1, h2, h3 {
   position: absolute;
   z-index: 30;
   top: calc(100% + 6px);
-  right: 0;
+  left: 0;
+  right: auto;
   width: min(15rem, calc(100vw - 32px));
   max-height: min(60vh, 20rem);
   overflow-y: auto;
@@ -2734,7 +2708,8 @@ h1, h2, h3 {
   font-weight: 650;
 }
 
-.filter-panel a[aria-current]::after {
+/* A view is one cut rather than a set to pick from, so it keeps the tick. */
+.view-menu .filter-panel a[aria-current]::after {
   content: '✓';
   color: var(--accent);
   font-weight: 700;
@@ -2755,48 +2730,32 @@ h1, h2, h3 {
   font-variant-numeric: tabular-nums;
 }
 
-/* An active filter is a token with an ×, so one pick can be dropped without
-   hunting for the menu that made it. */
-.filter-tokens {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.filter-token {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  min-height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--ink);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.filter-token i {
-  font-style: normal;
+/* A chosen row carries its own × beside the count, so the menu that set it is
+   also the place it is dropped. */
+.filter-remove {
+  flex: 0 0 auto;
   color: var(--faint);
+  font-size: 0.8125rem;
   line-height: 1;
 }
 
-.filter-token:hover { border-color: var(--line-strong); }
-
+/* The one way out of every cut sits at the row's end as another trigger. */
 .clear-filters {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-.clear-filters:hover { color: var(--ink); }
+.clear-filters:hover { color: var(--ink); border-color: var(--line-strong); }
 
 .calendar-link {
   display: inline-flex;
@@ -4681,7 +4640,6 @@ body.settings-page .topbar {
     max-height: min(60vh, 20rem);
     margin-top: 6px;
   }
-  .filter-tokens { justify-content: flex-start; }
   .translate-banner { align-items: flex-start; flex-direction: column; }
   .search-form { width: 100%; }
   .search-form input { flex: 1; width: auto; }
