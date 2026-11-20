@@ -2295,7 +2295,8 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
   .note-title { font-size: clamp(1.5rem, 7vw, 1.875rem); }
   .note-frame-full { height: calc(100dvh - 160px); min-height: 320px; }
 }
-html.is-theater .note-bar { display: none; }
+html.is-theater .note-bar > :not(.note-theater-toggle) { display: none; }
+html.is-theater .note-bar-side > :not(.note-theater-toggle) { display: none; }
 html.is-theater .note-byline { display: none; }
 html.is-theater .note-abstract-fold { display: none; }
 html.is-theater .shell.note-shell {
@@ -2315,7 +2316,6 @@ html.is-theater .note-theater-toggle {
   top: max(12px, env(safe-area-inset-top));
   right: max(12px, env(safe-area-inset-right));
   z-index: 100;
-  display: inline-flex !important;
   padding: 8px 14px;
   border-radius: 999px;
   background: var(--surface);
