@@ -187,7 +187,7 @@ test('a note with a source keeps its outbound link beside the artifact link', ()
 test('the full note page renders markdown and the HTML frame', () => {
   const markdown = renderNotePage({ bookmark: note() });
   assert.match(markdown, /<h1 class="note-title">How agent memory works<\/h1>/);
-  assert.match(markdown, /AI-generated/);
+  assert.doesNotMatch(markdown, /AI-generated/);
   assert.match(markdown, /Claude Code · claude-sonnet-4\.5/);
   assert.match(markdown, /<h2>Memory<\/h2>/);
   assert.match(markdown, /class="note-label">Abstract</);
