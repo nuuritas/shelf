@@ -5,6 +5,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     date: "2026-11-20",
     bullets: [
+      "**Library**: a card ends with a hairline, its labels at the left and Archive, Remove and the label editor at the right; on a phone those pills wait behind a ⋮ in the same row.",
       "**Library**: a chosen filter drops from its own menu with an ×, one Clear all at the end of the bar resets source, folder, label and the archived view, and the menus and search field sit on the left.",
       "**Library**: Save is one small pill in the top bar, left of the calendar, and saves the link you just copied; a copy without a link says so above the shelf instead of submitting an empty field.",
     ],

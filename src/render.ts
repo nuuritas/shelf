@@ -1375,15 +1375,13 @@ function renderTopicOverview(text: unknown): string {
 }
 
 /**
- * A card's labels are both a view of the shelf and the way back to one: a chip
- * links to that label's list, and the editor is a tick list of the labels the
- * page already knows, because the set is chosen rather than typed. The form
- * carries `returnTo` so saving never loses the search, day, archive or label
- * view. A tick posts the set; `+ New label` is a chip in the same row, so the
- * name field is only in the page while it is being used. Without a script the
- * checklist needs a button of its own, so one sits inside <noscript>.
+ * The card ends here: a hairline, the labels the reader picked at the left, and
+ * the card's own controls at the right. The editor is a tick list of the labels
+ * the page already knows; the form carries `returnTo` so saving keeps the view.
+ * Without a script the checklist needs a button of its own, so one sits inside
+ * <noscript>.
  */
-function renderLabels(
+function renderCardFoot(
   bookmark: Bookmark,
   returnTo: string,
   view: 'active' | 'archived',
@@ -1419,7 +1417,9 @@ function renderLabels(
     )
     .join('');
 
-  return `<div class="card-labels">${chips}<details class="label-editor">
+  return `<div class="card-foot">
+      <div class="card-labels">${chips}</div>
+      <details class="label-editor">
             <summary>${
               names.length
                 ? `Labels <span class="label-count">${names.length}</span>`
@@ -1442,34 +1442,28 @@ function renderLabels(
               </fieldset>
               <noscript><button type="submit" class="label-save">Save labels</button></noscript>
             </form>
-          </details></div>`;
+          </details>
+      ${renderCardTools(bookmark.tweetId, returnTo, Boolean(bookmark.archivedAt))}
+    </div>`;
 }
 
-/**
- * The one control row a card carries: archive, remove, and the way out to the
- * source. It sits in the head next to the author, where the reader already
- * looks for what this card is, so the bottom of the card is content only — no
- * metric counts, no JSON link, no second copy of the same destination.
- */
-function renderCardTools(
-  tweetId: string,
-  returnTo: string,
-  archived: boolean,
-  sourceLink: string,
-): string {
-  return `<div class="card-tools">
-            <form method="post" action="/archive" class="inline-form">
-              <input type="hidden" name="id" value="${escapeHtml(tweetId)}">
-              <input type="hidden" name="archived" value="${archived ? '0' : '1'}">
-              <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-              <button class="card-tool" type="submit">${archived ? 'Unarchive' : 'Archive'}</button>
-            </form>
-            <form method="post" action="/delete" class="inline-form">
-              <input type="hidden" name="id" value="${escapeHtml(tweetId)}">
-              <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-              <button class="card-tool danger" type="submit">Remove</button>
-            </form>
-            ${sourceLink}
+/** Archive and Remove as the card's pills, behind a `⋮` on a phone. */
+function renderCardTools(tweetId: string, returnTo: string, archived: boolean): string {
+  return `<div class="card-menu">
+            <button class="card-menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="card-menu-${escapeHtml(tweetId)}" aria-label="Card controls">⋮</button>
+            <div class="card-tools" id="card-menu-${escapeHtml(tweetId)}">
+              <form method="post" action="/archive" class="inline-form">
+                <input type="hidden" name="id" value="${escapeHtml(tweetId)}">
+                <input type="hidden" name="archived" value="${archived ? '0' : '1'}">
+                <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+                <button class="card-tool" type="submit">${archived ? 'Unarchive' : 'Archive'}</button>
+              </form>
+              <form method="post" action="/delete" class="inline-form">
+                <input type="hidden" name="id" value="${escapeHtml(tweetId)}">
+                <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+                <button class="card-tool danger" type="submit">Remove</button>
+              </form>
+            </div>
           </div>`;
 }
 
@@ -1541,12 +1535,7 @@ function renderBookmark(
             </div>
           </div>
         </div>
-        ${renderCardTools(
-          bookmark.tweetId,
-          returnTo,
-          archived,
-          `<a class="x-link" href="${escapeHtml(outboundUrl || '#')}" target="_blank" rel="noopener noreferrer" aria-label="Open on ${escapeHtml(source)}">${escapeHtml(source)} ↗</a>`,
-        )}
+        <a class="x-link" href="${escapeHtml(outboundUrl || '#')}" target="_blank" rel="noopener noreferrer" aria-label="Open on ${escapeHtml(source)}">${escapeHtml(source)} ↗</a>
       </header>
       <div class="tweet-text">${linkifyText(bookmark.text)}</div>
       ${poster}
@@ -1571,7 +1560,7 @@ function renderBookmark(
 
       ${extras.length ? `<p class="peek-meta">${escapeHtml(extras.join(' · '))}</p>` : ''}
 
-      ${renderLabels(bookmark, returnTo, view, lang, labels)}
+      ${renderCardFoot(bookmark, returnTo, view, lang, labels)}
     </article>
   `;
 }
@@ -1627,16 +1616,13 @@ function renderNoteCard(
             </div>
           </div>
         </div>
-        ${renderCardTools(
-          bookmark.tweetId,
-          returnTo,
-          archived,
-          `<a class="x-link" href="${href}">Open artifact ↗</a>${
+        <div class="card-links">
+          <a class="x-link" href="${href}">Open artifact ↗</a>${
             sourceUrl
               ? `<a class="x-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
               : `<span class="x-link note-kind" title="${isHtml ? 'HTML document' : 'Note'}">${isHtml ? 'HTML' : 'Note'}</span>`
-          }`,
-        )}
+          }
+        </div>
       </header>
 
       <h3 class="note-card-title"><a href="${href}">${escapeHtml(title)}</a></h3>
@@ -1655,7 +1641,7 @@ function renderNoteCard(
           : ''
       }
 
-      ${renderLabels(bookmark, returnTo, view, lang, labels)}
+      ${renderCardFoot(bookmark, returnTo, view, lang, labels)}
     </article>
   `;
 }
@@ -2197,7 +2183,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=40">
+  <link rel="stylesheet" href="/style.css?v=41">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2211,7 +2197,7 @@ export function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=8" defer></script>
+  <script src="/app.js?v=9" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}
@@ -2230,7 +2216,7 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-card-title a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--ink); text-decoration: none; }
 .note-card-title a::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
 .note-card:hover .note-card-title a { text-decoration: underline; text-underline-offset: 3px; }
-.note-card .card-topics, .note-card .card-tools, .note-card .card-head a, .note-card .ref-chip,
+.note-card .card-topics, .note-card .card-foot, .note-card .card-tools, .note-card .card-head a, .note-card .ref-chip,
 .note-card .note-abstract, .note-card .note-body, .note-card .note-excerpt,
 .note-card .note-body a, .note-card .note-body pre, .note-card .table-wrap { position: relative; z-index: 1; }
 .note-label { display: block; margin: 0 0 4px; color: var(--faint); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
@@ -3075,9 +3061,14 @@ h1, h2, h3 {
   margin-bottom: 16px;
 }
 
-/* The card's controls live beside the author, not under the content: one row
-   of small pills — archive, remove, and the outbound link — with the source at
-   the right edge where it has always been. */
+/* The card ends here: a hairline, the labels at the left, the controls at the right. */
+.card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.card-foot > .label-editor { order: 1; }
+.card-foot > .card-menu { order: 2; }
+.card-foot > .label-editor[open] { order: 3; flex-basis: 100%; width: 100%; }
+.card-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; }
+.card-menu { position: relative; display: flex; align-items: center; }
+
 .card-tools {
   display: flex;
   flex-wrap: wrap;
@@ -3086,6 +3077,10 @@ h1, h2, h3 {
   gap: 6px;
   margin-left: auto;
 }
+
+/* Hidden until public/app.js marks the page `menu-ready` on a phone. */
+.card-menu-toggle { display: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--muted); font: inherit; font-size: 0.875rem; line-height: 1; cursor: pointer; }
+.card-menu-toggle[aria-expanded="true"] { border-color: var(--ink); background: var(--surface-soft); color: var(--ink); }
 
 .card-tool {
   padding: 3px 10px;
@@ -3128,7 +3123,8 @@ h1, h2, h3 {
   font-weight: 700;
 }
 
-.author-text { min-width: 0; }
+.card-head .author { flex: 1 1 auto; }
+.author-text { flex: 1 1 auto; min-width: 0; }
 
 .author-line {
   display: flex;
@@ -4051,11 +4047,12 @@ h1, h2, h3 {
    editor under it rewrites the whole set on that one card. Each chip carries
    the tone its slug hashes to, so a word keeps one colour everywhere. */
 .card-labels {
+  flex: 1 1 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin: 10px 0 2px;
+  margin: 0;
 }
 
 .label {
@@ -4622,6 +4619,12 @@ body.settings-page .topbar {
   .tweet-text { font-size: 1rem; }
   .card-head { flex-wrap: wrap; gap: 10px; }
   .card-tools { gap: 5px; }
+  /* A scripted card hides the pills in a sheet above the ⋮; without it they stay. */
+  html.menu-ready .card-menu-toggle { display: inline-flex; }
+  html.menu-ready .card-menu .card-tools { display: none; position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 6; flex-direction: column; align-items: stretch; min-width: 9rem; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+  html.menu-ready .card-menu.is-open .card-tools { display: flex; }
+  html.menu-ready .card-menu .card-tools .inline-form { display: block; }
+  html.menu-ready .card-menu .card-tools .card-tool { width: 100%; text-align: left; }
   .media-grid.media-count-3 { grid-template-columns: repeat(2, 1fr); }
   .media-grid.media-count-3 .media-cell:first-child { grid-column: span 2; }
   .top-actions .count { display: none; }

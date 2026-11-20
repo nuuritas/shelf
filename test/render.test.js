@@ -150,23 +150,26 @@ test('renders the view menu and unarchive action', () => {
   assert.match(html, /Bookmark archived\./);
 });
 
-test('a post card keeps archive and remove in the head and has no footer', () => {
+test('a post card keeps the source in the head and its controls in a footer', () => {
   const html = renderPage({
     bookmarks: [sampleBookmark({ metrics: { replies: 12, reposts: 3, likes: 40, views: 900 } })],
     total: 1,
     query: '',
   });
 
-  // The two mutations are buttons beside the source link, at the top right.
-  const tools = html.match(/<div class="card-tools">[\s\S]*?<\/div>/);
-  assert.ok(tools, 'the card has no control row');
-  assert.match(tools[0], /<button class="card-tool" type="submit">Archive<\/button>/);
-  assert.match(tools[0], /<button class="card-tool danger" type="submit">Remove<\/button>/);
-  assert.match(tools[0], /<a class="x-link" href="https:\/\/x\.com\/a\/status\/123"/);
+  // The head is provenance only, so the outbound link sits there alone.
+  const head = html.match(/<header class="card-head">[\s\S]*?<\/header>/);
+  assert.match(head[0], /<a class="x-link" href="https:\/\/x\.com\/a\/status\/123"/);
 
-  // The bottom of the card is content only: no counts, no JSON, no repeat of
-  // the source link and no second archive/remove pair.
-  assert.doesNotMatch(html, /class="card-foot"/);
+  // The footer closes the card: every control is there, in one menu.
+  const foot = html.match(/<div class="card-foot">[\s\S]*<\/article>/);
+  assert.ok(foot, 'the card has no footer');
+  assert.match(foot[0], /<button class="card-tool" type="submit">Archive<\/button>/);
+  assert.match(foot[0], /<button class="card-tool danger" type="submit">Remove<\/button>/);
+  assert.match(foot[0], /class="label-editor"/);
+  assert.match(foot[0], /data-menu-toggle/);
+
+  // No counts, no JSON, no second copy of either control pair.
   assert.doesNotMatch(html, /class="metrics"/);
   assert.doesNotMatch(html, />JSON</);
   assert.doesNotMatch(html, />Open on X</);
@@ -1027,7 +1030,7 @@ test('a finished library asks for no refresh at all', () => {
 test('the page loads the poll script with a cache buster', () => {
   const html = renderPage({ bookmarks: [], total: 0, query: '' });
 
-  assert.match(html, /<script src="\/app\.js\?v=8" defer><\/script>/);
+  assert.match(html, /<script src="\/app\.js\?v=9" defer><\/script>/);
   assert.doesNotMatch(html, /<script src="\/app\.js" defer>/);
 });
 
