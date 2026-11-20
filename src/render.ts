@@ -3078,7 +3078,7 @@ h1, h2, h3 {
   margin-left: auto;
 }
 
-/* Hidden until public/app.js marks the page `menu-ready` on a phone. */
+/* Hidden until public/app.js marks the page menu-ready on a phone. */
 .card-menu-toggle { display: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--muted); font: inherit; font-size: 0.875rem; line-height: 1; cursor: pointer; }
 .card-menu-toggle[aria-expanded="true"] { border-color: var(--ink); background: var(--surface-soft); color: var(--ink); }
 
