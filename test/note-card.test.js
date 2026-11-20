@@ -203,6 +203,24 @@ test('the full note page renders markdown and the HTML frame', () => {
   assert.doesNotMatch(html, /<script>alert/);
 });
 
+test('an HTML note page has a Full screen button in the bar', () => {
+  const html = renderNotePage({
+    bookmark: note({ format: 'html', content: '<h1>Doc</h1>', title: 'Doc' }),
+  });
+  assert.match(html, /class="note-theater-toggle"/);
+  assert.match(html, /aria-pressed="false"/);
+  assert.match(html, /aria-label="Full screen"/);
+  assert.match(html, />Full screen</);
+  assert.match(html, /hidden/);
+});
+
+test('a markdown note page has no Full screen button', () => {
+  const markdown = renderNotePage({ bookmark: note() });
+  assert.doesNotMatch(markdown, /class="note-theater-toggle"/);
+  assert.doesNotMatch(markdown, /aria-pressed="false"/);
+  assert.doesNotMatch(markdown, />Full screen</);
+});
+
 test('the card-wide overlay sits under the note body and its interactive content', () => {
   assert.match(CSS, /\.note-card-title a::after \{[^}]*position: absolute;[^}]*inset: 0/);
   assert.match(CSS, /\.note-card \.note-body, [^{}]*\{[^}]*z-index: 1;/);

@@ -1076,6 +1076,11 @@ export function renderNotePage({
               ? `<a class="note-source" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
               : ''
           }
+          ${
+            isHtml
+              ? `<button class="note-theater-toggle" type="button" aria-pressed="false" aria-label="Full screen" hidden>Full screen</button>`
+              : ''
+          }
         </div>
       </header>
 
@@ -2183,7 +2188,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=41">
+  <link rel="stylesheet" href="/style.css?v=42">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2197,7 +2202,7 @@ export function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=9" defer></script>
+  <script src="/app.js?v=10" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}
@@ -2265,13 +2270,68 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-abstract-fold p { margin: 9px 0 0; font-size: 0.90625rem; line-height: 1.6; overflow-wrap: anywhere; }
 .note-frame { display: block; width: 100%; height: 420px; min-height: 320px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .note-frame-full { height: clamp(360px, calc(100dvh - 190px), 1000px); border-radius: 12px; }
+.note-theater-toggle {
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.note-theater-toggle:hover { border-color: var(--accent); color: var(--accent-ink); }
+.note-theater-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+.html.reader-ready .note-theater-toggle { display: inline-flex; }
 @media (max-width: 650px) {
   .note-card-title { font-size: 1.1875rem; }
   .note-bar { width: min(100% - 24px, 900px); padding-top: 12px; }
   .note-shell { padding-bottom: 40px; }
   .note-title { font-size: clamp(1.5rem, 7vw, 1.875rem); }
   .note-frame-full { height: calc(100dvh - 160px); min-height: 320px; }
-}`;
+}
+html.is-theater .note-bar > :not(.note-theater-toggle) { display: none; }
+html.is-theater .note-bar-side > :not(.note-theater-toggle) { display: none; }
+html.is-theater .note-byline { display: none; }
+html.is-theater .note-abstract-fold { display: none; }
+html.is-theater .shell.note-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+html.is-theater .note-frame-full {
+  height: 100dvh;
+  border-radius: 0;
+  border: none;
+  min-height: 100dvh;
+}
+html.is-theater .note-theater-toggle {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow);
+}
+html.is-theater .note-theater-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+html.is-theater .note-theater-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+html.is-theater body { overflow: hidden; }`;
 
 /**
  * A label's chip colour, one rule per tone. `labelTone` picks the number from
