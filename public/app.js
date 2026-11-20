@@ -626,3 +626,61 @@ document.addEventListener('click', async event => {
 
   if (pending().length) window.setTimeout(pass, DELAY_MS);
 })();
+
+// The save control is one pill in the top bar and saves what the reader just
+// copied. A failed read — no clipboard API, refused permission, empty clipboard,
+// no link in the copy — says so in the note above the shelf and submits nothing.
+(() => {
+  const form = document.querySelector('.save-form');
+  if (!form) return;
+  const field = form.querySelector('input[name="url"]');
+  const note = document.querySelector('[data-add-note]');
+
+  // A copy is often a sentence around a link, so take the first address; the
+  // sentence's full stop, or a closing bracket it never opened, is not part of it.
+  const firstLink = text => {
+    const match = String(text || '').match(/https?:\/\/[^\s<>"']+/i);
+    if (!match) return '';
+    let link = match[0];
+    while (link) {
+      const last = link.charAt(link.length - 1);
+      if ('.,;:!?\'"'.indexOf(last) >= 0) {
+        link = link.slice(0, -1);
+      } else if (')]}'.indexOf(last) >= 0) {
+        const opener = last === ')' ? '(' : last === ']' ? '[' : '{';
+        if (link.split(opener).length >= link.split(last).length) break;
+        link = link.slice(0, -1);
+      } else {
+        break;
+      }
+    }
+    return link;
+  };
+
+  const sayNothingToSave = () => { if (note) note.hidden = false; };
+
+  form.addEventListener('submit', event => {
+    // The fill-then-submit pass arrives here a second time, with the address
+    // already in the hidden field, and must go on to the server.
+    if (field.value) return;
+    event.preventDefault();
+    if (note) note.hidden = true;
+
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      sayNothingToSave();
+      return;
+    }
+    navigator.clipboard
+      .readText()
+      .then(text => {
+        const link = firstLink(text);
+        if (!link) {
+          sayNothingToSave();
+          return;
+        }
+        field.value = link;
+        form.requestSubmit();
+      })
+      .catch(sayNothingToSave);
+  });
+})();

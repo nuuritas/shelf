@@ -156,7 +156,7 @@ test('keeps the add form and long syntheses folded by default', () => {
     aiConfigured: true,
   });
 
-  assert.match(html, /<details class="add-drawer">/);
+  assert.match(html, /class="save-form"/);
   assert.match(html, /class="topic-overview is-folded"/);
   assert.match(html, /data-fold/);
   assert.match(html, /class="folder-crumbs"/);
