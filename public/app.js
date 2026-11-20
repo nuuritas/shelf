@@ -657,9 +657,7 @@ document.addEventListener('click', async event => {
     return link;
   };
 
-  const sayNothingToSave = () => {
-    if (note) note.hidden = false;
-  };
+  const sayNothingToSave = () => { if (note) note.hidden = false; };
 
   form.addEventListener('submit', event => {
     // The fill-then-submit pass arrives here a second time, with the address
