@@ -6,6 +6,48 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// Theater mode for HTML notes: full-screen artifact with a floating Close button.
+(() => {
+  const toggle = document.querySelector('.note-theater-toggle');
+  const html = document.documentElement;
+  const frame = document.querySelector('.note-frame-full');
+  if (!toggle || !html || !frame) return;
+
+  // Signal that the reader is ready; CSS shows the button only after this.
+  html.classList.add('reader-ready');
+
+  function enterTheater() {
+    html.classList.add('is-theater');
+    toggle.textContent = 'Close';
+    toggle.setAttribute('aria-pressed', 'true');
+    toggle.setAttribute('aria-label', 'Close full screen');
+  }
+
+  function exitTheater() {
+    html.classList.remove('is-theater');
+    toggle.textContent = 'Full screen';
+    toggle.setAttribute('aria-pressed', 'false');
+    toggle.setAttribute('aria-label', 'Full screen');
+  }
+
+  toggle.addEventListener('click', () => {
+    if (html.classList.contains('is-theater')) exitTheater();
+    else enterTheater();
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && html.classList.contains('is-theater')) exitTheater();
+  });
+
+  // If the iframe loads a new page, keep theater mode working.
+  frame.addEventListener('load', () => {
+    if (html.classList.contains('is-theater')) {
+      // Re-apply in case the iframe navigation reset something.
+      enterTheater();
+    }
+  });
+})();
+
 function setExpanded(card, expanded) {
   card.classList.toggle('is-collapsed', !expanded);
   const button = card.querySelector('[data-expand]');
