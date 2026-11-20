@@ -135,6 +135,30 @@ document.addEventListener('click', async event => {
   });
 })();
 
+// A card's pills wait behind the footer's ⋮ on a phone; `menu-ready` is what
+// turns them into a sheet, so the base markup keeps the pills without a script.
+(() => {
+  if (!document.querySelector('.card-menu')) return;
+  document.documentElement.classList.add('menu-ready');
+  const close = menu => {
+    menu.classList.remove('is-open');
+    menu.querySelector('[data-menu-toggle]').setAttribute('aria-expanded', 'false');
+  };
+  document.addEventListener('click', event => {
+    const toggle = event.target.closest && event.target.closest('[data-menu-toggle]');
+    const menu = toggle && toggle.closest('.card-menu');
+    if (menu) {
+      const open = !menu.classList.contains('is-open');
+      document.querySelectorAll('.card-menu.is-open').forEach(other => other !== menu && close(other));
+      menu.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      return;
+    }
+    if (!event.target.closest || !event.target.closest('.card-menu')) document.querySelectorAll('.card-menu.is-open').forEach(close);
+  });
+
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelectorAll('.card-menu.is-open').forEach(close); });
+})();
 // Labels are a tick list: the box the reader clicks is the save. The route
 // answers a redirect, and `fetch` follows it, so the body is the page the
 // browser would have landed on — the card's chips are cut out of it and the
@@ -175,14 +199,10 @@ document.addEventListener('click', async event => {
     const saved = fresh.querySelector('.card-labels');
     if (!current || !saved) return;
 
-    const editor = current.querySelector('.label-editor');
     ownChildren(current, 'a.label').forEach(chip => chip.remove());
-    ownChildren(saved, 'a.label').forEach(chip => {
-      current.insertBefore(chip.cloneNode(true), editor);
-    });
-
-    const count = current.querySelector('.label-editor summary');
-    const savedCount = saved.querySelector('.label-editor summary');
+    ownChildren(saved, 'a.label').forEach(chip => current.appendChild(chip.cloneNode(true)));
+    const count = card.querySelector('.label-editor summary');
+    const savedCount = fresh.querySelector('.label-editor summary');
     if (count && savedCount) count.innerHTML = savedCount.innerHTML;
   };
 
@@ -255,6 +275,9 @@ document.addEventListener('click', async event => {
       const current = card.querySelector('.card-labels');
       const next = fresh.querySelector('.card-labels');
       if (current && next) {
+        const currentEditor = card.querySelector('.label-editor');
+        const nextEditor = fresh.querySelector('.label-editor');
+        const wasOpen = currentEditor ? currentEditor.open : false;
         // The parsed page carries the no-script save button as a real element;
         // it must not follow the labels into a page with a script.
         const labels = next.cloneNode(true);
@@ -262,12 +285,14 @@ document.addEventListener('click', async event => {
         // Adding a name is one step, not the end of the session: the editor
         // stays open where it was, while the chip that carried the name closes
         // and its text goes with it.
-        const editor = current.querySelector('.label-editor');
-        const wasOpen = editor ? editor.open : false;
         current.replaceWith(labels);
-        const reopened = labels.querySelector('.label-editor');
-        if (reopened && wasOpen) reopened.open = true;
-        armFold(reopened);
+        if (currentEditor && nextEditor) {
+          const editor = nextEditor.cloneNode(true);
+          editor.querySelectorAll('noscript').forEach(node => node.remove());
+          if (wasOpen) editor.open = true;
+          currentEditor.replaceWith(editor);
+          armFold(editor);
+        }
       }
     } else if (card) {
       paintChips(card, fresh);
