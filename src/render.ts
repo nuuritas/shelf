@@ -1070,7 +1070,6 @@ export function renderNotePage({
       <header class="note-bar">
         <a class="note-back" href="/">← Library</a>
         <div class="note-bar-side">
-          <span class="ai-badge" title="Written by an AI agent">AI-generated</span>
           ${
             sourceUrl
               ? `<a class="note-source" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Source ↗</a>`
@@ -2188,7 +2187,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=42">
+  <link rel="stylesheet" href="/style.css?v=43">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2211,7 +2210,6 @@ export function pageShell({
 }
 
 const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.04em; }
-.ai-badge { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .note-kind { color: var(--muted); font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
 .note-agent-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-card { position: relative; }
