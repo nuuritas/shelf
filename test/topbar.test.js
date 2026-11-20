@@ -45,3 +45,35 @@ test('the calendar page keeps its own month count', () => {
 
   assert.match(topbar(html), /<span class="count">4 saved this month<\/span>/);
 });
+
+test('the save pill is in the top bar and the clipboard note sits above the banners', () => {
+  const html = renderPage({
+    bookmarks: [],
+    total: 0,
+    query: '',
+    notice: 'added',
+    error: null,
+  });
+  const bar = topbar(html);
+
+  const form = bar.match(/<form class="save-form"[\s\S]*?<\/form>/);
+  assert.ok(form, 'the top bar has no save form');
+  assert.match(form[0], /method="post"/);
+  assert.match(form[0], /action="\/add"/);
+  assert.match(form[0], /<input type="hidden" name="url" value="">/);
+  assert.match(form[0], /class="save-to-shelf"[^>]*>Save to Shelf<\/button>/);
+  // It reads pill · calendar · Settings · Log out.
+  assert.ok(bar.indexOf('class="save-form"') < bar.indexOf('class="bar-icon"'));
+  assert.ok(bar.indexOf('class="bar-icon"') < bar.indexOf('>Settings</a>'));
+
+  // The note is the first thing under the top bar, above the notice banner.
+  const main = html.indexOf('<main class="shell">');
+  const note = html.indexOf('class="add-note"');
+  const banner = html.indexOf('class="banner success"');
+  assert.ok(main < note && note < banner, 'the note is not above the banners');
+  assert.match(html, /class="add-note"[^>]*role="status"[^>]*hidden/);
+  assert.match(html, /Nothing to save yet — copy a link first, then tap again\./);
+  // The disclosure row and its visible field are gone; one control is left.
+  assert.doesNotMatch(html, /class="add-drawer"/);
+  assert.doesNotMatch(html, /<input id="url"/);
+});

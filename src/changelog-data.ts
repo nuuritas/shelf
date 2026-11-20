@@ -6,6 +6,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-11-20",
     bullets: [
       "**Library**: a chosen filter drops from its own menu with an ×, one Clear all at the end of the bar resets source, folder, label and the archived view, and the menus and search field sit on the left.",
+      "**Library**: Save is one small pill in the top bar, left of the calendar, and saves the link you just copied; a copy without a link says so above the shelf instead of submitting an empty field.",
     ],
   },
   {

@@ -482,7 +482,6 @@ export function renderPage({
     view === 'archived';
   const clearAllHref = filterHref({ labels: [], sources: [], topics: [], view: 'active' });
   const noticeText = notice ? NOTICES[notice] : '';
-  const addValue = escapeHtml(query || '');
   const showTranslateBanner =
     lang === 'en' && bilingual && aiConfigured && missingEnglish > 0;
   const dayLabel = currentDay ? formatDate(`${currentDay}T00:00:00.000Z`) : '';
@@ -568,6 +567,10 @@ export function renderPage({
           <span>Shelf</span>
         </a>
         <div class="top-actions">
+          <form class="save-form" method="post" action="/add" aria-label="Save a link from any page">
+            <input type="hidden" name="url" value="">
+            <button class="save-to-shelf" type="submit" title="Save the link on your clipboard. On Android: Share → Shelf.">Save to Shelf</button>
+          </form>
           <a class="bar-icon" href="${escapeHtml(calendarHref)}" aria-label="Open the save calendar" title="Calendar">${CALENDAR_MARK}</a>
           <a class="calendar-link" href="/settings">Settings</a>
           <form method="post" action="/logout">
@@ -577,15 +580,7 @@ export function renderPage({
       </header>
 
       <main class="shell">
-        <details class="add-drawer">
-          <summary><span class="add-icon">+</span> Save a link from X, LinkedIn, YouTube or any page</summary>
-          <form class="add-form" method="post" action="/add">
-            <label class="sr-only" for="url">Post URL</label>
-            <input id="url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/user/status/… · linkedin.com/posts/… · youtu.be/… · example.com/blog/…" required value="${addValue}">
-            <button type="submit">Save post</button>
-          </form>
-          <p class="fine-print">On Android: <strong>Share → Shelf</strong> from X, LinkedIn, YouTube or any browser page. The post, page, quote, article, links, video and images are read and summarized automatically.</p>
-        </details>
+        <p class="add-note" data-add-note role="status" hidden>Nothing to save yet — copy a link first, then tap again.</p>
 
         ${noticeText ? `<div class="banner success">${escapeHtml(noticeText)}</div>` : ''}
         ${error ? `<div class="banner error">${escapeHtml(truncate(error, 400))}</div>` : ''}
@@ -2202,7 +2197,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=39">
+  <link rel="stylesheet" href="/style.css?v=40">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2216,7 +2211,7 @@ export function pageShell({
 .linked-article { display: block; }
     .peek-meta { display: none; }
   </style></noscript>
-  <script src="/app.js?v=7" defer></script>
+  <script src="/app.js?v=8" defer></script>
 </head>
 <body class="${escapeHtml(bodyClass)}">
   ${body}
@@ -2407,6 +2402,35 @@ button { cursor: pointer; }
   color: var(--muted);
   font-size: 0.8125rem;
 }
+
+/* The save control is chrome, not a row above the shelf: one small pill left of
+   the calendar, filled from the clipboard, with nothing to type into. */
+.save-form { display: inline-flex; margin: 0; }
+
+.save-to-shelf {
+  min-height: 30px;
+  padding: 6px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.save-to-shelf:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+/* The failure line: hidden until a clipboard read finds no link, so the shelf
+   never takes a row it does not need. */
+.add-note {
+  margin: 16px 2px 10px;
+  color: var(--red);
+  font-size: 0.8125rem;
+}
+
+.add-note[hidden] { display: none; }
 
 .count {
   padding: 5px 10px;
@@ -3711,58 +3735,6 @@ h1, h2, h3 {
   overflow-x: auto;
 }
 
-.add-drawer {
-  margin: 16px 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.add-drawer summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 13px 16px;
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 600;
-  list-style: none;
-}
-
-.add-drawer summary::-webkit-details-marker { display: none; }
-
-.add-drawer[open] summary { border-bottom: 1px solid var(--line); }
-
-.add-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: var(--bg);
-  font-size: 0.9375rem;
-  font-weight: 500;
-  line-height: 1;
-  transition: transform 0.18s ease;
-}
-
-.add-drawer[open] .add-icon { transform: rotate(45deg); }
-
-.add-drawer .add-form {
-  margin: 12px;
-  max-width: none;
-  border: none;
-  background: var(--surface-soft);
-  box-shadow: none;
-}
-
-.add-drawer .fine-print {
-  margin: 0;
-  padding: 0 16px 14px;
-}
-
 .topic-brief {
   max-width: 720px;
   margin: 4px 0 10px;
@@ -4608,6 +4580,9 @@ body.settings-page .topbar {
 @media (max-width: 650px) {
   .shell, .topbar { width: min(100% - 24px, 820px); }
   .topbar { padding-top: 18px; }
+  /* The bar carries the mark, the save pill, the calendar and the account links,
+     so the pill drops a step of padding and type to keep one row. */
+  .save-to-shelf { padding: 5px 9px; min-height: 28px; font-size: 0.7188rem; }
   .folder-grid { grid-template-columns: 1fr; gap: 10px; }
   .folder-card { min-height: 96px; padding: 15px; }
   .card.is-collapsed .tweet-text,
