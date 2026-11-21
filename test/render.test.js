@@ -734,8 +734,7 @@ test('the Appearance card leads the settings form', () => {
 });
 
 test('the settings stylesheet carries the cloud rhythm', () => {
-  assert.match(CSS, /\.settings \{[^}]*max-width: 920px;[^}]*margin-inline: auto;/);
-  assert.match(CSS, /body\.settings-page \.shell,\nbody\.settings-page \.topbar \{[^}]*min\(920px/);
+  assert.match(CSS, /\.settings \{[^}]*max-width: 1120px;[^}]*margin-inline: auto;/);
   assert.match(CSS, /\.settings-form \{[^}]*gap: 11px;[^}]*margin-top: 16px;/);
   assert.match(CSS, /\.settings-card \{[^}]*padding: 16px;/);
   // A label and a control: the 96px gutter, one column under the breakpoint.

@@ -269,13 +269,12 @@ like a font that "did not load" in a screenshot and is hard to spot.
 
 One column, one container per band of the page:
 
-- `.topbar` — `min(900px, 100% - 36px)`, one row: mark and wordmark on the
+- `.topbar` — `min(1120px, 100% - 36px)`, one row: mark and wordmark on the
   left, the current page's actions on the right (saves count, Settings or
   Library, Log out).
-- `.shell` — `min(820px, 100% - 36px)`, the reading column: the library, a
-  folder, the calendar and the full-note body. `/settings` is the exception: it
-  widens its own shell and topbar to 920px (see **Settings** below).
-- `.note-bar` — `min(900px, 100% - 36px)`, the full-note page's own bar: back
+- `.shell` — `min(1120px, 100% - 36px)`, the reading column: the library, a
+  folder, the calendar, the full-note body and `/settings`.
+- `.note-bar` — `min(1120px, 100% - 36px)`, the full-note page's own bar: back
   link, AI badge, source link.
 
 Bands are separated by a 1px `--rule` hairline. Cards are `--card` on
@@ -297,13 +296,12 @@ block is closest to failing.
 
 ### Settings
 
-`/settings` is a form, not a list, so it keeps the cloud's tighter rhythm and a
-wider measure than the reading column:
+`/settings` is a form, not a list, so it keeps the page measure and its own
+tighter vertical rhythm:
 
-- The page's own `.shell` and `.topbar` widen together to
-  `min(920px, 100% - 36px)`, and `.settings` caps at `max-width: 920px`,
-  `margin-inline: auto`. Both columns stay aligned; nothing else on the site
-  changes width. Under 650px they drop to `100% - 24px`.
+- `.settings` caps at `max-width: 1120px`, `margin-inline: auto`, inside the
+  shared `.shell`; the two stay aligned because the shell already carries that
+  width. Under 650px the page keeps the 24px gutter.
 - The cards are one column in `.settings-form` with `gap: 11px` and
   `margin-top: 16px`; every card is `padding: 16px`, one hairline border and
   `--radius` corners. A card's heading is `0.9375rem`; the page heading is
