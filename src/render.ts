@@ -2224,7 +2224,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=44">
+  <link rel="stylesheet" href="/style.css?v=45">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2287,7 +2287,7 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-body th { background: var(--surface-soft); }
 .note-excerpt { margin: 0 0 12px; color: var(--ink); font-size: 0.9375rem; line-height: 1.62; overflow-wrap: anywhere; }
 .note-body-full { margin: 18px 0 0; font-size: 1rem; }
-.note-bar { width: min(900px, calc(100% - 36px)); margin-inline: auto; padding: 18px 0 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.note-bar { width: min(1120px, calc(100% - 36px)); margin-inline: auto; padding: 18px 0 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .note-back { color: var(--muted); font-size: 0.8125rem; font-weight: 600; text-decoration: none; }
 .note-back:hover { color: var(--ink); }
 .note-bar-side { display: flex; align-items: center; gap: 12px; }
@@ -2326,7 +2326,7 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .html.reader-ready .note-theater-toggle { display: inline-flex; }
 @media (max-width: 650px) {
   .note-card-title { font-size: 1.1875rem; }
-  .note-bar { width: min(100% - 24px, 900px); padding-top: 12px; }
+  .note-bar { width: min(100% - 24px, 1120px); padding-top: 12px; }
   .note-shell { padding-bottom: 40px; }
   .note-title { font-size: clamp(1.5rem, 7vw, 1.875rem); }
   .note-frame-full { height: calc(100dvh - 160px); min-height: 320px; }
@@ -2435,12 +2435,12 @@ button { cursor: pointer; }
 }
 
 .shell {
-  width: min(820px, calc(100% - 36px));
+  width: min(1120px, calc(100% - 36px));
   margin-inline: auto;
 }
 
 .topbar {
-  width: min(900px, calc(100% - 36px));
+  width: min(1120px, calc(100% - 36px));
   margin-inline: auto;
   padding: 26px 0 0;
   display: flex;
@@ -4345,16 +4345,10 @@ ${LABEL_TONE_CSS}
 
 .label-save { margin-top: 8px; }
 
-/* Settings is a form, not a list, so it reads at the cloud's 920px measure.
-   That is wider than the 820px reading column, so this page's own shell and
-   topbar widen together and stay aligned with each other. */
-body.settings-page .shell,
-body.settings-page .topbar {
-  width: min(920px, calc(100% - 36px));
-}
-
+/* Settings is a form, not a list; it keeps the page measure and its own
+   vertical rhythm. */
 .settings {
-  max-width: 920px;
+  max-width: 1120px;
   margin-inline: auto;
   padding: 12px 0 60px;
 }
@@ -4704,7 +4698,7 @@ body.settings-page .topbar {
 
 /* The changelog page is a document, not a card list: one column, a date per
    release and the changes under it. */
-.changelog { max-width: 720px; }
+.changelog { max-width: 720px; margin-inline: auto; }
 
 .changelog h1 {
   margin: 4px 0 8px;
@@ -4741,7 +4735,7 @@ body.settings-page .topbar {
 }
 
 @media (max-width: 650px) {
-  .shell, .topbar { width: min(100% - 24px, 820px); }
+  .shell, .topbar { width: min(100% - 24px, 1120px); }
   .topbar { padding-top: 18px; }
   /* The bar carries the mark, the save pill, the calendar and the account links,
      so the pill drops a step of padding and type to keep one row. */
@@ -4811,8 +4805,6 @@ body.settings-page .topbar {
   .settings-row { grid-template-columns: 1fr; gap: 7px; }
   .settings-card textarea { min-height: 220px; }
   .settings-actions { flex-direction: column; align-items: stretch; }
-  body.settings-page .shell,
-  body.settings-page .topbar { width: min(100% - 24px, 920px); }
 }
 
 /* Motion is one pulse for a running summary plus colour and 1px lifts on
