@@ -453,6 +453,25 @@ API: see `docs/PROGRESS.md` §3.
   superagent. Work on the agent contract itself goes straight to a branch and a
   pull request (see **Agent harnesses**), or two agents edit the same file.
 
+## Pull requests, identity and review
+
+Two machine accounts, never the maintainer: `nt-agent-code` writes, and
+`nt-agent-review` reads, approves and merges. The account that writes a change
+never clears it; an older section giving one account both jobs splits them here.
+
+- `nt-agent-code` branches, commits and opens one pull request per change. It
+  never approves, never merges, never marks it ready, never pushes to `main`.
+- It requests the review in the same run that opens the pull request:
+  `gh pr edit <number> --add-reviewer nt-agent-review`.
+- `nt-agent-review` approves the current head, then merges with
+  `gh pr merge <number> --squash --delete-branch`; an earlier approval does not carry.
+- No approval means the pull request stays open — a result, not a failure — and
+  `nt-agent-code` never merges it to unblock anything.
+- `CHANGES_REQUESTED` is the author's work: fix on the same branch, request the
+  review again, and never open a second pull request for the same change.
+- If `nt-agent-review` is not a collaborator yet, the pull request stays open
+  and names the step: `gh api -X PUT repos/<owner>/<repo>/collaborators/nt-agent-review -f permission=write`.
+
 ## Agent structure
 
 Every change in this repository follows the same structure, whoever makes it. Four roles, four
