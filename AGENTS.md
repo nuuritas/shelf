@@ -27,13 +27,14 @@ one thread, one worktree, one branch, one pull request. It runs the gates in the
 change checklist before the pull request opens, then links the pull request and
 watches it, so a failed check, a new review, a comment or a conflict wakes the
 same session that wrote the code. The thread owns its pull request through the
-review, fixes what the reviewer asked for, and merges it once **The review gate**
-holds.
+review and fixes what the reviewer asked for; `nt-agent-review` approves the
+current head and merges it.
 
 **`dsh-superagent` is the unattended lane.** It watches this repository's issues
-and turns each one into a clone, a branch and one pull request, then merges it
-when its guardrails hold. It has its own GitHub account (`nuuritas-agent`) and
-runs on the operator's Mac under launchd, with no window to close. See
+and turns each one into a clone, a branch and one pull request, then requests
+`nt-agent-review` and stops. It has its own GitHub account (`nuuritas-agent`),
+which acts as the code account: it never approves and never merges. It runs on
+the operator's Mac under launchd, with no window to close. See
 **Autonomous agent (superagent)** below.
 
 A person starts work in T3; an issue starts work in the superagent. Neither
@@ -60,9 +61,8 @@ waits for the other, so these rules keep one change from being done twice:
   `watch_pull_request`, and ends the turn. The watch stays armed across turns:
   do not poll, sleep, or run `gh pr checks --watch`. On a wake, read only what is
   new, fix it, push, reply on the pull request, and end the turn.
-- A wake is not an approval. Before merging, re-read **The review gate** and the
-  merge-gate statement against the current head; an event that woke the thread says
-  nothing about the review state.
+- A wake is not an approval. Only `nt-agent-review` merges, after approving the
+  current head; an event that woke the thread says nothing about the review state.
 
 ## Layout
 
@@ -170,13 +170,11 @@ maintainer's own changes, including docs and chores, follow this loop:
 5. Push the branch and open a PR against `main`. The body starts with
    `Closes #<issue>` when step 1 applied, or says why there is no `Closes #N`
    when it was skipped, and follows `.github/pull_request_template.md`.
-6. Merge the PR (squash is fine) once its head commit carries a review that
-   allows the merge and the merge-gate statement is on the pull request. The
-   superagent delivers a person-authored pull request: it fixes
-   `CHANGES_REQUESTED` on that branch, reviews the new head, and merges under
-   the statement; a T3 thread merges only the pull request it wrote. A linked
-   issue closes and the project's built-in workflows move the card to Done.
-   Deploy after the merge, not before.
+6. `nt-agent-review` approves the head commit and merges the PR (squash is
+   fine) once that approval is on the head being merged. Changes requested go
+   back to the author on the same branch, which pushes and requests the review
+   again. A linked issue closes and the project's built-in workflows move the
+   card to Done. Deploy after the merge, not before.
 7. Delete the branch.
 
 Direct pushes to `main` are reserved for emergencies: they leave no card at all,
@@ -455,144 +453,70 @@ API: see `docs/PROGRESS.md` §3.
 
 ## Agent structure
 
-Every change in this repository follows the same structure, whoever makes it. Four roles, four
-different jobs.
+Every change in this repository follows the same structure, whoever makes it. Three accounts, one job
+each; a T3 thread is the person's own session, not a fourth account.
 
 | Role | Identity | May | Must not |
 | --- | --- | --- | --- |
-| Maintainer | `nuuritas` (person) | open issues, decide, approve, merge their own reviewed pull request | — |
-| Implementer | `nuuritas-agent` | clone, branch `agent/<ticket>`, one pull request, merge its own pull request or a person-authored one it reviewed and approved on the current head, once the guardrails hold | merge a person-authored head it did not approve, build, test, deploy |
-| Reviewer | `nuuritas-agent` under the `review` rule | read the diff, post one checklist comment, push one fix commit when changes are requested, approve or request changes | merge before approving the current head, rewrite the author's commits, edit the diff beyond its fix |
-| Interactive thread (T3 Code, where present) | the person's own session | implement, run the gates, watch its pull request, merge it once the review gate holds | file an issue for work it is already doing |
+| Maintainer | `nuuritas` (person) | open issues, decide, review a diff by hand | merge a pull request it did not approve |
+| Author | `nt-agent-code` (code account) | clone, branch, one pull request per issue, request the review | approve, merge, mark ready, push to `main`, build, test, deploy |
+| Reviewer | `nt-agent-review` (review account) | read the diff, approve or request changes on the current head, merge after approving | push to that branch, edit the diff, review a pull request it authored |
+| Interactive thread (T3 Code, where present) | the person's own session | implement, run the gates, answer the review | merge its own pull request, or any other |
+
+The account that writes the code never clears it. Every merge is performed by `nt-agent-review` after
+its own approval of the head being merged.
 
 ### The loop
 
 1. An issue opened by `nuuritas` is a work order. No label and no mention are required.
-2. The agent acknowledges within a minute, works in its own clone, and opens exactly one pull
-   request against `main`.
-3. Before merging it posts the merge-gate statement on the pull request (see **The merge-gate
-   statement**): one line per acceptance criterion marked **met** or **not met** with the file and
-   line that proves it, the diff size and paths changed, the gates run and not run, and the review
-   gate for the author type.
-4. It merges only when every guardrail holds and every criterion is met, with the statement already
-   posted. Otherwise it reports `blocked` on the issue with the exact operator step and stops. A
-   ticket ends merged or with that step, never in `progress`.
-5. A reviewer other than the author may approve or request changes. On a **person-authored** pull
-   request, `CHANGES_REQUESTED` is the agent's work order within one poll: the agent pushes one fix
-   commit to that branch, requests review again, reviews the new head, and then posts the statement
-   and squash-merges. An approved person-authored pull request with no outstanding changes is merged
-   under the same statement, without a second review when the agent already reviewed that head.
-6. Reviewed and reviewed-by are different jobs. An automated agent merges its own pull request, and
-   a person-authored pull request it reviewed and approved on the current head, under the statement.
-   A T3 thread merges only the pull request it wrote. On a person-authored pull request, the agent
-   never merges a head it did not approve, and never merges a fix it pushed before reviewing that
-   new head.
+2. `nt-agent-code` acknowledges within a minute, works in its own clone, and opens exactly one pull
+   request against `main`. The body carries the evidence: one line per acceptance criterion marked
+   **met** or **not met** with the file and line that proves it, the diff size and paths changed, the
+   gates run and not run, and the risk.
+3. In the same run it requests the review:
+   `gh pr edit <number> --add-reviewer nt-agent-review`. Then it stops.
+4. `nt-agent-review` reads the diff and the issue, posts one review, and — on approval of the current
+   head — merges with `gh pr merge <number> --squash --delete-branch`. No approval means the pull
+   request stays open; that is a result, not a failure.
+5. **Changes requested is a task for the author**: it pushes the fix to the same branch, requests the
+   review again, and reports the new head. It never opens a second pull request for the same issue.
+6. `nt-agent-code` never approves and never merges, whatever approvals sit on the pull request; a
+   merge by the code account is a defect. Merges that predate the cutoff in `nuuritas/superagents`
+   (`policy/prompts/delivery.md`) are historical: report them, never invent or backdate an approval.
 
 ### The review gate
 
-No pull request is merged without a review. "Reviewed" means a review by an account other than the
-author that either approves the change or whose requested changes have all been addressed and
-re-approved. A pull request carrying `CHANGES_REQUESTED` is not done, and a pull request with no
-review at all is not done either.
+"Reviewed" means an `APPROVED` review from `nt-agent-review` on the pull request's current head, after
+the last push. A new commit needs a new review; an approval of an earlier commit does not carry over,
+addressing the findings is not a review, and green CI is not permission to merge. A pull request
+carrying `CHANGES_REQUESTED`, or with no review at all, is not merged.
 
-The review must be on the pull request's current head commit, the one the merge
-is based on. A new commit needs a new review; a review of an earlier commit does
-not carry over. Addressing the findings is not a review, and neither is rebasing
-the objection out of the diff, commenting that the concern no longer applies, or
-pointing at green CI: those are arguments for the reviewer, not permission to
-merge.
+Never dismiss, clear or route around the review — not with the reviews/dismissals API, not with
+`--admin`, and not by merging while `reviewDecision` is empty because you emptied it. The absence of
+branch protection is not authority. Read the state immediately before merging, never from memory:
 
-Never dismiss, clear or route around another account's review — not with the
-reviews/dismissals API, not with `--admin`, and not by merging while
-`reviewDecision` is empty because you emptied it. The absence of branch
-protection is not authority. If the reviewer does not come back, the change waits
-and the thread returns to the user; asking a person is the escalation, merging
-anyway is not.
-
-A person-authored pull request is the agent's to deliver. It is in one of two states:
-
-- **`CHANGES_REQUESTED`** — the review is the work order, taken within one poll: the agent reads the
-  review, pushes one fix commit to that branch on top of the author's history, requests review again,
-  reviews the new head, and only after approving it posts the statement with `Review gate:
-  person-authored, fixed by the agent — approved by <reviewer> in <review URL>`, then squash-merges.
-- **Approved with no outstanding changes** — the merge is the remaining work. When the agent already
-  reviewed the current head, it does not review again: it posts the statement with `Review gate:
-  person-authored — approved by <reviewer> in <review URL>` and merges.
-
-The agent never merges a person-authored pull request it has not reviewed on its current head, never
-merges a head it did not approve, and never merges a fix it pushed before reviewing that new head.
-It never rewrites the author's commits or force-pushes over them; its fix is one commit on top.
-
-Every pull request touched in the last 24 hours must reach one of those states. When it is not there,
-the `review` rule is the work order that clears it, so the work is tracked and fixed instead of merged
-on trust. An approval or change request untouched for more than 30 minutes is a stall, not a state:
-`bin/superagent-doctor.sh`'s `review-stall` check FAILs it naming `repo#pr`, and the same `review`
-rule clears it.
-
-GitHub forbids approving your own pull request. A pull request authored by the maintainer therefore
-needs an approving review from `nuuritas-agent` under the review rule, on the head being merged,
-before the agent merges it under the person-authored statement above.
-An agent-authored pull request is gated by its own merge-gate statement instead: every acceptance
-criterion marked met with file and line evidence, the statement posted on the pull request before
-the merge, and only then merged. GitHub forbids self-approval, so a non-author approval is neither
-requested nor required for it.
-
-### The merge-gate statement
-
-Every merge is preceded by one comment from the author, posted on the pull
-request after the last push and before the merge call, in the same turn. It is
-the record that the gate was checked against the commit being merged, not
-against an earlier one. A merge without the statement, or a statement posted
-after the merge, is a defect. The authoritative wording is `nuuritas/superagents`,
-`policy/prompts/delivery.md`; follow that template, and keep the first and last
-lines exactly as written:
-
-```text
-Satisfied to merge: every acceptance criterion is met.
-
-Acceptance criteria (issue #<number>):
-- met — <criterion>: <path>:<line>
-- not met — <criterion>: <path>:<line> (operator follow-up: <exact step>)
-
-Diff: <n> files changed, +<added>/−<removed> — <paths>.
-Gates run: none — the agent is write-only.
-Gates not run: <commands this repository uses>; the operator runs them.
-Review gate: agent-authored — this statement is the gate.
-
-Merging now (squash) — this comment is the merge gate.
+```bash
+gh pr view <n> --json headRefOid,reviewDecision,mergeable
+gh pr view <n> --json reviews --jq '.reviews[] | select(.state=="APPROVED") | {author: .author.login, commit: .commit.oid}'
 ```
 
-- The first line is exactly `Satisfied to merge: every acceptance criterion is met.`
-  When the only unmet items are operator steps it is `Satisfied to merge: every
-  repository-side criterion is met; <n> operator step(s) remain below.`
-- One line per acceptance criterion, in the issue's order, each starting with `met`
-  or `not met` and naming the file and line that proves it. A criterion that
-  cannot be evidenced is `not met`; an operator-only criterion names the exact
-  command or step as its follow-up.
-- `Diff` is the `git diff --stat` total, including new files, plus the paths
-  changed.
-- `Gates run` and `Gates not run` state what was actually run and the commands the
-  operator must run. The agent is write-only, so it never claims a gate passed; a
-  person-authored statement lists the gates that actually passed.
-- `Review gate` names the author type: `agent-authored — this statement is the
-  gate.` for the agent; `person-authored — approved by <reviewer> in <review
-  URL>.` for a maintainer pull request the agent reviewed; or `person-authored,
-  fixed by the agent — approved by <reviewer> in <review URL>.` when the agent
-  pushed the fix.
-- The last line is exactly `Merging now (squash) — this comment is the merge
-  gate.`
+When the approving review's `commit.oid` is not `headRefOid`, there is no approval. When
+`nt-agent-review` is not yet a collaborator, the pull request stays open and names the step:
 
-If the merge call fails, edit this same comment, or reply on it, with the failure
-and what happened next. Do not post a second statement and do not merge silently
-later.
+```bash
+gh api -X PUT repos/nuuritas/shelf/collaborators/nt-agent-review -f permission=write
+```
+
+An approval or change request untouched for more than 30 minutes is a stall, not a state:
+`bin/superagent-doctor.sh`'s `review-stall` check FAILs it naming `repo#pr`.
 
 ### Guardrails
 
 One module, at most 200 changed lines, and no dependency, lockfile, deployment or generated-file
 change. The agent never builds, tests, deploys, runs migrations, connects to production or reads
 secrets — the operator runs the gates. When the work does not fit one module, it splits it into the
-smallest sequence of consecutive mergeable pull requests and merges them one at a time; it never asks
-how to split it and never leaves one open.
+smallest sequence of consecutive mergeable pull requests, each reviewed and merged by
+`nt-agent-review` in turn; it never asks how to split it.
 
 ### Where things live
 
@@ -629,10 +553,10 @@ open. T3 Code is the harness for work that needs a person in the loop and for th
 lanes are peers. **Agent harnesses** above is the contract for keeping them apart.
 
 - It acknowledges once on the issue, works in its own clone on `agent/<ticket>`, opens one pull
-  request against `main`, posts the merge-gate statement with its checklist, and merges it itself when
-  the guardrails hold. This is the only lane allowed to merge without a second account's review; a
-  T3 thread that takes over an `agent/<ticket>` branch is not covered by it. An oversized change is
-  split into consecutive scoped pull requests and merged, not asked about; it never leaves one open.
+  request against `main`, puts the acceptance evidence in the body, and requests `nt-agent-review` in
+  the same run. It never approves and never merges: the review account does, on the current head. An
+  oversized change is split into consecutive scoped pull requests, each reviewed on its own, not
+  asked about.
 - Guardrails: one module, at most 200 changed lines, no dependency, lockfile, deployment or
   generated-file change. It never builds, tests, deploys, or reads secrets.
 - The issue thread is the contract. Nothing in this repository calls operator scripts, and this
