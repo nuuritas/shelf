@@ -6,6 +6,7 @@ turns this file into `/changelog`; run it in the same commit as the edit.
 
 ## 2026-11-21
 
+- **Notes**: a note card with no abstract now offers Summarize like a post — it shows the waiting, failed and not-configured states with Start now or Try again instead of silence.
 - **Summaries**: a provider whose model reads text only no longer fails a post with pictures — the summary is retried without the images, and the text says the pictures were not attached.
 
 ## 2026-11-20

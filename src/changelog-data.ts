@@ -5,6 +5,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     date: "2026-11-21",
     bullets: [
+      "**Notes**: a note card with no abstract now offers Summarize like a post — it shows the waiting, failed and not-configured states with Start now or Try again instead of silence.",
       "**Summaries**: a provider whose model reads text only no longer fails a post with pictures — the summary is retried without the images, and the text says the pictures were not attached.",
     ],
   },

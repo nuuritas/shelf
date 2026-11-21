@@ -1481,7 +1481,8 @@ function renderBookmark(
   labels: LabelSummary[] = [],
   primaryTag = '',
 ): string {
-  if (bookmark.kind === 'note') return renderNoteCard(bookmark, returnTo, view, lang, labels);
+  if (bookmark.kind === 'note')
+    return renderNoteCard(bookmark, returnTo, view, lang, labels, aiConfigured, bilingual, primaryTag);
 
   const author: Partial<Author> = bookmark.author ?? {};
   const handle = author.username ? `@${author.username}` : '';
@@ -1581,6 +1582,9 @@ function renderNoteCard(
   view: 'active' | 'archived' = 'active',
   lang: 'tr' | 'en' = 'tr',
   labels: LabelSummary[] = [],
+  aiConfigured = false,
+  bilingual = false,
+  primaryTag = '',
 ): string {
   const agent = bookmark.agent;
   const agentName = noteAgentName(agent?.name) || 'AI agent';
@@ -1599,6 +1603,12 @@ function renderNoteCard(
     !bookmark.summary && bookmark.text
       ? `<p class="note-excerpt">${escapeHtml(truncate(bookmark.text, 260))}</p>`
       : '';
+  // A note without an abstract is not a dead card: the shared summary block
+  // explains the waiting, off, failed and not-configured states and offers the
+  // action, exactly as it does on a post card.
+  const summary = bookmark.summary
+    ? ''
+    : renderSummary(bookmark, aiConfigured, returnTo, lang, bilingual, primaryTag);
 
   return `
     <article class="card note-card${archived ? ' is-archived' : ''}" id="bookmark-${escapeHtml(bookmark.tweetId)}" data-ref="${escapeHtml(bookmark.ref || bookmark.tweetId)}" data-summary-status="${escapeHtml(bookmark.summaryStatus || '')}"${cardHasPendingJob(bookmark, lang) ? ' data-pending="1"' : ''}>
@@ -1633,6 +1643,7 @@ function renderNoteCard(
 
       ${abstract}
       ${preview}
+      ${summary}
 
       ${
         bookmark.topics?.length
@@ -2224,7 +2235,7 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=45">
+  <link rel="stylesheet" href="/style.css?v=46">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
@@ -2258,7 +2269,7 @@ const NOTE_STYLES = `.note-avatar { background: var(--ink); color: var(--bg); fo
 .note-card-title a::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
 .note-card:hover .note-card-title a { text-decoration: underline; text-underline-offset: 3px; }
 .note-card .card-topics, .note-card .card-foot, .note-card .card-tools, .note-card .card-head a, .note-card .ref-chip,
-.note-card .note-abstract, .note-card .note-body, .note-card .note-excerpt,
+.note-card .note-abstract, .note-card .note-body, .note-card .note-excerpt, .note-card .summary,
 .note-card .note-body a, .note-card .note-body pre, .note-card .table-wrap { position: relative; z-index: 1; }
 .note-label { display: block; margin: 0 0 4px; color: var(--faint); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
 .note-abstract { margin: 0 0 12px; }
