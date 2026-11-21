@@ -4,6 +4,10 @@ Every change a deploy carries gets a bullet under the day it shipped, newest
 entry first, written for the person running this shelf. `bun run changelog`
 turns this file into `/changelog`; run it in the same commit as the edit.
 
+## 2026-11-21
+
+- **Summaries**: a provider whose model reads text only no longer fails a post with pictures — the summary is retried without the images, and the text says the pictures were not attached.
+
 ## 2026-11-20
 
 - **Agent notes**: an HTML artifact gains a Full screen button beside Source ↗; one tap hides the bar, byline and abstract and gives the document the full viewport at 100dvh, with a floating Close (or Escape) to return.

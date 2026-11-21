@@ -163,6 +163,8 @@ function requireKey(env: Partial<Env>, config: AiConfig): string {
 const AI_TIMEOUT_MS = 180_000;
 const RETRY_DELAYS_MS = [1_000, 3_000];
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+/** Answers a provider uses to refuse a request part, such as an image it cannot read. */
+const IMAGE_REFUSAL_STATUS = new Set([400, 415, 422]);
 
 function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -266,6 +268,8 @@ export async function summarizePost(
   const images = collectImages(post, MAX_IMAGES);
   const attached: AttachedImage[] = [];
   const imageNotes: string[] = [];
+  // The same pictures named as unread, for the text-only retry below.
+  const textOnlyNotes: string[] = [];
 
   if (config.transport === 'workers') {
     // The binding path is text-only: it has no portable image message format.
@@ -282,10 +286,13 @@ export async function summarizePost(
         if (!parsed) throw new Error('unexpected image encoding');
         attached.push(parsed);
         imageNotes.push(`Image ${index + 1} (${image.label}): attached.`);
-      } catch (error) {
-        imageNotes.push(
-          `Image ${index + 1} (${image.label}): could not be loaded (${errorMessage(error)}).`,
+        textOnlyNotes.push(
+          `Image ${index + 1} (${image.label}): not attached: the provider's model reads text only.`,
         );
+      } catch (error) {
+        const note = `Image ${index + 1} (${image.label}): could not be loaded (${errorMessage(error)}).`;
+        imageNotes.push(note);
+        textOnlyNotes.push(note);
       }
     }
   }
@@ -340,20 +347,48 @@ export async function summarizePost(
   }
 
   const key = requireKey(env, config);
-  const { response, raw } = await postJson(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': 'Shelf/1.0',
-      'x-opencode-session': options.session || `shelf-${post.tweetId}`,
-    },
-    body: JSON.stringify(body),
-  }).catch(error => {
-    if (isAbortError(error)) throw new Error('AI summary timed out after 180 seconds.');
-    throw error;
-  });
+  const requestSummary = (payloadBody: ChatRequest) =>
+    postJson(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': 'Shelf/1.0',
+        'x-opencode-session': options.session || `shelf-${post.tweetId}`,
+      },
+      body: JSON.stringify(payloadBody),
+    }).catch(error => {
+      if (isAbortError(error)) throw new Error('AI summary timed out after 180 seconds.');
+      throw error;
+    });
+
+  let { response, raw } = await requestSummary(body);
+  let imagesUsed = attached.length;
+
+  // A text-only model refuses the image parts instead of describing them.
+  // Name the pictures as unread and post the same request once more, so the
+  // save still ends with a summary written from the text.
+  if (!response.ok && httpImageParts.length > 0 && IMAGE_REFUSAL_STATUS.has(response.status)) {
+    console.warn(
+      `AI model ${config.model} answered HTTP ${response.status} to the image request; retrying as text only.`,
+    );
+    const textOnlyBody: ChatRequest = {
+      ...body,
+      messages: [
+        body.messages[0],
+        {
+          role: 'user',
+          content: buildPrompt(post, textOnlyNotes, {
+            instruction: options.instruction,
+            previous: options.previousSummary,
+          }),
+        },
+      ],
+    };
+    ({ response, raw } = await requestSummary(textOnlyBody));
+    imagesUsed = 0;
+  }
 
   let payload: ChatCompletionResponse | null = null;
   try {
@@ -388,7 +423,7 @@ export async function summarizePost(
     );
   }
 
-  return { text: text.trim(), model: config.model, imagesUsed: attached.length };
+  return { text: text.trim(), model: config.model, imagesUsed };
 }
 
 interface AttachedImage {
