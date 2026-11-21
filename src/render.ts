@@ -1557,7 +1557,7 @@ function renderBookmark(
       }
 
       ${bookmark.article ? renderArticle(bookmark.article, bookmark.provider === 'web') : ''}
-      ${youtubeId ? renderYouTubeEmbed(bookmark, youtubeId) : renderMedia(bookmark.media, 'main')}
+      ${youtubeId ? renderYouTubeEmbed(bookmark, youtubeId) : renderMedia(bookmark.media, 'main', outboundUrl)}
       ${bookmark.quote ? renderQuote(bookmark.quote) : ''}
       ${bookmark.links?.length ? renderLinks(bookmark.links) : ''}
       ${renderSummary(bookmark, aiConfigured, returnTo, lang, bilingual, primaryTag)}
@@ -1669,7 +1669,7 @@ function renderQuote(quote: Quote): string {
         <span class="quote-author">${escapeHtml(author.name || handle)} <span>${escapeHtml(handle)}</span></span>
       </div>
       <div class="quote-text">${linkifyText(quote.text)}</div>
-      ${renderMedia(quote.media, 'quote')}
+      ${renderMedia(quote.media, 'quote', safeHttpUrl(quote.url))}
     </blockquote>
   `;
 }
@@ -1768,14 +1768,54 @@ function renderInstagramEmbed(url: string): string {
     </div>`;
 }
 
-function renderMedia(media: MediaItem[] | null | undefined, context: string): string {
+type Picture = { item: MediaItem; url: string };
+
+function renderMedia(
+  media: MediaItem[] | null | undefined,
+  context: string,
+  href: string | null = null,
+): string {
   if (!Array.isArray(media) || media.length === 0) return '';
 
-  const cells = media
-    .map(item => {
+  const link = safeHttpUrl(href);
+  const pictures = media
+    .map((item): Picture | null => {
       const url = safeHttpUrl(item.url);
-      if (!url) return '';
-      const alt = escapeHtml(item.altText || '');
+      return url ? { item, url } : null;
+    })
+    .filter((entry): entry is Picture => entry !== null);
+  if (!pictures.length) return '';
+
+  const image = ({ item, url }: Picture): string =>
+    `<img src="${escapeHtml(url)}" alt="${escapeHtml(item.altText || '')}" loading="lazy" referrerpolicy="no-referrer">`;
+
+  // Pictures are one band the reader swipes; a single one is the framed poster
+  // the card already draws for a saved page. Videos and GIFs keep the old grid.
+  if (pictures.every(entry => entry.item.type === 'photo')) {
+    if (pictures.length === 1) {
+      const only = pictures[0]!;
+      return `<figure class="card-poster"><a href="${escapeHtml(link || only.url)}" target="_blank" rel="noopener noreferrer">${image(only)}</a></figure>`;
+    }
+
+    // The band keeps the height of its lead picture, so a portrait arriving
+    // after a landscape does not make the row grow. The floor and ceiling stop
+    // a 9:19 screenshot from filling a screen and a panorama from shrinking.
+    const lead = pictures[0]!.item;
+    const width = typeof lead.width === 'number' && Number.isFinite(lead.width) ? lead.width : 0;
+    const height = typeof lead.height === 'number' && Number.isFinite(lead.height) ? lead.height : 0;
+    const ratio = width > 0 && height > 0 ? width / height : 16 / 9;
+    const band = Math.min(Math.max(ratio, 0.8), 2.2);
+    const slides = pictures
+      .map(
+        (entry, index) =>
+          `<a class="media-slide" href="${escapeHtml(link || entry.url)}" target="_blank" rel="noopener noreferrer">${image(entry)}<span class="media-band-count" aria-hidden="true">${index + 1}/${pictures.length}</span></a>`,
+      )
+      .join('');
+    return `<div class="media-band ${context}" role="group" aria-label="Images" tabindex="0" style="aspect-ratio:${band.toFixed(4)}">${slides}</div>`;
+  }
+
+  const cells = pictures
+    .map(({ item, url }) => {
       const poster = safeHttpUrl(item.posterUrl);
 
       if (item.type === 'video' || item.type === 'gif') {
@@ -1790,18 +1830,15 @@ function renderMedia(media: MediaItem[] | null | undefined, context: string): st
 
       return `
         <figure class="media-cell">
-          <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">
-            <img src="${escapeHtml(url)}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer">
+          <a href="${escapeHtml(link || url)}" target="_blank" rel="noopener noreferrer">
+            <img src="${escapeHtml(url)}" alt="${escapeHtml(item.altText || '')}" loading="lazy" referrerpolicy="no-referrer">
           </a>
         </figure>
       `;
     })
-    .filter(Boolean)
     .join('');
 
-  if (!cells) return '';
-
-  return `<div class="media-grid ${context} media-count-${media.length}">${cells}</div>`;
+  return `<div class="media-grid ${context} media-count-${pictures.length}">${cells}</div>`;
 }
 
 function renderVersion(entry: SummaryVersion): string {
@@ -2187,13 +2224,14 @@ export function pageShell({
   <link rel="manifest" href="${assetUrl('manifest.webmanifest')}">
   <link rel="icon" href="${assetUrl('favicon.svg')}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="${assetUrl('icon-192.png')}">
-  <link rel="stylesheet" href="/style.css?v=43">
+  <link rel="stylesheet" href="/style.css?v=44">
   ${head}
   <noscript><style>
     .card.is-collapsed .tweet-text,
     .card.is-collapsed .note-body,
     .card.is-collapsed .summary-text { display: block; overflow: visible; -webkit-line-clamp: unset; }
     .card.is-collapsed .media-grid,
+    .card.is-collapsed .media-band,
     .card.is-collapsed .quote,
     .card.is-collapsed .link-stack,
     .card.is-collapsed .note-card .card-head { align-items: flex-start; }
@@ -3271,6 +3309,73 @@ h1, h2, h3 {
 .media-grid.media-count-3 { grid-template-columns: repeat(3, 1fr); }
 .media-grid.media-count-4 { grid-template-columns: repeat(2, 1fr); }
 
+/* A post's pictures are one band the reader pages, not a wall of thumbnails:
+   the card keeps the height of one picture, snapping moves to the next, and
+   the next slide peeks past the edge so the swipe is visible before it is
+   tried. The band's aspect comes from the lead picture, so a portrait arriving
+   after a landscape does not make the row grow. */
+.media-band {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 16px;
+  min-width: 0;
+  max-height: 420px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 14px;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.media-band::-webkit-scrollbar { display: none; }
+
+.media-slide {
+  position: relative;
+  display: block;
+  flex: 0 0 88%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/* A picture fits inside the band instead of losing its top and bottom to a
+   crop: a photo of a page is read, not looked at, so the band keeps its own
+   surface on either side. */
+.media-slide img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Each picture counts itself, so the number is right for whichever one is in
+   view without the page tracking the scroll. Screen readers get the picture's
+   alt text as the link's name and skip this. */
+.media-band-count {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--deep) 72%, transparent);
+  color: var(--deep-ink);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-band { scroll-behavior: auto; }
+}
+
 .card-poster {
   margin: 0 0 16px;
   min-width: 0;
@@ -3524,7 +3629,9 @@ h1, h2, h3 {
   overflow-wrap: anywhere;
 }
 
-.quote .media-grid { margin: 12px 0 0; }
+.quote .media-grid,
+.quote .media-band,
+.quote .card-poster { margin: 12px 0 0; }
 
 .summary {
   margin: 18px 0 16px;
@@ -4064,6 +4171,7 @@ h1, h2, h3 {
 }
 
 .card.is-collapsed .media-grid,
+.card.is-collapsed .media-band,
 .card.is-collapsed .card-poster,
 .card.is-collapsed .card-embed,
 .card.is-collapsed .quote,

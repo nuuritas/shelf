@@ -1078,7 +1078,7 @@ test('a Short draws the player in a portrait box', () => {
   assert.match(html, /class="media-cell yt-cell is-portrait"/);
 });
 
-test('a non-YouTube card keeps its plain picture grid', () => {
+test('a non-YouTube card frames one picture as a poster', () => {
   const html = renderPage({
     bookmarks: [sampleBookmark({ media: [youtubeBookmark().media[0]] })],
     total: 1,
@@ -1086,7 +1086,51 @@ test('a non-YouTube card keeps its plain picture grid', () => {
   });
 
   assert.doesNotMatch(html, /class="yt-card"/);
-  assert.match(html, /class="media-grid main media-count-1"/);
+  assert.doesNotMatch(html, /media-grid main/);
+  assert.match(html, /class="card-poster"/);
+  // The picture opens the saved post, like the text does, not the raw file.
+  assert.match(
+    html,
+    /class="card-poster"><a href="https:\/\/x\.com\/a\/status\/123" target="_blank" rel="noopener noreferrer"><img src="https:\/\/i\.ytimg\.com\/vi\/dQw4w9WgXcQ\/hqdefault\.jpg" alt="" loading="lazy" referrerpolicy="no-referrer">/,
+  );
+});
+
+test('three pictures are one band counted per slide', () => {
+  const html = renderPage({
+    bookmarks: [
+      sampleBookmark({
+        media: [
+          {
+            type: 'photo',
+            url: 'https://pbs.twimg.com/media/a.jpg',
+            width: 800,
+            height: 1000,
+            altText: 'first',
+          },
+          { type: 'photo', url: 'https://pbs.twimg.com/media/b.jpg', altText: 'second' },
+          { type: 'photo', url: 'https://pbs.twimg.com/media/c.jpg', altText: 'third' },
+        ],
+      }),
+    ],
+    total: 1,
+    query: '',
+  });
+
+  // The lead picture is 4:5, so the band keeps that height as it pages.
+  assert.match(
+    html,
+    /class="media-band main" role="group" aria-label="Images" tabindex="0" style="aspect-ratio:0\.8000"/,
+  );
+  assert.match(html, /src="https:\/\/pbs\.twimg\.com\/media\/b\.jpg" alt="second" loading="lazy" referrerpolicy="no-referrer"/);
+  assert.match(html, />1\/3<\/span>/);
+  assert.match(html, />2\/3<\/span>/);
+  assert.match(html, />3\/3<\/span>/);
+  // Every slide opens the source post, not the image file.
+  assert.equal(
+    (html.match(/class="media-slide" href="https:\/\/x\.com\/a\/status\/123"/g) || []).length,
+    3,
+  );
+  assert.doesNotMatch(html, /media-grid main/);
 });
 
 const instagramBookmark = extra =>
