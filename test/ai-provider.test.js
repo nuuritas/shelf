@@ -8,6 +8,7 @@ import {
   isAiConfigured,
   requestAnthropic,
   runWorkersAi,
+  summarizePost,
 } from '../src/ai.ts';
 
 const fakeBinding = { run: async () => ({ response: 'x' }) };
@@ -244,4 +245,121 @@ test('a named provider without a key says which secret is missing', async () => 
     requestAnthropic({}, config, { system: 's', user: 'u', images: [], maxTokens: 10, temperature: 0 }),
     /AI_PROVIDER=claude needs AI_API_KEY/,
   );
+});
+
+const picturePost = {
+  tweetId: '255',
+  url: 'https://x.com/someone/status/255',
+  text: 'A screenshot of a list',
+  createdAt: '2026-11-20T00:00:00.000Z',
+  author: { name: 'Someone', username: 'someone' },
+  media: [
+    {
+      type: 'photo',
+      url: 'https://img.example.com/list.png',
+      posterUrl: null,
+      altText: 'a list',
+    },
+  ],
+  links: [],
+  transcripts: [],
+};
+
+const textOnlyEnv = { AI_PROVIDER: 'openai', AI_API_KEY: 'k', AI_MODEL: 'text-only-model' };
+
+function stubSummary(answers) {
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const bodies = [];
+  const warnings = [];
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === picturePost.media[0].url) {
+      return new Response(new Uint8Array([0xff, 0xd8, 0xff]), {
+        status: 200,
+        headers: { 'content-type': 'image/png' },
+      });
+    }
+    bodies.push(JSON.parse(String(init.body)));
+    const answer = answers[Math.min(bodies.length - 1, answers.length - 1)];
+    return new Response(JSON.stringify(answer.body), {
+      status: answer.status,
+      headers: { 'content-type': 'application/json', ...answer.headers },
+    });
+  };
+  console.warn = message => warnings.push(String(message));
+  return {
+    bodies,
+    warnings,
+    restore() {
+      globalThis.fetch = originalFetch;
+      console.warn = originalWarn;
+    },
+  };
+}
+
+test('a text-only model refuses the images and still returns a summary', async t => {
+  const stub = stubSummary([
+    { status: 400, body: { error: { message: 'image_url is not supported' } } },
+    { status: 200, body: { choices: [{ message: { content: '  summary from text  ' } }] } },
+  ]);
+  t.after(stub.restore);
+
+  const result = await summarizePost(picturePost, textOnlyEnv);
+
+  assert.equal(result.text, 'summary from text');
+  assert.equal(result.imagesUsed, 0);
+  assert.equal(stub.bodies.length, 2);
+  assert.equal(stub.bodies[0].messages[1].content[1].type, 'image_url');
+  const retryContent = stub.bodies[1].messages[1].content;
+  assert.equal(typeof retryContent, 'string');
+  assert.doesNotMatch(retryContent, /image_url/);
+  assert.match(retryContent, /not attached: the provider's model reads text only/);
+  assert.equal(stub.warnings.length, 1);
+  assert.match(stub.warnings[0], /HTTP 400/);
+  assert.match(stub.warnings[0], /text-only-model/);
+});
+
+test('415 and 422 are treated as image refusals too', async t => {
+  for (const status of [415, 422]) {
+    const stub = stubSummary([
+      { status, body: { error: { message: 'unsupported' } } },
+      { status: 200, body: { choices: [{ message: { content: 'text summary' } }] } },
+    ]);
+    try {
+      const result = await summarizePost(picturePost, textOnlyEnv);
+      assert.equal(result.imagesUsed, 0);
+      assert.equal(stub.bodies.length, 2);
+      assert.equal(typeof stub.bodies[1].messages[1].content, 'string');
+    } finally {
+      stub.restore();
+    }
+  }
+});
+
+test('a provider that accepts the picture gets one request and counts it', async t => {
+  const stub = stubSummary([
+    { status: 200, body: { choices: [{ message: { content: 'a summary' } }] } },
+  ]);
+  t.after(stub.restore);
+
+  const result = await summarizePost(picturePost, textOnlyEnv);
+
+  assert.equal(result.imagesUsed, 1);
+  assert.equal(stub.bodies.length, 1);
+  assert.equal(stub.bodies[0].messages[1].content[1].type, 'image_url');
+  assert.equal(stub.warnings.length, 0);
+});
+
+test('a 429 is retried with the pictures and is not read as a refusal', async t => {
+  const stub = stubSummary([
+    { status: 429, body: { error: { message: 'slow down' } }, headers: { 'retry-after': '0' } },
+    { status: 200, body: { choices: [{ message: { content: 'a summary' } }] } },
+  ]);
+  t.after(stub.restore);
+
+  const result = await summarizePost(picturePost, textOnlyEnv);
+
+  assert.equal(result.imagesUsed, 1);
+  assert.equal(stub.bodies.length, 2);
+  assert.equal(stub.bodies[1].messages[1].content[1].type, 'image_url');
 });

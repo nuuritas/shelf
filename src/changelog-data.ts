@@ -3,6 +3,12 @@ import type { ChangelogEntry } from './changelog.ts';
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: "2026-11-21",
+    bullets: [
+      "**Summaries**: a provider whose model reads text only no longer fails a post with pictures — the summary is retried without the images, and the text says the pictures were not attached.",
+    ],
+  },
+  {
     date: "2026-11-20",
     bullets: [
       "**Agent notes**: an HTML artifact gains a Full screen button beside Source ↗; one tap hides the bar, byline and abstract and gives the document the full viewport at 100dvh, with a floating Close (or Escape) to return.",
